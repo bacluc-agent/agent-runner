@@ -3,13 +3,7 @@ description: Rewrites an issue body into a clear, agent-ready goal and implement
 mode: primary
 temperature: 0.2
 permission:
-  "*": deny
-  read: allow
-  glob: allow
-  grep: allow
-  webfetch: allow
-  bash:
-    "*": allow
+  "*": allow
 ---
 
 # Issue Refiner Agent
@@ -20,10 +14,6 @@ You receive a GitHub issue (number, title, and current body) and rewrite
 the body so that a downstream coding agent can implement it without
 ambiguity. You are a technical writer, not an implementer.
 
-## Constraints
-
-- Read-only research: you can read files, search, fetch URLs, and run
-  `gh` commands, but you cannot modify files or spawn subagents.
 - Use `gh` or `webfetch` to look up related issues, PRs, code, and docs
   when the issue body alone is not enough.
 - Your reply is forwarded verbatim as the new issue body. Include nothing

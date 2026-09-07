@@ -94,18 +94,3 @@ runs:
         mkdir -p "$HOME/.config"
         rm -rf "$HOME/.config/opencode"
         cp -a "$config_dir" "$HOME/.config/opencode"
-
-    - name: Overlay repository-specific agents
-      shell: bash
-      run: |
-        set -Eeuo pipefail
-        repo_agents="${GITHUB_WORKSPACE}/.opencode/agent"
-        target_agents="$HOME/.config/opencode/agents"
-        if [[ ! -d "$repo_agents" ]]; then
-          printf 'No repository-specific agents to overlay: %s\n' "$repo_agents"
-          exit 0
-        fi
-        mkdir -p "$target_agents"
-        cp -an "$repo_agents"/ "$target_agents"/
-        printf 'Overlayed repository-specific agents: %s\n' "$(ls "$target_agents" | tr '\n' ' ')"
-        printf 'Overlayed repository-specific agents from %s to %s\n' "$repo_agents" "$target_agents"

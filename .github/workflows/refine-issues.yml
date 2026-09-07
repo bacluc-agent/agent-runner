@@ -34,6 +34,7 @@ jobs:
 
       - name: Refine issues
         id: refine
+        timeout-minutes: 22
         shell: bash
         env:
           AVAILABLE_MODELS: ${{ steps.model-availability.outputs.available-models }}
@@ -46,6 +47,8 @@ jobs:
 
           gh label create agent-refined -R "$GITHUB_REPOSITORY" \
             --color 1D76DB --description 'Refined by the issue-refiner agent' --force
+          gh label create ready-for-implementation -R "$GITHUB_REPOSITORY" \
+            --color 0E8A16 --description 'Approved for agent implementation' --force
 
           printf '\n\n\n\n\n\n'
           printf 'Fetching github issues...\n'
@@ -105,9 +108,14 @@ jobs:
 
           refined=0
           failed=0
+          SECONDS=0
 
           while IFS= read -r number; do
             printf '\n=== Refining issue #%s ===\n' "$number"
+            if (( SECONDS > 18 * 60 )); then
+              printf '%s\n' 'Budget reached; remaining issues are left for the next run.'
+              break
+            fi
             printf '\n\n\n\n\n\n'
 
             title="$(gh issue view "$number" --json title --jq '.title')"
@@ -138,7 +146,7 @@ jobs:
 
             out="$RUNNER_TEMP/refine-out-${number}.txt"
             set +e
-            timeout 10m opencode run --agent issue-refiner --model "$selection_model" --title "issue-refiner" \
+            timeout 8m opencode run --agent issue-refiner --model "$selection_model" --title "issue-refiner" \
               "$(< "$prompt")" 2> >(tee "${out}.stderr" >&2) | tee "$out"
             statuses=("${PIPESTATUS[@]}")
             opencode_status=${statuses[0]}
