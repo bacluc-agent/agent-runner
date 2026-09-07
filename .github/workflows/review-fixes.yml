@@ -40,7 +40,7 @@ jobs:
       - name: Check out target repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: bacluc-agent/agent-todo
+          repository: ${{ vars.ISSUE_REPOSITORY || github.repository }}
           fetch-depth: 0
           token: ${{ secrets.BACLUC_AGENT_GITHUB_TOKEN }}
 
@@ -49,6 +49,7 @@ jobs:
         shell: bash
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_REPOSITORY: ${{ vars.ISSUE_REPOSITORY || github.repository }}
           OVERRIDE_PROMPT: ${{ inputs.prompt }}
         run: |
           set -Eeuo pipefail
@@ -100,7 +101,7 @@ jobs:
 
           pr_metadata="{}"
           for pr_number in "${unique_prs[@]}"; do
-            pr_info=$(gh pr view "$pr_number" --json number,title,headRefName,url)
+            pr_info=$(gh pr view "$pr_number" -R "$ISSUE_REPOSITORY" --json number,title,headRefName,url)
             if [[ -n "${OVERRIDE_PROMPT:-}" ]]; then
               prompt="$OVERRIDE_PROMPT"
             else
