@@ -43,11 +43,16 @@ jobs:
       - name: Set up OpenCode
         uses: ./.github/actions/setup-opencode
 
+      - name: Check model availability
+        id: model-availability
+        uses: ./.github/actions/model-availability
+
       - name: Pick issue and dispatch
         id: pick
         shell: bash
         env:
           SELECTION_PROMPT: ${{ inputs.selection_prompt }}
+          AVAILABLE_MODELS: ${{ steps.model-availability.outputs.available-models }}
         run: |
           set -Eeuo pipefail
 
@@ -57,6 +62,10 @@ jobs:
 
           gh label create agent-running -R "$GITHUB_REPOSITORY" \
             --color 0E8A16 --description 'Selected by the hourly issue runner' --force
+
+          printf '\n\n\n\n\n\n'
+          printf 'Fetching github issues...\n'
+          printf '\n\n\n\n\n\n'
 
           # gh issue list -S returns nothing for no:label:<name> (gh client filter); the search API works.
           # Oldest-first: the 50-item page keeps the OLDEST 50 unclaimed issues instead of the
@@ -73,58 +82,22 @@ jobs:
           fi
           printf 'Unclaimed candidate issues (oldest first):\n'
           cat "$candidates"
+          printf '\n\n\n\n\n\n'
+          printf 'Selecting model...\n'
+          printf '\n\n\n\n\n\n'
 
-          available_models="$RUNNER_TEMP/opencode-models.out"
-          set +e
-          timeout 10m opencode models 2>&1 | tee "$available_models"
-          availability_statuses=("${PIPESTATUS[@]}")
-          availability_status=${availability_statuses[0]}
-          availability_tee_status=${availability_statuses[1]}
-          set -e
-          if (( availability_tee_status != 0 )); then
-            exit "$availability_tee_status"
-          fi
-          if (( availability_status != 0 )); then
-            printf 'Unable to verify model availability; not dispatching.\n' >&2
-            exit "$availability_status"
-          fi
           selection_model=''
-          mapfile -t free_models < <(grep -Eo 'opencode/[^[:space:]]+-free' "$available_models" | awk '!seen[$0]++')
-          for candidate in \
-            'opencode-go-openai/qwen3.8-flash' \
-            'opencode-go-openai-2/qwen3.8-flash' \
-            "${free_models[@]}"; do
-            case "$candidate" in
-              opencode-go-openai/qwen3.8-flash)
-                grep -Fxq "$candidate" "$available_models" && [[ -n "$OPENCODE_GO_API_KEY" ]] || continue
-                ;;
-              opencode-go-openai-2/qwen3.8-flash)
-                grep -Fxq "$candidate" "$available_models" && [[ -n "$OPENCODE_GO_2_API_KEY" ]] || continue
-                ;;
-              opencode/*-free) ;;
-              *) continue ;;
-            esac
-            probe_output="$RUNNER_TEMP/model-probe-${candidate//\//-}.out"
-            printf 'Model probe command: timeout 10s opencode --pure run --dir %q --model %q\n' "$RUNNER_TEMP" "$candidate"
-            printf 'Model probe prompt: %s\n' 'Respond with exactly OK.'
-            set +e
-            timeout 10s opencode --pure run --dir "$RUNNER_TEMP" --model "$candidate" 'Respond with exactly OK.' 2> >(tee "${probe_output}.stderr" >&2) | tee "$probe_output"
-            probe_statuses=("${PIPESTATUS[@]}")
-            set -e
-            probe_status=${probe_statuses[0]}
-            probe_tee_status=${probe_statuses[1]}
-            printf 'Model probe statuses: opencode=%s tee=%s\n' "$probe_status" "$probe_tee_status"
-            probe_text="$(< "$probe_output")"
-            if (( probe_status == 0 && probe_tee_status == 0 )) && [[ "$probe_text" =~ ^[[:space:]]*OK\.?[[:space:]]*$ ]]; then
-              selection_model="$candidate"
-              break
-            fi
-          done
+          if [[ -n "$AVAILABLE_MODELS" ]]; then
+            selection_model="$(printf '%s\n' "$AVAILABLE_MODELS" | awk 'NF { print; exit }')"
+          fi
           if [[ -z "$selection_model" ]]; then
             printf '%s\n' 'No issue-selection model is available; not dispatching.' >&2
             exit 1
           fi
           printf 'Issue selection model: %s\n' "$selection_model"
+          printf '\n\n\n\n\n\n'
+          printf 'Choosing issue...\n'
+          printf '\n\n\n\n\n\n'
 
           default_tail="$(cat scripts/issue-selection-tail.txt)"
           tail_instruction="${SELECTION_PROMPT:-$default_tail}"
@@ -138,7 +111,7 @@ jobs:
 
           selection="$RUNNER_TEMP/selection.out"
           set +e
-          timeout 10m opencode run --agent issue-selector --model "$selection_model" "$(< "$prompt")" 2> >(tee "${selection}.stderr" >&2) | tee "$selection"
+          timeout 10m opencode run --agent issue-selector --model "$selection_model" --title "issue-selector" "$(< "$prompt")" 2> >(tee "${selection}.stderr" >&2) | tee "$selection"
           selection_statuses=("${PIPESTATUS[@]}")
           selection_status=${selection_statuses[0]}
           selection_tee_status=${selection_statuses[1]}
@@ -169,6 +142,14 @@ jobs:
 
           printf '%s\n' 'Implementation prompt:'
           cat "$selection"
+
+      - name: Dump debug output
+        if: always()
+        shell: bash
+        env:
+          COORDINATOR_SESSION_TITLE: issue-selector
+        run: |
+          python3 scripts/dump_subagent_transcripts.py || true
 
   run:
     needs: select

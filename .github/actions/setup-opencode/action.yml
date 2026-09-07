@@ -2,7 +2,7 @@ name: Set up OpenCode
 description: >-
   Installs the OpenCode CLI and prepares the shared OpenCode configuration
   from the provision-machines repository. Relies on the job-level
-  GITHUB_TOKEN and at least one OPENCODE_GO API key env var set by the caller.
+  GITHUB_TOKEN set by the caller.
 runs:
   using: composite
   steps:
@@ -16,6 +16,7 @@ runs:
       env:
         SOURCE_REPOSITORY: https://github.com/bacluc/provision-machines.git
         CONFIG_PATH: deploys/development_tools/ai_agent_devcontainer/files/opencode
+        SKILLS_PATH: deploys/development_tools/ai_agent_devcontainer/files/claude/skills
       run: |
         set -Eeuo pipefail
 
@@ -57,9 +58,19 @@ runs:
         rm -rf "$config_dir"
         cp -a "$source_dir/$CONFIG_PATH" "$config_dir"
 
+        if [[ ! -d "$source_dir/$SKILLS_PATH" ]]; then
+          printf 'Missing skills directory: %s\n' "$SKILLS_PATH" >&2
+          exit 1
+        fi
+        if [[ -z "$(compgen -G "$source_dir/$SKILLS_PATH/*/SKILL.md" 2>/dev/null)" ]]; then
+          printf 'No SKILL.md files found in skills directory: %s\n' "$SKILLS_PATH" >&2
+          exit 1
+        fi
+        cp -a "$source_dir/$SKILLS_PATH" "$config_dir/skills"
+        printf 'Copied skills: %s\n' "$(ls "$config_dir/skills" | tr '\n' ' ')"
+
         python3 - "$config_dir" <<'PY'
         import pathlib
-        import re
         import sys
 
         root = pathlib.Path(sys.argv[1])
@@ -74,22 +85,6 @@ runs:
             if path.is_file() and path.name.lower() in {"agents.md", "agent.md"} \
                     and path.stem.lower() != "model-discovery":
                 path.write_text(path.read_text() + instruction)
-
-        config = root / "opencode.jsonc"
-        text = config.read_text()
-        pattern = re.compile(
-            r'("opencode-go-(?:anthropic|openai)(-2)?"\s*:\s*\{.*?'
-            r'"options"\s*:\s*\{)(.*?)(\}\s*,\s*"models")',
-            re.DOTALL,
-        )
-        def add_api_key(match):
-            key = "OPENCODE_GO_2_API_KEY" if match.group(2) else "OPENCODE_GO_API_KEY"
-            return f'{match.group(1)}\n        "apiKey": "{{env:{key}}}",{match.group(3)}{match.group(4)}'
-
-        text, count = pattern.subn(add_api_key, text)
-        if count != 4:
-            raise SystemExit(f"Expected four OpenCode Go providers, found {count}")
-        config.write_text(text)
 
         discovery = root / "agents" / "model-discovery.md"
         if not discovery.exists():

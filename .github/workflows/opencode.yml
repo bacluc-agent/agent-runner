@@ -12,22 +12,29 @@ on:
         required: false
         type: string
       model_choice:
-        description: "Preferred model (dropdown). Ignored when 'model' is filled in."
+        description: Preferred model from the dropdown. Ignored when 'model' is filled in.
         required: false
         type: choice
         default: auto
         options:
           - auto
+          - opencode/big-pickle
           - opencode/mimo-v2.5-free
           - opencode/nemotron-3-ultra-free
           - opencode/nemotron-3.5-lightning-free
           - opencode/muse-spark-1.3-contributor-free
           - opencode/ling-3.0-flash-fin-free
-          - opencode-go-openai/qwen3.8-flash
+          - opencode-go-openai/qwen3.8-max
           - opencode-go-openai/glm-5.3
           - opencode-go-openai/kimi-k3
-          - opencode-go-anthropic/qwen3.8-max
-          - opencode-go-openai-2/qwen3.8-flash
+          - opencode-go-openai/hy4-preview
+          - opencode-go-openai/gpt-5.6-luna
+          - opencode-go-openai/minimax-m2.5
+      timeout_minutes:
+        description: Job timeout in minutes
+        required: false
+        type: number
+        default: 120
   workflow_call:
     inputs:
       prompt:
@@ -38,6 +45,11 @@ on:
         description: "Exact model override (provider/model, for example opencode-go-openai/glm-5.2). Wins over the dropdown; leave empty for automatic discovery."
         required: false
         type: string
+      timeout_minutes:
+        description: Job timeout in minutes
+        required: false
+        type: number
+        default: 120
 
 permissions:
   actions: write
@@ -51,7 +63,7 @@ permissions:
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 130
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       OPENCODE_GO_API_KEY: ${{ secrets.OPENCODE_GO_API_KEY }}
@@ -59,22 +71,41 @@ jobs:
       BACLUC_AGENT_GITHUB_TOKEN: ${{ secrets.BACLUC_AGENT_GITHUB_TOKEN }}
 
     steps:
+      - name: Print inputs
+        run: |
+          printf "prompt: %s\n" "$PROMPT"
+          requested="${MODEL_TEXT:-}"
+          if [[ -z "$requested" && "${MODEL_CHOICE:-auto}" != auto ]]; then requested="$MODEL_CHOICE"; fi
+          printf "requested_model: %s\n" "$requested"
+          printf "timeout_minutes: %s\n" "$TIMEOUT_MINUTES"
+        env:
+          PROMPT: ${{ inputs.prompt }}
+          MODEL_TEXT: ${{ inputs.model }}
+          MODEL_CHOICE: ${{ inputs.model_choice }}
+          TIMEOUT_MINUTES: ${{ inputs.timeout_minutes }}
+
       - name: Check out target repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: bacluc-agent/agent-todo
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.BACLUC_AGENT_GITHUB_TOKEN }}
 
       - name: Set up OpenCode
         uses: ./.github/actions/setup-opencode
 
-      - name: Select model and run coordinator
+      - name: Check model availability
+        id: model-availability
+        uses: ./.github/actions/model-availability
+
+      - name: Select model
+        id: select-model
         shell: bash
         env:
           PROMPT: ${{ inputs.prompt }}
           MODEL_TEXT: ${{ inputs.model }}
           MODEL_CHOICE: ${{ inputs.model_choice }}
+          AVAILABLE_MODELS: ${{ steps.model-availability.outputs.available-models }}
           GITHUB_TOKEN: ${{ secrets.BACLUC_AGENT_GITHUB_TOKEN }}
           BACLUC_AGENT_GITHUB_TOKEN: ${{ secrets.BACLUC_AGENT_GITHUB_TOKEN }}
         run: |
@@ -86,95 +117,16 @@ jobs:
           printf '::add-mask::%s\n' "$GITHUB_TOKEN"
           printf '::add-mask::%s\n' "$OPENCODE_GO_API_KEY"
           printf '::add-mask::%s\n' "$OPENCODE_GO_2_API_KEY"
-          copilot_auth_content=''
-          if [[ -n "${BACLUC_AGENT_GITHUB_TOKEN:-}" ]]; then
-            printf '::add-mask::%s\n' "$BACLUC_AGENT_GITHUB_TOKEN"
-            copilot_auth_content="$(python3 -c 'import json, sys; token = sys.stdin.read().rstrip(); print(json.dumps({"github-copilot": {"type": "oauth", "refresh": token, "access": token}}, separators=(",", ":")))' <<<"$BACLUC_AGENT_GITHUB_TOKEN")"
-            printf '::add-mask::%s\n' "$copilot_auth_content"
-          fi
 
-          run_opencode() {
-            if [[ -n "$copilot_auth_content" ]]; then
-              OPENCODE_AUTH_CONTENT="$copilot_auth_content" opencode "$@"
-            else
-              opencode "$@"
-            fi
-          }
-
-          run_opencode_with_timeout() {
-            if [[ -n "$copilot_auth_content" ]]; then
-              OPENCODE_AUTH_CONTENT="$copilot_auth_content" timeout 10m opencode "$@"
-            else
-              timeout 10m opencode "$@"
-            fi
-          }
-
-          probe_model() {
-            local candidate="$1" probe_output statuses probe_status tee_status
-            probe_output="$RUNNER_TEMP/model-probe-${candidate//\//-}.out"
-            printf 'Model probe command: timeout 10s opencode --pure run --dir %q --model %q\n' "$RUNNER_TEMP" "$candidate"
-            printf 'Model probe prompt: %s\n' 'Respond with exactly OK.'
-            set +e
-            if [[ -n "$copilot_auth_content" ]]; then
-              OPENCODE_AUTH_CONTENT="$copilot_auth_content" timeout 10s opencode --pure run --dir "$RUNNER_TEMP" --model "$candidate" 'Respond with exactly OK.' 2> >(tee "${probe_output}.stderr" >&2) | tee "$probe_output"
-            else
-              timeout 10s opencode --pure run --dir "$RUNNER_TEMP" --model "$candidate" 'Respond with exactly OK.' 2> >(tee "${probe_output}.stderr" >&2) | tee "$probe_output"
-            fi
-            statuses=("${PIPESTATUS[@]}")
-            set -e
-            probe_status=${statuses[0]}
-            tee_status=${statuses[1]}
-            printf 'Model probe statuses: opencode=%s tee=%s\n' "$probe_status" "$tee_status"
-            probe_text="$(sed $'s/\033\\[[0-9;]*[[:alpha:]]//g' "$probe_output")"
-            if ((probe_status == 0 && tee_status == 0)) && grep -Eq '^[[:space:]]*OK\.?[[:space:]]*$' <<<"$probe_text"; then
-              return 0
-            fi
-            ((probe_status == 0 && tee_status == 0)) && [[ "$(< "$probe_output")" =~ ^OK[[:space:]]*\.?[[:space:]]*$ ]]
-          }
-
-          available_models="$RUNNER_TEMP/opencode-models.out"
-          printf '%s\n' 'Model availability command: opencode models'
-          set +e
-          run_opencode_with_timeout models 2>&1 | tee "$available_models"
-          available_statuses=("${PIPESTATUS[@]}")
-          available_command_status=${available_statuses[0]}
-          available_tee_status=${available_statuses[1]}
-          set -e
-          printf 'Model availability statuses: opencode=%s tee=%s\n' "$available_command_status" "$available_tee_status"
-          if ((available_tee_status != 0)); then
-            exit "$available_tee_status"
-          fi
-          if ((available_command_status != 0)); then
-            printf '%s\n' 'Unable to verify model availability: opencode models failed.' >&2
-            exit "$available_command_status"
-          fi
+          available_models_file="$RUNNER_TEMP/available-models.txt"
+          printf '%s\n' "$AVAILABLE_MODELS" > "$available_models_file"
+          printf '\n\n\n\n\n\n'
+          printf 'Choosing model...\n'
+          printf '\n\n\n\n\n\n'
 
           fallback_model=''
-          mapfile -t free_models < <(grep -E '^opencode/[^[:space:]]+-free$' "$available_models" | awk '!seen[$0]++')
-          for candidate in "${free_models[@]}"; do
-            if probe_model "$candidate"; then
-              fallback_model="$candidate"
-              break
-            fi
-          done
-          if [[ -z "$fallback_model" ]]; then
-            printf '%s\n' 'No verified free OpenCode model is available; checking paid Qwen fallback.'
-          fi
-          if [[ -z "$fallback_model" ]]; then
-          for candidate in \
-            'opencode-go-openai/qwen3.8-flash' \
-            'opencode-go-openai-2/qwen3.8-flash'; do
-            if grep -Fxq "$candidate" "$available_models"; then
-              case "$candidate" in
-                opencode-go-openai/qwen3.8-flash) [[ -n "$OPENCODE_GO_API_KEY" ]] || continue ;;
-                opencode-go-openai-2/qwen3.8-flash) [[ -n "$OPENCODE_GO_2_API_KEY" ]] || continue ;;
-              esac
-              if probe_model "$candidate"; then
-                fallback_model="$candidate"
-                break
-              fi
-            fi
-          done
+          if [[ -n "$AVAILABLE_MODELS" ]]; then
+            fallback_model="$(printf '%s\n' "$AVAILABLE_MODELS" | awk 'NF { print; exit }')"
           fi
           if [[ -z "$fallback_model" && -z "${requested:-}" ]]; then
             printf '%s\n' 'No coordinator fallback model is available; not dispatching.' >&2
@@ -186,7 +138,11 @@ jobs:
           if [[ -z "$model" ]]; then
             discovery_output="$RUNNER_TEMP/model-discovery.out"
             discovery_prompt="$(printf '%s\n' \
-              'Run opencode models. Follow your instructions to pick one available, verified model suitable for the user task, preferring free models. Do not do the task itself.' \
+              'The following models are already verified available (free models first, then paid Go models):' \
+              '<available-models>' \
+              "$AVAILABLE_MODELS" \
+              '</available-models>' \
+              'Pick one of these models suitable for the user task, preferring free models. Do not run opencode models, do not probe models, and do not check providers: availability is already verified.' \
               '<user-task>' \
               "$PROMPT" \
               '</user-task>' \
@@ -194,11 +150,7 @@ jobs:
               'Output exactly one line: CARRIERS: coordinator: provider/model')"
             printf 'Model discovery prompt:\n%s\n' "$discovery_prompt"
             set +e
-            if [[ -n "$copilot_auth_content" ]]; then
-              OPENCODE_AUTH_CONTENT="$copilot_auth_content" timeout 5m opencode run --agent model-discovery --model "$fallback_model" "$discovery_prompt" 2> >(tee "${discovery_output}.stderr" >&2) | tee "$discovery_output"
-            else
-              timeout 5m opencode run --agent model-discovery --model "$fallback_model" "$discovery_prompt" 2> >(tee "${discovery_output}.stderr" >&2) | tee "$discovery_output"
-            fi
+            timeout 5m opencode run --agent model-discovery --model "$fallback_model" "$discovery_prompt" 2> >(tee "${discovery_output}.stderr" >&2) | tee "$discovery_output"
             discovery_statuses=("${PIPESTATUS[@]}")
             discovery_status=${discovery_statuses[0]}
             discovery_tee_status=${discovery_statuses[1]}
@@ -208,20 +160,21 @@ jobs:
               exit "$discovery_tee_status"
             fi
             if ((discovery_status != 0)); then
-              printf '%s\n' 'Unable to discover a coordinator model; not dispatching.' >&2
-              exit "$discovery_status"
-            fi
-            model="$({ grep -oE 'coordinator: [^,[:space:]]+' "$discovery_output" || true; } | tail -n 1 | cut -d' ' -f2-)"
-            if [[ -z "$model" ]] || ! grep -Fxq "$model" "$available_models"; then
-              printf '%s\n' 'Model discovery returned no usable available model; not dispatching.' >&2
-              exit 1
+              printf 'Model discovery failed with status %s; falling back to the verified model %q.\n' "$discovery_status" "$fallback_model"
+              model="$fallback_model"
+            else
+              model="$({ grep -oE 'coordinator: [^,[:space:]]+' "$discovery_output" || true; } | tail -n 1 | cut -d' ' -f2-)"
+              if [[ -z "$model" ]] || ! grep -Fxq "$model" "$available_models_file"; then
+                printf 'Model discovery returned no usable available model; falling back to the verified model %q.\n' "$fallback_model"
+                model="$fallback_model"
+              fi
             fi
           else
             printf 'Model selection: preserving explicit model input: %q\n' "$requested"
           fi
 
           resolve_model() {
-            python3 - "$1" "$available_models" <<'PY'
+            python3 - "$1" "$available_models_file" <<'PY'
           import re
           import sys
 
@@ -284,20 +237,64 @@ jobs:
             printf 'Model availability: fallback requested %q is available; resolved model %q\n' "$fallback_model" "$fallback_resolved"
             model="$fallback_resolved"
           fi
+          printf '\n\n\n\n\n\n'
+          printf 'Chosen model is %s\n' "$model"
+          printf 'Now dispatching agent\n'
+          printf '\n\n\n\n\n\n'
 
-          printf 'Final coordinator command: opencode run --agent coordinator --model %q\n' "$model"
+          echo "model=${model}" >> "$GITHUB_OUTPUT"
+
+      - name: Run coordinator
+        id: coordinator
+        shell: bash
+        env:
+          PROMPT: ${{ inputs.prompt }}
+          MODEL: ${{ steps.select-model.outputs.model }}
+          COORDINATOR_TIMEOUT: ${{ inputs.timeout_minutes || 120 }}
+          GITHUB_TOKEN: ${{ secrets.BACLUC_AGENT_GITHUB_TOKEN }}
+          BACLUC_AGENT_GITHUB_TOKEN: ${{ secrets.BACLUC_AGENT_GITHUB_TOKEN }}
+        run: |
+          set -Eeuo pipefail
+
+          coordinator_session_title='coordinator-run'
+          PROMPT=$(printf 'model: %s \n %s' "$MODEL" "$PROMPT")
+          printf 'Final coordinator command: opencode run --agent coordinator --model %q --title %q\n' "$MODEL" "$coordinator_session_title"
           stop_token="$(openssl rand -hex 8)"
           printf '::stop-commands::%s\n' "$stop_token"
           printf 'Coordinator prompt:\n%s\n' "$PROMPT"
-          printf '::stop-commands::%s\n' "$stop_token"
+          printf '::%s::\n' "$stop_token"
           set +e
-          run_opencode run --agent coordinator --model "$model" "$PROMPT" 2>&1 | tee "$RUNNER_TEMP/coordinator.out"
+          timeout "${COORDINATOR_TIMEOUT}m" opencode run --agent coordinator --model "$MODEL" --title "$coordinator_session_title" "$PROMPT" 2>&1 | tee "$RUNNER_TEMP/coordinator.out"
           coordinator_statuses=("${PIPESTATUS[@]}")
           coordinator_status=${coordinator_statuses[0]}
           coordinator_tee_status=${coordinator_statuses[1]}
           set -e
           printf 'Coordinator statuses: opencode=%s tee=%s\n' "$coordinator_status" "$coordinator_tee_status"
+          echo "coordinator_status=${coordinator_status}" >> "$GITHUB_OUTPUT"
+          echo "coordinator_tee_status=${coordinator_tee_status}" >> "$GITHUB_OUTPUT"
           if ((coordinator_status != 0)); then
             exit "$coordinator_status"
           fi
           exit "$coordinator_tee_status"
+
+      - name: Update cache on coordinator failure
+        if: failure() && steps.select-model.outputs.model != ''
+        shell: bash
+        env:
+          MODEL: ${{ steps.select-model.outputs.model }}
+          GITHUB_TOKEN: ${{ secrets.BACLUC_AGENT_GITHUB_TOKEN }}
+        run: |
+          set -Eeuo pipefail
+          cache_json=$(gh issue view 49 --json body --jq '.body' 2>/dev/null || echo '{}')
+          checked="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          new_cache=$(echo "$cache_json" | jq --arg model "$MODEL" --arg checked "$checked" \
+            '. + {($model): {"ok": false, "checked": $checked}}')
+          gh issue edit 49 --body "$new_cache" || true
+
+      - name: Dump debug output
+        if: always()
+        shell: bash
+        env:
+          COORDINATOR_SESSION_TITLE: coordinator-run
+        run: |
+          python3 scripts/dump_subagent_transcripts.py || true
