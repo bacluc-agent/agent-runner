@@ -11,7 +11,16 @@ import tempfile
 import urllib.request
 from datetime import datetime, timezone
 
-CACHE_ISSUE = int(os.environ.get("MODEL_AVAILABILITY_CACHE_ISSUE") or "49")
+def _cache_issue() -> int:
+    raw = os.environ.get("MODEL_AVAILABILITY_CACHE_ISSUE") or "49"
+    try:
+        return int(raw)
+    except ValueError:
+        print(f"warning: invalid MODEL_AVAILABILITY_CACHE_ISSUE {raw!r}; using 49", file=sys.stderr)
+        return 49
+
+
+CACHE_ISSUE = _cache_issue()
 AVAILABLE_TTL_HOURS = 24
 FAILED_TTL_HOURS = 2
 PROVIDERS = (
