@@ -75,11 +75,10 @@ jobs:
           printf 'Fetching github issues...\n'
           printf '\n\n\n\n\n\n'
 
-          # gh issue list -S returns nothing for no:label:<name> (gh client filter); the search API works.
           # Oldest-first: the 50-item page keeps the OLDEST 50 unclaimed issues instead of the
           # newest 50, so backlog items beyond the cap are the newest, not the oldest.
           search_json="$RUNNER_TEMP/candidates.json"
-          gh api "search/issues?q=repo:${ISSUE_REPOSITORY}+is:open+is:issue+label:ready-for-implementation+no:label:agent-running+sort:created-asc&per_page=50" \
+          gh api "search/issues?q=repo:${ISSUE_REPOSITORY}+is:open+is:issue+label:ready-for-implementation+-label:agent-running+sort:created-asc&per_page=50" \
             --jq '.items' > "$search_json"
 
           candidates="$RUNNER_TEMP/candidate-numbers.txt"
