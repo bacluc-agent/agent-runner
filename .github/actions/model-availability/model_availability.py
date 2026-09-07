@@ -22,7 +22,6 @@ PROVIDERS = (
 )
 MAX_CONCURRENT = 5
 PROBE_TIMEOUT_SECONDS = 60
-MODELS_ENDPOINT = "https://opencode.ai/zen/go/v1/models"
 PROBE_PROMPT = "Respond with exactly OK."
 
 
@@ -70,32 +69,69 @@ def parse_go_model_ids(models_json: str) -> list[str]:
         return []
 
 
-def discover_models() -> tuple[list[str], list[str]]:
+def load_provider_base_urls() -> dict[str, str]:
+    """Run `opencode debug config`, return {provider_id: baseURL} for providers with a baseURL."""
+    try:
+        output = subprocess.run(
+            ["opencode", "debug", "config"], check=True, capture_output=True, text=True, timeout=60
+        ).stdout
+        config = json.loads(output)
+    except Exception as e:
+        print(f"warning: failed to read opencode config: {e}", file=sys.stderr)
+        return {}
+    return {
+        name: provider.get("options", {}).get("baseURL")
+        for name, provider in config.get("provider", {}).items()
+        if provider.get("options", {}).get("baseURL")
+    }
+
+
+def models_endpoint_for(base_url: str) -> str:
+    """Anthropic-style baseURLs end in /messages; the models endpoint is always <api-root>/models."""
+    return base_url.rstrip("/").removesuffix("/messages") + "/models"
+
+
+def fetch_model_ids(endpoint: str) -> list[str]:
+    """GET the v1/models endpoint with curl User-Agent + x-opencode-session; [] + warning on failure."""
+    try:
+        session_id = os.urandom(16).hex()
+        request = urllib.request.Request(
+            endpoint,
+            headers={"x-opencode-session": session_id, "User-Agent": "curl/8.5.0"},
+        )
+        with urllib.request.urlopen(request, timeout=30) as response:
+            return parse_go_model_ids(response.read().decode())
+    except Exception as e:
+        print(f"warning: failed to discover models from {endpoint}: {e}", file=sys.stderr)
+        return []
+
+
+def discover_models() -> tuple[list[str], dict[str, list[str]]]:
+    """free_models from `opencode models`; provider_models: {provider: model_ids} per provider."""
     output = subprocess.run(
         ["opencode", "models"], check=True, capture_output=True, text=True, timeout=600
     ).stdout
     free_models = parse_free_models(output)
-    go_model_ids = []
-    try:
-        session_id = os.urandom(16).hex()
-        request = urllib.request.Request(
-            MODELS_ENDPOINT, headers={"x-opencode-session": session_id}
-        )
-        with urllib.request.urlopen(request, timeout=30) as response:
-            go_model_ids = parse_go_model_ids(response.read().decode())
-    except Exception:
-        pass
-    return free_models, go_model_ids
+    base_urls = load_provider_base_urls()
+    provider_models = {}
+    for provider, _ in PROVIDERS:
+        base_url = base_urls.get(provider)
+        if not base_url:
+            print(f"warning: no baseURL configured for {provider}", file=sys.stderr)
+            continue
+        provider_models[provider] = fetch_model_ids(models_endpoint_for(base_url))
+    return free_models, provider_models
 
 
 def build_candidates(
-    free_models: list[str], go_model_ids: list[str], env: dict
+    free_models: list[str], provider_models: dict[str, list[str]], env: dict
 ) -> list[str]:
     candidates = []
-    for model in go_model_ids:
-        for provider, key_env in PROVIDERS:
-            if env.get(key_env):
-                candidates.append(f"{provider}/{model}")
+    for provider, key_env in PROVIDERS:
+        if not env.get(key_env):
+            continue
+        for model in provider_models.get(provider, []):
+            candidates.append(f"{provider}/{model}")
     candidates.extend(free_models)
     return candidates
 
@@ -162,14 +198,14 @@ def merge_results(cache: dict, results: dict[str, bool], checked: str) -> dict:
 
 
 def available_models(
-    cache: dict, free_models: list[str], go_model_ids: list[str]
+    cache: dict, free_models: list[str], provider_models: dict[str, list[str]]
 ) -> list[str]:
     available = []
     for model in free_models:
         if cache.get(model, {}).get("ok"):
             available.append(model)
     for provider, _ in PROVIDERS:
-        for model in go_model_ids:
+        for model in provider_models.get(provider, []):
             candidate = f"{provider}/{model}"
             if cache.get(candidate, {}).get("ok"):
                 available.append(candidate)
@@ -197,8 +233,8 @@ def write_outputs(cache: dict, available: list[str]) -> None:
 
 def main() -> int:
     cache = read_cache()
-    free_models, go_model_ids = discover_models()
-    candidates = build_candidates(free_models, go_model_ids, os.environ)
+    free_models, provider_models = discover_models()
+    candidates = build_candidates(free_models, provider_models, os.environ)
     now = datetime.now(timezone.utc)
     pending = [c for c in candidates if not is_cache_fresh(cache.get(c), now)]
     work_dir = os.environ.get("RUNNER_TEMP") or tempfile.gettempdir()
@@ -206,7 +242,7 @@ def main() -> int:
     checked = now.strftime("%Y-%m-%dT%H:%M:%SZ")
     cache = merge_results(cache, results, checked)
     write_cache(cache)
-    available = available_models(cache, free_models, go_model_ids)
+    available = available_models(cache, free_models, provider_models)
     write_outputs(cache, available)
     print("Available models:")
     print("\n".join(available) if available else "(none)")
