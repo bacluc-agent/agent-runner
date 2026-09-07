@@ -1,6 +1,9 @@
 name: Refine issues
 
 on:
+  push:
+    branches:
+      - issue-111-refine-step
   schedule:
     - cron: "7 * * * *"
   workflow_dispatch:

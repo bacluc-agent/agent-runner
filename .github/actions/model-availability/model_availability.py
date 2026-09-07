@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Probe model availability and merge results into the cache on issue #49."""
+"""Probe model availability and merge results into the cache issue."""
 
 import concurrent.futures
 import json
@@ -11,7 +11,16 @@ import tempfile
 import urllib.request
 from datetime import datetime, timezone
 
-CACHE_ISSUE = 49
+def _cache_issue() -> int:
+    raw = os.environ.get("MODEL_AVAILABILITY_CACHE_ISSUE") or "49"
+    try:
+        return int(raw)
+    except ValueError:
+        print(f"warning: invalid MODEL_AVAILABILITY_CACHE_ISSUE {raw!r}; using 49", file=sys.stderr)
+        return 49
+
+
+CACHE_ISSUE = _cache_issue()
 AVAILABLE_TTL_HOURS = 24
 FAILED_TTL_HOURS = 2
 PROVIDERS = (
@@ -91,14 +100,14 @@ def models_endpoint_for(base_url: str) -> str:
     return base_url.rstrip("/").removesuffix("/messages") + "/models"
 
 
-def fetch_model_ids(endpoint: str) -> list[str]:
+def fetch_model_ids(endpoint: str, api_key: str | None = None) -> list[str]:
     """GET the v1/models endpoint with curl User-Agent + x-opencode-session; [] + warning on failure."""
     try:
         session_id = os.urandom(16).hex()
-        request = urllib.request.Request(
-            endpoint,
-            headers={"x-opencode-session": session_id, "User-Agent": "curl/8.5.0"},
-        )
+        headers = {"x-opencode-session": session_id, "User-Agent": "curl/8.5.0"}
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+        request = urllib.request.Request(endpoint, headers=headers)
         with urllib.request.urlopen(request, timeout=30) as response:
             return parse_go_model_ids(response.read().decode())
     except Exception as e:
@@ -108,18 +117,29 @@ def fetch_model_ids(endpoint: str) -> list[str]:
 
 def discover_models() -> tuple[list[str], dict[str, list[str]]]:
     """free_models from `opencode models`; provider_models: {provider: model_ids} per provider."""
-    output = subprocess.run(
+    result = subprocess.run(
         ["opencode", "models"], check=True, capture_output=True, text=True, timeout=600
-    ).stdout
-    free_models = parse_free_models(output)
+    )
+    log_dir = os.path.join(
+        os.environ.get("RUNNER_TEMP") or tempfile.gettempdir(), "model-probes"
+    )
+    try:
+        os.makedirs(log_dir, exist_ok=True)
+        with open(os.path.join(log_dir, "opencode-models.log"), "w") as handle:
+            handle.write(result.stdout)
+            handle.write(getattr(result, "stderr", ""))
+    except OSError:
+        pass
+    free_models = parse_free_models(result.stdout)
     base_urls = load_provider_base_urls()
     provider_models = {}
-    for provider, _ in PROVIDERS:
+    for provider, key_env in PROVIDERS:
         base_url = base_urls.get(provider)
         if not base_url:
             print(f"warning: no baseURL configured for {provider}", file=sys.stderr)
             continue
-        provider_models[provider] = fetch_model_ids(models_endpoint_for(base_url))
+        api_key = os.environ.get(key_env)
+        provider_models[provider] = fetch_model_ids(models_endpoint_for(base_url), api_key=api_key)
     return free_models, provider_models
 
 
@@ -170,6 +190,16 @@ def probe_model(
         )
     except subprocess.TimeoutExpired:
         return False
+    log_dir = os.path.join(work_dir, "model-probes")
+    try:
+        os.makedirs(log_dir, exist_ok=True)
+        with open(
+            os.path.join(log_dir, "probe-" + candidate.replace("/", "-") + ".log"), "w"
+        ) as handle:
+            handle.write(result.stdout)
+            handle.write(result.stderr)
+    except OSError:
+        pass
     text = re.sub(r"\x1b\[[0-9;]*[a-zA-Z]", "", result.stdout)
     return result.returncode == 0 and re.fullmatch(r"\s*OK\.?\s*", text) is not None
 
@@ -214,6 +244,7 @@ def available_models(
 
 def write_outputs(cache: dict, available: list[str]) -> None:
     lines = [
+        f"cache-issue={CACHE_ISSUE}",
         "cache-json<<CACHE_EOF",
         json.dumps(cache),
         "CACHE_EOF",
