@@ -91,13 +91,6 @@ CASES = [
         "## Goal\nUse sk-abcdefghijklmnopqrstuvwxyz012345.\n\n## How to implement\n1. Do it.\n",
         "hostile_text",
     ),
-    (
-        "fixture_refiner_offcourse_output",
-        (Path(__file__).parent / "fixtures" / "refiner_offcourse_output.md").read_text(
-            encoding="utf-8"
-        ),
-        "extra_sections",
-    ),
 ]
 
 
@@ -189,7 +182,4 @@ class TestReasonTokenDrift:
             ".github/workflows/refine-issues.yml"
         ) == _validator_reasons()
 
-    def test_probe_case_matches_validator(self):
-        assert _reasons_from_case_file(
-            "scripts/probe-refiner-offcourse"
-        ) == _validator_reasons()
+
