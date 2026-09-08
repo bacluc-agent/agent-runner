@@ -123,8 +123,12 @@ jobs:
             break
           done
           if [[ -z "$selection_model" ]]; then
-            printf '%s\n' 'No issue-selection model is available; not dispatching.' >&2
-            exit 1
+            selection_model=$(head -n1 "$available_models_file")
+            if [[ -z "$selection_model" ]]; then
+              printf '%s\n' 'No issue-selection model is available; not dispatching.' >&2
+              exit 1
+            fi
+            printf '%s\n' "Using fallback model: $selection_model" >&2
           fi
           printf 'Issue selection model: %s\n' "$selection_model"
           printf '\n\n\n\n\n\n'
