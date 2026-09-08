@@ -1,4 +1,7 @@
+import ast
+import re
 import tempfile
+from pathlib import Path
 
 import pytest
 
@@ -88,6 +91,13 @@ CASES = [
         "## Goal\nUse sk-abcdefghijklmnopqrstuvwxyz012345.\n\n## How to implement\n1. Do it.\n",
         "hostile_text",
     ),
+    (
+        "fixture_refiner_offcourse_output",
+        (Path(__file__).parent / "fixtures" / "refiner_offcourse_output.md").read_text(
+            encoding="utf-8"
+        ),
+        "extra_sections",
+    ),
 ]
 
 
@@ -146,3 +156,40 @@ class TestMain:
             f.flush()
             assert validate_refined_issue.main(["--file", f.name]) == 1
         assert capsys.readouterr().out == "REFINE_VALIDATION: empty\n"
+
+
+def _validator_reasons() -> set[str]:
+    source = (Path(__file__).parent / "validate_refined_issue.py").read_text(
+        encoding="utf-8"
+    )
+    reasons = set()
+    for node in ast.walk(ast.parse(source)):
+        if (
+            isinstance(node, ast.Return)
+            and isinstance(node.value, ast.Tuple)
+            and len(node.value.elts) == 2
+            and isinstance(node.value.elts[1], ast.Constant)
+            and isinstance(node.value.elts[1].value, str)
+        ):
+            reasons.add(node.value.elts[1].value)
+    return reasons
+
+
+def _reasons_from_case_file(path: str) -> set[str]:
+    text = Path(path).read_text(encoding="utf-8")
+    m = re.search(r'case "\$reason" in\s*\n\s*([a-z_0-9|]+)\)', text)
+    if not m:
+        raise ValueError(f"Could not find reason case arm in {path}")
+    return set(m.group(1).split("|"))
+
+
+class TestReasonTokenDrift:
+    def test_workflow_case_matches_validator(self):
+        assert _reasons_from_case_file(
+            ".github/workflows/refine-issues.yml"
+        ) == _validator_reasons()
+
+    def test_probe_case_matches_validator(self):
+        assert _reasons_from_case_file(
+            "scripts/probe-refiner-offcourse"
+        ) == _validator_reasons()

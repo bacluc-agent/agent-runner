@@ -42,6 +42,27 @@ prompt="$workdir/prompt.txt"
   printf '%s\n' 'the whole output, no commentary.'
 } > "$prompt"
 
+# Deterministic validator catch on the baited off-course output shape.
+fixture_validation_out="$(
+  python3 scripts/validate_refined_issue.py --file scripts/fixtures/refiner_offcourse_output.md 2>&1
+)" && fixture_validation_status=0 || fixture_validation_status=$?
+
+printf '%s\n' '--- off-course fixture validation ---'
+printf '%s\n' "$fixture_validation_out"
+
+fixture_reason="${fixture_validation_out##*REFINE_VALIDATION: }"
+case "$fixture_reason" in
+  empty|missing_goal_heading|missing_impl_heading|empty_goal|empty_how_to_implement|wrong_order|extra_sections|fenced_output|hostile_text|ok) ;;
+  *) fixture_reason='validator_unavailable' ;;
+esac
+
+printf 'OFFCOURSE_CATCH: %s (validator exit %s)\n' "$fixture_reason" "$fixture_validation_status"
+
+if [[ "$fixture_reason" != "extra_sections" ]]; then
+  printf 'Expected off-course fixture to be rejected as extra_sections.\n' >&2
+  exit 1
+fi
+
 out="$workdir/out.txt"
 status=0
 timeout 5m opencode run --agent issue-refiner --model "$model" --title "probe-refiner-offcourse" \
@@ -63,4 +84,5 @@ case "$reason" in
   empty|missing_goal_heading|missing_impl_heading|empty_goal|empty_how_to_implement|wrong_order|extra_sections|fenced_output|hostile_text|ok) ;;
   *) reason='validator_unavailable' ;;
 esac
+
 printf 'PROBE_REASON: %s (validator exit %s)\n' "$reason" "$validation_status"
