@@ -69,27 +69,7 @@ runs:
         cp -a "$source_dir/$SKILLS_PATH" "$config_dir/skills"
         printf 'Copied skills: %s\n' "$(ls "$config_dir/skills" | tr '\n' ' ')"
 
-        python3 - "$config_dir" <<'PY'
-        import pathlib
-        import sys
-
-        root = pathlib.Path(sys.argv[1])
-        instruction = """
-
-        ## Agent progress and branches
-
-        Track progress in an issue in https://github.com/bacluc-agent/agent-todo. Use the assigned issue, or create one when none is assigned, and continue from that issue. Always push changes to a branch so work is not lost, and record the branch name in the issue.
-        """
-
-        for path in root.rglob("*"):
-            if path.is_file() and path.name.lower() in {"agents.md", "agent.md"} \
-                    and path.stem.lower() != "model-discovery":
-                path.write_text(path.read_text() + instruction)
-
-        discovery = root / "agents" / "model-discovery.md"
-        if not discovery.exists():
-            raise SystemExit(f"Missing model-discovery agent file: {discovery}")
-        PY
+        [[ -f "$config_dir/agents/model-discovery.md" ]] || { echo "Missing model-discovery agent file"; exit 1; }
 
         mkdir -p "$HOME/.config"
         rm -rf "$HOME/.config/opencode"
