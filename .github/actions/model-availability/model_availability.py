@@ -11,16 +11,6 @@ import tempfile
 import urllib.request
 from datetime import datetime, timezone
 
-def _cache_issue() -> int:
-    raw = os.environ.get("MODEL_AVAILABILITY_CACHE_ISSUE") or "49"
-    try:
-        return int(raw)
-    except ValueError:
-        print(f"warning: invalid MODEL_AVAILABILITY_CACHE_ISSUE {raw!r}; using 49", file=sys.stderr)
-        return 49
-
-
-CACHE_ISSUE = _cache_issue()
 AVAILABLE_TTL_HOURS = 24
 FAILED_TTL_HOURS = 2
 PROVIDERS = (
@@ -32,6 +22,7 @@ PROVIDERS = (
 MAX_CONCURRENT = 5
 PROBE_TIMEOUT_SECONDS = 60
 PROBE_PROMPT = "Respond with exactly OK."
+CACHE_ISSUE_TITLE = "model-discovery cache"
 
 
 def run_gh(*args: str) -> str:
@@ -40,10 +31,32 @@ def run_gh(*args: str) -> str:
     ).stdout
 
 
-def read_cache() -> dict:
+def issue_repo() -> str:
+    return os.environ.get("ISSUE_REPOSITORY", "")
+
+
+def resolve_cache_issue() -> str | None:
+    """Cache issue number: MODEL_AVAILABILITY_CACHE_ISSUE env, else auto-detect by title."""
+    env_issue = os.environ.get("MODEL_AVAILABILITY_CACHE_ISSUE", "").strip()
+    if env_issue:
+        return env_issue
+    repo = issue_repo()
+    if not repo:
+        print("warning: ISSUE_REPOSITORY not set; cannot auto-detect the cache issue", file=sys.stderr)
+        return None
+    try:
+        query = f"search/issues?q=repo:{repo}+is:issue+in:title+%22{CACHE_ISSUE_TITLE.replace(' ', '+')}%22"
+        number = run_gh("api", query, "--jq", ".items[0].number // empty").strip()
+        return number or None
+    except Exception as e:
+        print(f"warning: failed to auto-detect the cache issue: {e}", file=sys.stderr)
+        return None
+
+
+def read_cache(cache_issue: str) -> dict:
     try:
         body = run_gh(
-            "issue", "view", str(CACHE_ISSUE), "--json", "body", "--jq", ".body"
+            "issue", "view", str(cache_issue), "--json", "body", "--jq", ".body"
         )
         cache = json.loads(body)
         return cache if isinstance(cache, dict) else {}
@@ -51,9 +64,9 @@ def read_cache() -> dict:
         return {}
 
 
-def write_cache(cache: dict) -> None:
+def write_cache(cache_issue: str, cache: dict) -> None:
     try:
-        run_gh("issue", "edit", str(CACHE_ISSUE), "--body", json.dumps(cache))
+        run_gh("issue", "edit", str(cache_issue), "--body", json.dumps(cache))
     except Exception:
         pass
 
@@ -242,9 +255,9 @@ def available_models(
     return list(dict.fromkeys(available))
 
 
-def write_outputs(cache: dict, available: list[str]) -> None:
+def write_outputs(cache_issue: str | None, cache: dict, available: list[str]) -> None:
     lines = [
-        f"cache-issue={CACHE_ISSUE}",
+        f"cache-issue={cache_issue or ''}",
         "cache-json<<CACHE_EOF",
         json.dumps(cache),
         "CACHE_EOF",
@@ -263,7 +276,10 @@ def write_outputs(cache: dict, available: list[str]) -> None:
 
 
 def main() -> int:
-    cache = read_cache()
+    cache_issue = resolve_cache_issue()
+    cache = {}
+    if cache_issue is not None:
+        cache = read_cache(cache_issue)
     free_models, provider_models = discover_models()
     candidates = build_candidates(free_models, provider_models, os.environ)
     now = datetime.now(timezone.utc)
@@ -272,9 +288,10 @@ def main() -> int:
     results = probe_candidates(pending, work_dir)
     checked = now.strftime("%Y-%m-%dT%H:%M:%SZ")
     cache = merge_results(cache, results, checked)
-    write_cache(cache)
+    if cache_issue is not None:
+        write_cache(cache_issue, cache)
     available = available_models(cache, free_models, provider_models)
-    write_outputs(cache, available)
+    write_outputs(cache_issue, cache, available)
     print("Available models:")
     print("\n".join(available) if available else "(none)")
     return 0

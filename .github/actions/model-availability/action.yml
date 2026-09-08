@@ -2,12 +2,15 @@ name: Check model availability
 description: >-
   Probes every model of every OpenCode Go provider (plus free models) for
   availability and merges the results into the model-availability cache
-  stored on the model-availability cache issue (default #49). Available models cache for 24 hours, failed models
+  issue in the issue repository. The cache issue number is taken from the
+  MODEL_AVAILABILITY_CACHE_ISSUE env var, or auto-detected by searching for
+  an issue titled "model-discovery cache" in the repository set via
+  ISSUE_REPOSITORY. Available models cache for 24 hours, failed models
   for 2 hours. Relies on the job-level OPENCODE_GO_API_KEY and
   OPENCODE_GO_2_API_KEY env vars set by the caller.
 outputs:
   cache-issue:
-    description: Issue number used as the model-availability cache
+    description: Resolved model-availability cache issue number (empty when none)
     value: ${{ steps.check.outputs.cache-issue }}
   cache-json:
     description: Merged cache JSON (current cache plus fresh probe results)

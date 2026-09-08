@@ -247,6 +247,57 @@ class TestAvailableModels:
         ]
 
 
+class TestResolveCacheIssue:
+    def test_env_var_wins(self, monkeypatch):
+        monkeypatch.setenv("MODEL_AVAILABILITY_CACHE_ISSUE", "7")
+        monkeypatch.setenv("ISSUE_REPOSITORY", "bacluc-agent/agent-todo")
+        calls = []
+
+        def fake_run_gh(*args):
+            calls.append(args)
+
+        monkeypatch.setattr(model_availability, "run_gh", fake_run_gh)
+        assert model_availability.resolve_cache_issue() == "7"
+        assert calls == []
+
+    def test_auto_detect_by_title(self, monkeypatch):
+        monkeypatch.delenv("MODEL_AVAILABILITY_CACHE_ISSUE", raising=False)
+        monkeypatch.setenv("ISSUE_REPOSITORY", "bacluc-agent/agent-todo")
+        calls = []
+
+        def fake_run_gh(*args):
+            calls.append(args)
+            return "3\n"
+
+        monkeypatch.setattr(model_availability, "run_gh", fake_run_gh)
+        assert model_availability.resolve_cache_issue() == "3"
+        assert calls == [
+            (
+                "api",
+                "search/issues?q=repo:bacluc-agent/agent-todo+is:issue+in:title+%22model-discovery+cache%22",
+                "--jq",
+                ".items[0].number // empty",
+            )
+        ]
+
+    def test_no_repo_returns_none(self, monkeypatch, capsys):
+        monkeypatch.delenv("MODEL_AVAILABILITY_CACHE_ISSUE", raising=False)
+        monkeypatch.delenv("ISSUE_REPOSITORY", raising=False)
+        assert model_availability.resolve_cache_issue() is None
+        assert "warning: ISSUE_REPOSITORY not set" in capsys.readouterr().err
+
+    def test_search_failure_returns_none(self, monkeypatch, capsys):
+        monkeypatch.delenv("MODEL_AVAILABILITY_CACHE_ISSUE", raising=False)
+        monkeypatch.setenv("ISSUE_REPOSITORY", "bacluc-agent/agent-todo")
+
+        def fail(*args):
+            raise RuntimeError("gh failed")
+
+        monkeypatch.setattr(model_availability, "run_gh", fail)
+        assert model_availability.resolve_cache_issue() is None
+        assert "warning: failed to auto-detect the cache issue" in capsys.readouterr().err
+
+
 class TestReadCache:
     def test_reads_issue_body(self, monkeypatch):
         monkeypatch.setattr(
@@ -254,7 +305,7 @@ class TestReadCache:
             "run_gh",
             lambda *args: '{"opencode/a-free": {"ok": true, "checked": "x"}}',
         )
-        assert model_availability.read_cache() == {
+        assert model_availability.read_cache("49") == {
             "opencode/a-free": {"ok": True, "checked": "x"}
         }
 
@@ -263,7 +314,7 @@ class TestReadCache:
             raise RuntimeError("gh failed")
 
         monkeypatch.setattr(model_availability, "run_gh", fail)
-        assert model_availability.read_cache() == {}
+        assert model_availability.read_cache("49") == {}
 
 
 class TestWriteCache:
@@ -274,7 +325,7 @@ class TestWriteCache:
             calls.append(args)
 
         monkeypatch.setattr(model_availability, "run_gh", fake_run_gh)
-        model_availability.write_cache({"a": 1})
+        model_availability.write_cache("49", {"a": 1})
         assert calls == [("issue", "edit", "49", "--body", '{"a": 1}')]
 
     def test_swallows_failure(self, monkeypatch):
@@ -282,7 +333,7 @@ class TestWriteCache:
             raise RuntimeError("gh failed")
 
         monkeypatch.setattr(model_availability, "run_gh", fail)
-        model_availability.write_cache({"a": 1})
+        model_availability.write_cache("49", {"a": 1})
 
 
 class TestModelsEndpointFor:

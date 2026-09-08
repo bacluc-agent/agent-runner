@@ -9,7 +9,7 @@ Set these in Settings → Secrets and variables → Actions → Variables:
 | Variable                         | Description                                                    | Default             |
 | -------------------------------- | -------------------------------------------------------------- | ------------------- |
 | `ISSUE_REPOSITORY`               | Repository for issue tracking and cache (format: `owner/repo`) | `github.repository` |
-| `MODEL_AVAILABILITY_CACHE_ISSUE` | Issue number used as the model-availability cache              | `49`                |
+| `MODEL_AVAILABILITY_CACHE_ISSUE` | Issue number used as the model-availability cache              | auto-detected       |
 
 ## Secrets
 
