@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GITHUB_TOKEN: ${{ secrets.BACLUC_AGENT_GITHUB_TOKEN }}
       OPENCODE_GO_API_KEY: ${{ secrets.OPENCODE_GO_API_KEY }}
       OPENCODE_GO_2_API_KEY: ${{ secrets.OPENCODE_GO_2_API_KEY }}
       ISSUE_REPOSITORY: ${{ vars.ISSUE_REPOSITORY || github.repository }}
@@ -24,8 +24,8 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: bacluc-agent/agent-todo
-          token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ vars.ISSUE_REPOSITORY || github.repository }}
+          token: ${{ secrets.BACLUC_AGENT_GITHUB_TOKEN }}
 
       - name: Set up OpenCode
         uses: ./.github/actions/setup-opencode
@@ -47,9 +47,9 @@ jobs:
           printf '::add-mask::%s\n' "$OPENCODE_GO_API_KEY"
           printf '::add-mask::%s\n' "$OPENCODE_GO_2_API_KEY"
 
-          gh label create agent-refined -R "$GITHUB_REPOSITORY" \
+          gh label create agent-refined -R "$ISSUE_REPOSITORY" \
             --color 1D76DB --description 'Refined by the issue-refiner agent' --force
-          gh label create ready-for-implementation -R "$GITHUB_REPOSITORY" \
+          gh label create ready-for-implementation -R "$ISSUE_REPOSITORY" \
             --color 0E8A16 --description 'Approved for agent implementation' --force
 
           printf '\n\n\n\n\n\n'
@@ -57,7 +57,7 @@ jobs:
           printf '\n\n\n\n\n\n'
 
           search_json="$RUNNER_TEMP/candidates.json"
-          gh api "search/issues?q=repo:${GITHUB_REPOSITORY}+is:open+is:issue+-label:agent-refined+-label:ready-for-implementation+-label:agent-ignore+-label:agent-running+sort:created-asc&per_page=5" \
+          gh api "search/issues?q=repo:${ISSUE_REPOSITORY}+is:open+is:issue+-label:agent-refined+-label:ready-for-implementation+-label:agent-ignore+-label:agent-running+sort:created-asc&per_page=5" \
             --jq '.items' > "$search_json"
 
           candidates="$RUNNER_TEMP/candidate-numbers.txt"
@@ -180,8 +180,8 @@ jobs:
                 break
               fi
               if (( validation_status == 0 )); then
-                gh issue edit "$number" --body-file "$out" -R "$GITHUB_REPOSITORY"
-                gh issue edit "$number" --add-label "agent-refined" -R "$GITHUB_REPOSITORY"
+                gh issue edit "$number" --body-file "$out" -R "$ISSUE_REPOSITORY"
+                gh issue edit "$number" --add-label "agent-refined" -R "$ISSUE_REPOSITORY"
                 printf 'Issue #%s refined and labeled.\n' "$number"
                 (( refined++ )) || true
                 break

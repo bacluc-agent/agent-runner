@@ -29,7 +29,7 @@ jobs:
     outputs:
       prompt: ${{ steps.pick.outputs.prompt }}
     env:
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GITHUB_TOKEN: ${{ secrets.BACLUC_AGENT_GITHUB_TOKEN }}
       OPENCODE_GO_API_KEY: ${{ secrets.OPENCODE_GO_API_KEY }}
       OPENCODE_GO_2_API_KEY: ${{ secrets.OPENCODE_GO_2_API_KEY }}
       ISSUE_REPOSITORY: ${{ vars.ISSUE_REPOSITORY || github.repository }}

@@ -2,6 +2,16 @@
 
 Agent-run todo repository: scheduled issue runner and OpenCode workflows.
 
+## Two-repository setup
+
+The agent system is split across two public repositories:
+
+- [`bacluc-agent/agent-todo`](https://github.com/bacluc-agent/agent-todo) — holds the issues.
+- [`bacluc-agent/agent-runner`](https://github.com/bacluc-agent/agent-runner) — runs the GitHub Actions workflows.
+
+The runner repository reads issues from the todo repository through the
+`ISSUE_REPOSITORY` repository variable (set to `bacluc-agent/agent-todo` there).
+
 ## Repository variables
 
 Set these in Settings → Secrets and variables → Actions → Variables:
