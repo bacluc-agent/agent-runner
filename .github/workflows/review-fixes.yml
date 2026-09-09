@@ -50,7 +50,7 @@ jobs:
         id: find
         shell: bash
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.BACLUC_AGENT_GITHUB_TOKEN }}
           OVERRIDE_PROMPT: ${{ inputs.prompt }}
         run: |
           set -Eeuo pipefail
