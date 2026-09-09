@@ -143,6 +143,11 @@ jobs:
               printf '%s\n' 'Concrete steps, files to touch, and patterns to follow — enough for an'
               printf '%s\n' 'agent to start coding immediately.'
               printf '%s\n' ''
+              printf '%s\n' 'Do NOT include any step to run ./scripts/completion-check,'
+              printf '%s\n' 'AGENTS.md completion-check-command, or /completion-check-command'
+              printf '%s\n' '— opencode enforces the AGENTS.md completion-check-command'
+              printf '%s\n' 'automatically, so repeating it in the refined body is redundant.'
+              printf '%s\n' ''
               printf '%s\n' 'Output ONLY the new issue body. No preamble, no markdown fences around'
               printf '%s\n' 'the whole output, no commentary.'
             } > "$prompt"

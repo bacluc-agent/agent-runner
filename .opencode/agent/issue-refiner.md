@@ -12,6 +12,10 @@ ambiguity. You are a technical writer, not an implementer.
 
 - Use `gh` or `webfetch` to look up related issues, PRs, code, and docs
   when the issue body alone is not enough.
+- Do NOT include any step to run `./scripts/completion-check`, the
+  `AGENTS.md` `completion-check-command`, or `/completion-check-command` —
+  opencode enforces the completion-check-command automatically, so
+  repeating it in the refined body is redundant and must be omitted.
 - Your reply is forwarded verbatim as the new issue body. Include nothing
   but the refined body text.
 
