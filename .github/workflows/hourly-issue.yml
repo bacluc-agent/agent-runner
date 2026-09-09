@@ -40,7 +40,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ vars.ISSUE_REPOSITORY || github.repository }}
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.BACLUC_AGENT_GITHUB_TOKEN }}
 
       - name: Set up OpenCode
         uses: ./.github/actions/setup-opencode
@@ -189,7 +189,7 @@ jobs:
         env:
           MODEL: ${{ steps.pick.outputs.selection_model }}
           CACHE_ISSUE: ${{ steps.model-availability.outputs.cache-issue }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.BACLUC_AGENT_GITHUB_TOKEN }}
         run: |
           set -Eeuo pipefail
           cache_json=$(gh issue view "$CACHE_ISSUE" -R "$ISSUE_REPOSITORY" --json body --jq '.body' 2>/dev/null || echo '{}')
