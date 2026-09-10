@@ -274,6 +274,33 @@ jobs:
 
           echo "model=${model}" >> "$GITHUB_OUTPUT"
 
+      - name: Extract target issue number
+        id: target-issue
+        if: steps.select-model.outcome == 'success'
+        shell: bash
+        env:
+          PROMPT: ${{ inputs.prompt }}
+        run: |
+          issue_num=$(printf '%s' "$PROMPT" | grep -oE 'issues/[0-9]+' | grep -oE '[0-9]+' | head -n1 || true)
+          if [[ -n "$issue_num" ]]; then
+            echo "issue_number=${issue_num}" >> "$GITHUB_OUTPUT"
+            printf 'Target issue: #%s\n' "$issue_num"
+          else
+            printf 'No target issue found in prompt; skipping progress-tracking steps.\n'
+          fi
+
+      - name: Post run-start comment
+        if: steps.target-issue.outputs.issue_number != ''
+        shell: bash
+        env:
+          ISSUE_NUMBER: ${{ steps.target-issue.outputs.issue_number }}
+          GITHUB_TOKEN: ${{ secrets.BACLUC_AGENT_GITHUB_TOKEN }}
+          MODEL: ${{ steps.select-model.outputs.model }}
+        run: |
+          printf '::add-mask::%s\n' "$GITHUB_TOKEN"
+          gh issue comment "$ISSUE_NUMBER" -R "$ISSUE_REPOSITORY" \
+            --body "Run started: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID — model: $MODEL"
+
       - name: Run coordinator
         id: coordinator
         shell: bash
@@ -362,3 +389,94 @@ jobs:
           COORDINATOR_SESSION_TITLE: model-discovery
         run: |
           python3 scripts/dump_subagent_transcripts.py || true
+
+      - name: Ensure work is pushed
+        if: always() && steps.target-issue.outputs.issue_number != ''
+        id: push-work
+        shell: bash
+        env:
+          ISSUE_NUMBER: ${{ steps.target-issue.outputs.issue_number }}
+          GITHUB_TOKEN: ${{ secrets.BACLUC_AGENT_GITHUB_TOKEN }}
+        run: |
+          set -Eeuo pipefail
+          printf '::add-mask::%s\n' "$GITHUB_TOKEN"
+          BRANCH_NAME="agent-run/${ISSUE_NUMBER}-${GITHUB_RUN_ID}"
+          PUSHED_REPOS=""
+
+          # Find all git repos in the workspace (including subdirs)
+          while IFS= read -r gitdir; do
+            repo_dir="$(dirname "$gitdir")"
+            cd "$repo_dir"
+
+            # Check if there are any changes to commit
+            if git diff --quiet HEAD 2>/dev/null && git diff --cached --quiet 2>/dev/null && [[ -z "$(git ls-files --others --exclude-standard)" ]]; then
+              printf 'No changes in %s\n' "$repo_dir"
+              cd - >/dev/null
+              continue
+            fi
+
+            git checkout -B "$BRANCH_NAME" 2>/dev/null || git checkout "$BRANCH_NAME"
+            git add -A
+            git commit -m "agent-run: automated commit for issue #${ISSUE_NUMBER} (run ${GITHUB_RUN_ID})" || true
+            git push -u origin "$BRANCH_NAME" 2>/dev/null || {
+              # If origin push fails, try with token
+              remote_url=$(git remote get-url origin)
+              token_url="${remote_url/https:\/\//https:\/\/x-access-token:${GITHUB_TOKEN}@}"
+              git remote set-url origin "$token_url"
+              git push -u origin "$BRANCH_NAME"
+            }
+            PUSHED_REPOS="${PUSHED_REPOS}${repo_dir} (${BRANCH_NAME})\n"
+            cd - >/dev/null
+          done < <(find "$GITHUB_WORKSPACE" -maxdepth 5 -name ".git" -type d 2>/dev/null)
+
+          if [[ -n "$PUSHED_REPOS" ]]; then
+            printf 'Pushed branches:\n%b' "$PUSHED_REPOS"
+          else
+            printf 'No changes to push.\n'
+          fi
+
+          {
+            echo "pushed_repos<<EOF"
+            printf '%b' "$PUSHED_REPOS"
+            echo "EOF"
+            echo "branch_name=${BRANCH_NAME}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Post run-result comment
+        if: always() && steps.target-issue.outputs.issue_number != ''
+        shell: bash
+        env:
+          ISSUE_NUMBER: ${{ steps.target-issue.outputs.issue_number }}
+          GITHUB_TOKEN: ${{ secrets.BACLUC_AGENT_GITHUB_TOKEN }}
+        run: |
+          set -Eeuo pipefail
+          printf '::add-mask::%s\n' "$GITHUB_TOKEN"
+
+          # Determine status
+          if [[ "${{ steps.coordinator.outcome }}" == "success" ]]; then
+            STATUS="✅ completed"
+          elif [[ -n "${{ steps.fatal-guard.outputs.fatal-reason || '' }}" ]]; then
+            STATUS="❌ fatal error: ${{ steps.fatal-guard.outputs.fatal-reason }}"
+          else
+            STATUS="⚠️ failed (coordinator exit ${{ steps.coordinator.outcome }})"
+          fi
+
+          # Check for existing PR
+          PR_URL=""
+          BRANCH="${{ steps.push-work.outputs.branch_name }}"
+          if [[ -n "$BRANCH" ]]; then
+            PR_URL=$(gh pr list -R "$ISSUE_REPOSITORY" --head "$BRANCH" --json url --jq '.[0].url' 2>/dev/null || true)
+          fi
+
+          BODY="Run $STATUS: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          if [[ -n "$BRANCH" ]]; then
+            BODY="${BODY}"$'\nBranch: `'"${BRANCH}"'`'
+          fi
+          if [[ -n "$PR_URL" ]]; then
+            BODY="${BODY}"$'\nPR: '"${PR_URL}"
+          fi
+          if [[ -n "${{ steps.push-work.outputs.pushed_repos }}" ]]; then
+            BODY="${BODY}"$'\n\nPushed repositories:\n'"${{ steps.push-work.outputs.pushed_repos }}"
+          fi
+
+          gh issue comment "$ISSUE_NUMBER" -R "$ISSUE_REPOSITORY" --body "$BODY"
