@@ -42,3 +42,16 @@ If previous runs produced review feedback, incorporate that feedback into the im
 and improve the existing PR.
 Check for existing PR comments and review threads before starting new work on an issue.
 Always push changes to a branch so work is not lost, and record the branch name in the issue.
+
+## Diversity and anti-repeat
+
+Treat the candidate order note and the Recently selected avoid list as authoritative.
+Never pick an avoided issue unless every other candidate is infeasible.
+Rotate areas and target-repos: do not repeat the area or target-repo of the last 2 picks.
+Pick standing never-close meta tasks at most 1 in 4 runs.
+
+## Candidate enrichment
+
+Each candidate carries labels, creation date, and a body excerpt: use all three with the title to judge value and feasibility.
+Infer each candidate's target-repo and area from its title, labels, and body; balance picks across them instead of repeating the dominant area.
+Prefer concrete, implementable bodies over docs-only issues.
