@@ -16,6 +16,7 @@ FAILED_TTL_HOURS = 2
 FREE_PATTERNS = [r"(?:-|:)free$", r"big-pickle"]
 PROVIDER_WHITELISTS: dict[str, list[str]] = {
     "openrouter": [r"(?:-|:)free$", r"big-pickle", r"glm", r"gpt-5\.6-luna", r"qwen", r"kimi"],
+    "opencode": [r"(?:-|:)free$", r"big-pickle", r"glm", r"gpt-5\.6-luna", r"qwen", r"kimi"],
 }
 PROVIDERS = (
     ("opencode-go-openai", "OPENCODE_GO_API_KEY"),
@@ -31,9 +32,9 @@ CACHE_ISSUE_TITLE = "model-discovery cache"
 
 
 def run_gh(*args: str) -> str:
-    return subprocess.run(
-        ["gh", *args], check=True, capture_output=True, text=True
-    ).stdout
+    repo = os.environ.get("ISSUE_REPOSITORY", "").strip()
+    gh_args = ["gh", *(["-R", repo] if repo else []), *args]
+    return subprocess.run(gh_args, check=True, capture_output=True, text=True).stdout
 
 
 def issue_repo() -> str:

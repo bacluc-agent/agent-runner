@@ -569,3 +569,44 @@ class TestDiscoverModelsLogging:
         }
         log = tmp_path / "model-probes" / "opencode-models.log"
         assert log.read_text() == "opencode/a-free\nopencode/big-pickle\n"
+
+
+class TestRunGhRepoInjection:
+    def test_injects_repo_when_set(self, monkeypatch):
+        monkeypatch.setenv("ISSUE_REPOSITORY", "bacluc-agent/agent-todo")
+        captured = {}
+
+        def fake_run(args, *a, **kw):
+            captured["args"] = args
+            return types.SimpleNamespace(stdout="")
+
+        monkeypatch.setattr(model_availability.subprocess, "run", fake_run)
+        model_availability.run_gh("issue", "view", "49")
+        assert captured["args"][:3] == ["gh", "-R", "bacluc-agent/agent-todo"]
+        assert captured["args"][3:] == ["issue", "view", "49"]
+
+    def test_no_repo_when_unset(self, monkeypatch):
+        monkeypatch.delenv("ISSUE_REPOSITORY", raising=False)
+        captured = {}
+
+        def fake_run(args, *a, **kw):
+            captured["args"] = args
+            return types.SimpleNamespace(stdout="")
+
+        monkeypatch.setattr(model_availability.subprocess, "run", fake_run)
+        model_availability.run_gh("issue", "view", "49")
+        assert captured["args"] == ["gh", "issue", "view", "49"]
+
+
+class TestOpencodeWhitelist:
+    def test_matches_openrouter_patterns(self):
+        assert (
+            model_availability.PROVIDER_WHITELISTS["opencode"]
+            == model_availability.PROVIDER_WHITELISTS["openrouter"]
+        )
+
+    def test_free_and_whitelisted_models_pass(self):
+        patterns = model_availability.PROVIDER_WHITELISTS["opencode"]
+        for model in ["opencode/a-free", "opencode/big-pickle", "opencode/qwen3.8-flash"]:
+            assert model_availability.is_whitelisted(model, patterns)
+        assert not model_availability.is_whitelisted("opencode/some-paid-model", patterns)
