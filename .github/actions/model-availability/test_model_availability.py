@@ -9,6 +9,7 @@ CONFIG = {
     "provider": {
         "opencode-go-openai": {"options": {"baseURL": "https://opencode.ai/zen/go/v1"}},
         "opencode-go-anthropic": {"options": {"baseURL": "https://opencode.ai/zen/go/v1/messages"}},
+        "openrouter": {"options": {"baseURL": "https://openrouter.ai/api/v1"}},
     }
 }
 
@@ -47,6 +48,7 @@ class TestDiscoverModels:
         assert provider_models == {
             "opencode-go-openai": ["glm-5.2"],
             "opencode-go-anthropic": ["glm-5.2"],
+            "openrouter": ["glm-5.2"],
         }
         assert captured["headers"]["User-agent"] == "curl/8.5.0"
         assert not any("Python-urllib" in v for v in captured["headers"].values())
@@ -64,6 +66,7 @@ class TestDiscoverModels:
         assert provider_models == {
             "opencode-go-openai": [],
             "opencode-go-anthropic": [],
+            "openrouter": [],
         }
 
     def test_missing_baseurl_per_provider(self, monkeypatch):
@@ -109,8 +112,40 @@ class TestDiscoverModels:
         assert free_models == ["opencode/a-free"]
         assert provider_models == {}
 
+    def test_filters_openrouter_models_by_whitelist(self, monkeypatch):
+        captured = {}
 
-class TestParseFreeModels:
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def read(self):
+                if captured["full_url"].startswith("https://openrouter.ai"):
+                    return b'{"data": [{"id": "deepseek/deepseek-chat-v3.1"}, {"id": "zai/GLM-4.5"}, {"id": "qwen/qwen3-8b"}, {"id": "anthropic/claude-sonnet-4.5"}, {"id": "cohere/north-mini-code:free"}]}'
+                return b'{"data": [{"id": "deepseek/deepseek-chat-v3.1"}]}'
+
+        def fake_urlopen(request, timeout=30):
+            captured["full_url"] = request.full_url
+            return FakeResponse()
+
+        monkeypatch.setattr(model_availability.urllib.request, "urlopen", fake_urlopen)
+        monkeypatch.setattr(model_availability.subprocess, "run", fake_run)
+        free_models, provider_models = model_availability.discover_models()
+        assert provider_models["openrouter"] == [
+            "cohere/north-mini-code:free",
+            "qwen/qwen3-8b",
+            "zai/GLM-4.5",
+        ]
+        assert provider_models["opencode-go-openai"] == ["deepseek/deepseek-chat-v3.1"]
+        assert ("openrouter", "OPENROUTER_API_KEY") in model_availability.PROVIDERS
+
+
+EXAMPLE_OPENCODE_WHITELIST = [r"(?:-|:)free$", r"big-pickle", r"glm", r"gpt-5\.6-luna", r"qwen", r"kimi"]
+
+class TestParseWhitelistedModels:
     def test_extracts_free_models(self):
         output = (
             "opencode/big-pickle\n"
@@ -122,21 +157,96 @@ class TestParseFreeModels:
             "big-pickle\n"
             "opencode/paid-model\n"
             "other/paid-model\n"
+            "opencode-go-openai/glm-5.3\n"
+            "opencode-go-openai/qwen3.8-flash\n"
+            "opencode-go-openai/kimi-k3\n"
+            "opencode-go-openai/gpt-5.6-luna\n"
+            "openrouter/zai/GLM-4.5\n"
+            "openrouter/deepseek/deepseek-chat-v3.1\n"
+            "openrouter/anthropic/claude-sonnet-4.5\n"
+            "openrouter/cohere/north-mini-code:free\n"
+            "openrouter/google/gemma-4-31b-it:free\n"
         )
-        assert model_availability.parse_free_models(output) == [
+        assert model_availability.parse_whitelisted_models(
+            output, EXAMPLE_OPENCODE_WHITELIST
+        ) == [
             "big-pickle",
             "custom-provider/big-pickle",
             "custom-provider/other-free",
             "opencode/big-pickle",
             "opencode/ling-3.0-flash-fin-free",
             "opencode/mimo-v2.5-free",
+            "openrouter/cohere/north-mini-code:free",
+            "openrouter/google/gemma-4-31b-it:free",
             "standalone-free",
+            "opencode-go-openai/glm-5.3",
+            "opencode-go-openai/gpt-5.6-luna",
+            "opencode-go-openai/kimi-k3",
+            "opencode-go-openai/qwen3.8-flash",
+            "openrouter/zai/GLM-4.5",
         ]
 
     def test_deduplicates(self):
-        assert model_availability.parse_free_models("opencode/a-free\nopencode/a-free\n") == [
-            "opencode/a-free"
-        ]
+        assert model_availability.parse_whitelisted_models(
+            "opencode/a-free\nopencode/a-free\n",
+            EXAMPLE_OPENCODE_WHITELIST,
+        ) == ["opencode/a-free"]
+
+    def test_free_first_then_whitelisted(self):
+        assert model_availability.parse_whitelisted_models(
+            "opencode/glm-5.3\nopencode/z-free\n",
+            EXAMPLE_OPENCODE_WHITELIST,
+        ) == ["opencode/z-free", "opencode/glm-5.3"]
+
+    def test_case_insensitive_matching(self):
+        assert model_availability.parse_whitelisted_models(
+            "openrouter/zai/GLM-4.5\n",
+            EXAMPLE_OPENCODE_WHITELIST,
+        ) == ["openrouter/zai/GLM-4.5"]
+
+
+class TestIsWhitelisted:
+    def test_matches_case_insensitively(self):
+        assert model_availability.is_whitelisted("zai/GLM-4.5", ["glm"])
+        assert model_availability.is_whitelisted("qwen/qwen3-8b", ["qwen"])
+
+    def test_no_match(self):
+        patterns = EXAMPLE_OPENCODE_WHITELIST
+        assert not model_availability.is_whitelisted("deepseek/deepseek-chat-v3.1", patterns)
+        assert not model_availability.is_whitelisted("anthropic/claude-sonnet-4.5", patterns)
+
+    def test_free_pattern_is_anchored(self):
+        assert model_availability.is_whitelisted("a-free", ["(?:-|:)free$"])
+        assert model_availability.is_whitelisted("a:free", ["(?:-|:)free$"])
+        assert not model_availability.is_whitelisted("free", ["(?:-|:)free$"])
+
+    def test_empty_patterns_match_nothing(self):
+        assert not model_availability.is_whitelisted("anything", [])
+
+    def test_workflow_referenced_models_match(self):
+        patterns = EXAMPLE_OPENCODE_WHITELIST
+        for model in [
+            "opencode/big-pickle",
+            "opencode-go-openai/qwen3.8-flash",
+            "opencode-go-openai/glm-5.3",
+            "opencode-go-openai/kimi-k3",
+            "opencode-go-openai/gpt-5.6-luna",
+        ]:
+            assert model_availability.is_whitelisted(model, patterns)
+        assert not model_availability.is_whitelisted("deepseek/deepseek-chat-v3.1", patterns)
+        assert not model_availability.is_whitelisted("anthropic/claude-sonnet-4.5", patterns)
+
+    def test_openrouter_free_models_match(self):
+        patterns = model_availability.PROVIDER_WHITELISTS["openrouter"]
+        for model in [
+            "cohere/north-mini-code:free",
+            "google/gemma-4-31b-it:free",
+            "nvidia/nemotron-3.5-lightning:free",
+            "thinkingmachines/inkling:free",
+        ]:
+            assert model_availability.is_whitelisted(model, patterns)
+        assert not model_availability.is_whitelisted("deepseek/deepseek-chat-v3.1", patterns)
+        assert not model_availability.is_whitelisted("anthropic/claude-sonnet-4.5", patterns)
 
 
 class TestParseGoModelIds:
@@ -188,6 +298,14 @@ class TestBuildCandidates:
             "opencode-go-openai/x",
             "opencode-go-openai-2/y",
         ]
+
+    def test_deduplicates_overlapping_models(self):
+        env = {"OPENCODE_GO_API_KEY": "key1"}
+        assert model_availability.build_candidates(
+            ["opencode-go-openai/glm-5.2", "opencode/a-free"],
+            {"opencode-go-openai": ["glm-5.2"]},
+            env,
+        ) == ["opencode-go-openai/glm-5.2", "opencode/a-free"]
 
 
 class TestIsCacheFresh:
@@ -447,6 +565,7 @@ class TestDiscoverModelsLogging:
         assert provider_models == {
             "opencode-go-openai": [],
             "opencode-go-anthropic": [],
+            "openrouter": [],
         }
         log = tmp_path / "model-probes" / "opencode-models.log"
         assert log.read_text() == "opencode/a-free\nopencode/big-pickle\n"
