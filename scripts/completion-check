@@ -3,6 +3,11 @@ set -Eeuo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
+# renovate: datasource=docker depName=ghcr.io/bacluc/prettier-image/prettier-image
+PRETTIER_VERSION=3.9.4
+# renovate: datasource=docker depName=rhysd/actionlint
+ACTIONLINT_VERSION=1.7.12
+
 mount=(-v "$PWD:/workspace" -w /workspace)
 status=0
 
@@ -18,8 +23,9 @@ check() {
   fi
 }
 
-check 'formatting (prettier --check .)' docker run --rm "${mount[@]}" ghcr.io/bacluc/prettier-image/prettier-image:3.9.4 --check .
-check 'actionlint (workflows + used actions)' docker run --rm "${mount[@]}" rhysd/actionlint:1.7.12 -color
+check 'formatting (prettier --check .)' docker run --rm "${mount[@]}" "ghcr.io/bacluc/prettier-image/prettier-image:${PRETTIER_VERSION}" --check .
+check 'actionlint (workflows + used actions)' docker run --rm "${mount[@]}" "rhysd/actionlint:${ACTIONLINT_VERSION}" -color
 check 'opencode plugin tests (node --test)' node --test ".opencode/plugin/*.test.mjs"
+check 'pytest (scripts tests)' uv run --group dev pytest -q
 
 exit "$status"

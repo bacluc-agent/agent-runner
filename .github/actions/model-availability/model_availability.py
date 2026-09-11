@@ -13,11 +13,16 @@ from datetime import datetime, timezone
 
 AVAILABLE_TTL_HOURS = 24
 FAILED_TTL_HOURS = 2
+FREE_PATTERNS = [r"(?:-|:)free$", r"big-pickle"]
+PROVIDER_WHITELISTS: dict[str, list[str]] = {
+    "openrouter": [r"(?:-|:)free$", r"big-pickle", r"glm", r"gpt-5\.6-luna", r"qwen", r"kimi"],
+}
 PROVIDERS = (
     ("opencode-go-openai", "OPENCODE_GO_API_KEY"),
     ("opencode-go-openai-2", "OPENCODE_GO_2_API_KEY"),
     ("opencode-go-anthropic", "OPENCODE_GO_API_KEY"),
     ("opencode-go-anthropic-2", "OPENCODE_GO_2_API_KEY"),
+    ("openrouter", "OPENROUTER_API_KEY"),
 )
 MAX_CONCURRENT = 5
 PROBE_TIMEOUT_SECONDS = 60
@@ -71,16 +76,22 @@ def write_cache(cache_issue: str, cache: dict) -> None:
         pass
 
 
-def parse_free_models(opencode_models_output: str) -> list[str]:
-    return sorted(
-        set(
-            re.findall(
-                r"^(?:[^\s]+-free|[^\s]*big-pickle)$",
-                opencode_models_output,
-                re.MULTILINE,
-            )
-        )
-    )
+def is_whitelisted(model_id: str, patterns: list[str]) -> bool:
+    return any(re.search(pattern, model_id, re.IGNORECASE) for pattern in patterns)
+
+
+def parse_whitelisted_models(opencode_models_output: str, patterns: list[str]) -> list[str]:
+    free = []
+    rest = []
+    for line in opencode_models_output.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        model_id = line.split("/", 1)[-1]
+        if not is_whitelisted(model_id, patterns):
+            continue
+        (free if is_whitelisted(model_id, FREE_PATTERNS) else rest).append(line)
+    return sorted(set(free)) + sorted(set(rest))
 
 
 def parse_go_model_ids(models_json: str) -> list[str]:
@@ -129,7 +140,7 @@ def fetch_model_ids(endpoint: str, api_key: str | None = None) -> list[str]:
 
 
 def discover_models() -> tuple[list[str], dict[str, list[str]]]:
-    """free_models from `opencode models`; provider_models: {provider: model_ids} per provider."""
+    """whitelisted_models from `opencode models`; provider_models: {provider: model_ids} per provider."""
     result = subprocess.run(
         ["opencode", "models"], check=True, capture_output=True, text=True, timeout=600
     )
@@ -143,7 +154,9 @@ def discover_models() -> tuple[list[str], dict[str, list[str]]]:
             handle.write(getattr(result, "stderr", ""))
     except OSError:
         pass
-    free_models = parse_free_models(result.stdout)
+    whitelisted_models = parse_whitelisted_models(
+        result.stdout, PROVIDER_WHITELISTS.get("opencode", [ r".*"])
+    )
     base_urls = load_provider_base_urls()
     provider_models = {}
     for provider, key_env in PROVIDERS:
@@ -152,12 +165,16 @@ def discover_models() -> tuple[list[str], dict[str, list[str]]]:
             print(f"warning: no baseURL configured for {provider}", file=sys.stderr)
             continue
         api_key = os.environ.get(key_env)
-        provider_models[provider] = fetch_model_ids(models_endpoint_for(base_url), api_key=api_key)
-    return free_models, provider_models
+        model_ids = fetch_model_ids(models_endpoint_for(base_url), api_key=api_key)
+        patterns = PROVIDER_WHITELISTS.get(provider, [ r".*"])
+        if patterns:
+            model_ids = [m for m in model_ids if is_whitelisted(m, patterns)]
+        provider_models[provider] = model_ids
+    return whitelisted_models, provider_models
 
 
 def build_candidates(
-    free_models: list[str], provider_models: dict[str, list[str]], env: dict
+    whitelisted_models: list[str], provider_models: dict[str, list[str]], env: dict
 ) -> list[str]:
     candidates = []
     for provider, key_env in PROVIDERS:
@@ -165,8 +182,8 @@ def build_candidates(
             continue
         for model in provider_models.get(provider, []):
             candidates.append(f"{provider}/{model}")
-    candidates.extend(free_models)
-    return candidates
+    candidates.extend(whitelisted_models)
+    return list(dict.fromkeys(candidates))
 
 
 def is_cache_fresh(entry, now: datetime) -> bool:
@@ -241,10 +258,10 @@ def merge_results(cache: dict, results: dict[str, bool], checked: str) -> dict:
 
 
 def available_models(
-    cache: dict, free_models: list[str], provider_models: dict[str, list[str]]
+    cache: dict, whitelisted_models: list[str], provider_models: dict[str, list[str]]
 ) -> list[str]:
     available = []
-    for model in free_models:
+    for model in whitelisted_models:
         if cache.get(model, {}).get("ok"):
             available.append(model)
     for provider, _ in PROVIDERS:
@@ -280,17 +297,20 @@ def main() -> int:
     cache = {}
     if cache_issue is not None:
         cache = read_cache(cache_issue)
-    free_models, provider_models = discover_models()
-    candidates = build_candidates(free_models, provider_models, os.environ)
+    whitelisted_models, provider_models = discover_models()
+    candidates = build_candidates(whitelisted_models, provider_models, os.environ)
     now = datetime.now(timezone.utc)
     pending = [c for c in candidates if not is_cache_fresh(cache.get(c), now)]
     work_dir = os.environ.get("RUNNER_TEMP") or tempfile.gettempdir()
     results = probe_candidates(pending, work_dir)
     checked = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+    # Re-read the cache right before updating to avoid clobbering concurrent runs' updates
+    if cache_issue is not None:
+        cache = read_cache(cache_issue) or cache
     cache = merge_results(cache, results, checked)
     if cache_issue is not None:
         write_cache(cache_issue, cache)
-    available = available_models(cache, free_models, provider_models)
+    available = available_models(cache, whitelisted_models, provider_models)
     write_outputs(cache_issue, cache, available)
     print("Available models:")
     print("\n".join(available) if available else "(none)")

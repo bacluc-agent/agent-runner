@@ -1,4 +1,4 @@
-# agent-todo
+# agent-runner
 
 Agent-run todo repository: scheduled issue runner and OpenCode workflows.
 
@@ -11,6 +11,14 @@ The agent system is split across two public repositories:
 
 The runner repository reads issues from the todo repository through the
 `ISSUE_REPOSITORY` repository variable (set to `bacluc-agent/agent-todo` there).
+
+## Provenance
+
+The workflows in this repository were moved from
+[`bacluc-agent/agent-todo`](https://github.com/bacluc-agent/agent-todo) in
+[PR #170](https://github.com/bacluc-agent/agent-todo/pull/170), implementing
+[issue #42](https://github.com/bacluc-agent/agent-todo/issues/42) ("Move the
+github action run to a second repository").
 
 ## Repository variables
 
@@ -31,4 +39,4 @@ Set these in Settings → Secrets and variables → Actions → Variables:
 
 ## Completion check
 
-Run `./scripts/completion-check` before pushing. It runs all quality checks (Prettier formatting check and actionlint) in Docker and exits non-zero if any check fails. `.github/workflows/ci.yml` runs the same script on every push and pull request.
+Run `./scripts/completion-check` before pushing. It runs all quality checks (Prettier formatting check, actionlint, and pytest) in Docker and exits non-zero if any check fails. `.github/workflows/ci.yml` runs the same script on every push and pull request.

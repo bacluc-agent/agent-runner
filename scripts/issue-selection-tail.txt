@@ -1,6 +1,8 @@
-Choose the single issue that is most valuable and feasible to implement in one automated agent run.
-Assess every candidate on the value implied by its title and on feasibility.
-Deprioritize issues that only touch this meta-repo's own docs sources. Standing "never-close" meta tasks are fair game but must not
-starve other issues. Reply with ONLY the
-final implementation prompt for the chosen issue: a self-contained instruction for a coding agent
-that names the chosen issue number and how to implement it.
+Choose ONE issue for a single automated agent run.
+Each candidate line is "number: title [labels] [created] | body-excerpt"; use the title AND body excerpt AND labels to assess value and feasibility.
+CANDIDATE ORDER IS RANDOM and carries no priority: NEVER prefer earlier lines or treat position as ranking.
+Diversity is mandatory: do NOT pick any issue listed under Recently selected — avoid unless all other candidates are infeasible.
+Do NOT pick the same area or target-repo as the last 2 picks; rotate across areas and repositories.
+Standing never-close meta tasks are fair game at most 1 in 4 runs; they must not starve other issues.
+Deprioritize docs-only issues; prefer candidates with concrete bodies describing implementable work.
+Reply with ONLY the final implementation prompt for the chosen issue: a self-contained instruction for a coding agent that names the chosen issue number and how to implement it.
