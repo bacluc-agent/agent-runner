@@ -1,5 +1,5 @@
 Choose ONE issue for a single automated agent run.
-Each candidate line is "number: title [labels] [created] [recent] | body-excerpt"; use the title AND body excerpt AND labels to assess value and feasibility.
+Each candidate line is "number: title [labels] [created] | body-excerpt"; use the title AND body excerpt AND labels to assess value and feasibility.
 CANDIDATE ORDER IS RANDOM and carries no priority: NEVER prefer earlier lines or treat position as ranking.
 Diversity is mandatory: do NOT pick any issue listed under Recently selected — avoid unless all other candidates are infeasible.
 Do NOT pick the same area or target-repo as the last 2 picks; rotate across areas and repositories.
