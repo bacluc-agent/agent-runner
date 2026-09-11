@@ -31,4 +31,4 @@ Set these in Settings → Secrets and variables → Actions → Variables:
 
 ## Completion check
 
-Run `./scripts/completion-check` before pushing. It runs all quality checks (Prettier formatting check and actionlint) in Docker and exits non-zero if any check fails. `.github/workflows/ci.yml` runs the same script on every push and pull request.
+Run `./scripts/completion-check` before pushing. It runs all quality checks (Prettier formatting check, actionlint, and pytest) in Docker and exits non-zero if any check fails. `.github/workflows/ci.yml` runs the same script on every push and pull request.
