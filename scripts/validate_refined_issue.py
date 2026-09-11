@@ -14,6 +14,13 @@ _HOSTILE_RE = re.compile(
     r"|sk-[a-z0-9]{16,}|gh[pousr]_[a-z0-9]{16,}|github_pat_[a-z0-9_]{16,}",
     re.IGNORECASE,
 )
+_COMPLETION_CMD_RE = re.compile(
+    r"completion[-_]check[-_]command"
+    r"|/completion[-_]check[-_]command"
+    r"|/scripts/completion[-_]check"
+    r"|\.\/scripts\/completion[-_]check",
+    re.IGNORECASE,
+)
 _REQUIRED_HEADINGS = ("## Goal", "## How to implement")
 
 
@@ -64,6 +71,8 @@ def validate_refined_body(text: str) -> tuple[bool, str]:
         return False, "extra_sections"
     if _HOSTILE_RE.search(text):
         return False, "hostile_text"
+    if _COMPLETION_CMD_RE.search(text):
+        return False, "contains_completion_command"
     return True, "ok"
 
 

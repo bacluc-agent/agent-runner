@@ -91,6 +91,26 @@ CASES = [
         "## Goal\nUse sk-abcdefghijklmnopqrstuvwxyz012345.\n\n## How to implement\n1. Do it.\n",
         "hostile_text",
     ),
+    (
+        "completion_command_scripts",
+        "## Goal\nDo it.\n\n## How to implement\n1. Run ./scripts/completion-check.\n",
+        "contains_completion_command",
+    ),
+    (
+        "completion_command_slash_format",
+        "## Goal\nDo it.\n\n## How to implement\n1. Use /completion-check-command to verify.\n",
+        "contains_completion_command",
+    ),
+    (
+        "completion_command_agency_md",
+        "## Goal\nDo it.\n\n## How to implement\n1. Check AGENTS.md completion-check-command.\n",
+        "contains_completion_command",
+    ),
+    (
+        "completion_command_in_goal",
+        "## Goal\nEnsure /completion-check-command passes.\n\n## How to implement\n1. Do it.\n",
+        "contains_completion_command",
+    ),
 ]
 
 
