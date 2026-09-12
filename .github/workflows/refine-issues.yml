@@ -32,6 +32,7 @@ jobs:
 
       - name: Check model availability
         id: model-availability
+        timeout-minutes: 10
         uses: ./.github/actions/model-availability
 
       - name: Refine issues
@@ -79,7 +80,7 @@ jobs:
           # Exclude known-weak free models (ling-3.0-flash-fin-free, mimo-v2.5-free, nemotron-*)
           # per model-discovery.md (provision-machines devel branch); they pass the trivial OK
           # probe but fail as coordinator/selector in 10+ runs (e.g. 34029380869, 34042660858).
-          mapfile -t free_models < <(grep -Eo 'opencode/[^[:space:]]+-free' "$available_models_file" | grep -Ev '/(ling-3\.0-flash-fin|mimo-v2\.5)-free$|/nemotron-' | awk '!seen[$0]++')
+          mapfile -t free_models < <(grep -E '^(opencode|openrouter)/[^[:space:]]+(-free|:free)$' "$available_models_file" | grep -Ev '/(ling-3\.0-flash-fin|mimo-v2\.5)(-free|:free)$|/nemotron-' | awk '!seen[$0]++')
           for candidate in \
             'opencode-go-openai/qwen3.8-flash' \
             'opencode-go-openai-2/qwen3.8-flash' \
@@ -96,6 +97,9 @@ jobs:
                 grep -Fxq "$candidate" "$available_models_file" || continue
                 ;;
               opencode/*-free) ;;
+              openrouter/*)
+                [[ -n "$OPENROUTER_API_KEY" ]] || continue
+                ;;
               *) continue ;;
             esac
             selection_model="$candidate"
@@ -121,8 +125,8 @@ jobs:
             fi
             printf '\n\n\n\n\n\n'
 
-            title="$(gh issue view "$number" --json title --jq '.title')"
-            body="$(gh issue view "$number" --json body --jq '.body')"
+            title="$(gh issue view "$number" -R "$ISSUE_REPOSITORY" --json title --jq '.title')" || { echo "::warning::skip $number: view title failed" >&2; ((failed++)) || true; continue; }
+            body="$(gh issue view "$number" -R "$ISSUE_REPOSITORY" --json body --jq '.body')" || { echo "::warning::skip $number: view body failed" >&2; ((failed++)) || true; continue; }
 
             prompt="$RUNNER_TEMP/refine-prompt.txt"
             {

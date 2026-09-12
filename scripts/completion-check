@@ -26,6 +26,12 @@ check() {
 check 'formatting (prettier --check .)' docker run --rm "${mount[@]}" "ghcr.io/bacluc/prettier-image/prettier-image:${PRETTIER_VERSION}" --check .
 check 'actionlint (workflows + used actions)' docker run --rm "${mount[@]}" "rhysd/actionlint:${ACTIONLINT_VERSION}" -color
 check 'opencode plugin tests (node --test)' node --test ".opencode/plugin/*.test.mjs"
-check 'pytest (scripts tests)' uv run --group dev pytest -q
+if command -v uv >/dev/null 2>&1; then
+  check 'pytest (scripts tests)' uv run --group dev pytest -q
+elif command -v pytest >/dev/null 2>&1; then
+  check 'pytest (scripts tests)' pytest -q
+else
+  check 'pytest (scripts tests)' bash -c 'python3 -m pip install --quiet pytest && python3 -m pytest -q'
+fi
 
 exit "$status"
