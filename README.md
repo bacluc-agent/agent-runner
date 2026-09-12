@@ -39,6 +39,4 @@ Set these in Settings → Secrets and variables → Actions → Variables:
 
 ## Completion check
 
-`./scripts/completion-check` runs all quality checks (Prettier formatting check, actionlint, and pytest) in Docker and exits non-zero if any check fails. `.github/workflows/ci.yml` runs the same script on every push and pull request.
-
-The `bacluc-opencode-completion-check-command` plugin reads the `/completion-check-command` declaration in `AGENTS.md` and runs the command automatically when the agent finishes, re-prompting the agent until it passes.
+Run `./scripts/completion-check` before pushing. It runs all quality checks (Prettier formatting check, actionlint, and pytest) in Docker and exits non-zero if any check fails. `.github/workflows/ci.yml` runs the same script on every push and pull request.
