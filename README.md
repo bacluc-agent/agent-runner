@@ -40,3 +40,8 @@ Set these in Settings → Secrets and variables → Actions → Variables:
 ## Completion check
 
 Run `./scripts/completion-check` before pushing. It runs all quality checks (Prettier formatting check, actionlint, and pytest) in Docker and exits non-zero if any check fails. `.github/workflows/ci.yml` runs the same script on every push and pull request.
+
+## Repository instructions
+
+`AGENTS.md` and `CLAUDE.md` (including nested copies) are binding. They override default style and workflow choices.
+Agents must read them before any branch setup or file edit and cite `Read: AGENTS.md` / `Read: CLAUDE.md` in logs and issue comments.
