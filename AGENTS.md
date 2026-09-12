@@ -1,3 +1,10 @@
+## Completion check
+
+The completion-check declaration below is read by the
+`bacluc-opencode-completion-check-command` plugin, which runs the command
+automatically when the agent finishes and re-prompts the agent until it passes.
+You do not need to invoke the command yourself.
+
 /completion-check-command
 
 ```bash
