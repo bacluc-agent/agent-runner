@@ -124,8 +124,8 @@ jobs:
             fi
             printf '\n\n\n\n\n\n'
 
-            title="$(gh issue view "$number" --json title --jq '.title')"
-            body="$(gh issue view "$number" --json body --jq '.body')"
+            title="$(gh issue view "$number" -R "$ISSUE_REPOSITORY" --json title --jq '.title')"
+            body="$(gh issue view "$number" -R "$ISSUE_REPOSITORY" --json body --jq '.body')"
 
             prompt="$RUNNER_TEMP/refine-prompt.txt"
             {
