@@ -25,10 +25,11 @@ runs:
         printf '::add-mask::%s\n' "${OPENCODE_GO_2_API_KEY:-}"
         source_dir="$RUNNER_TEMP/provision-machines"
         config_dir="$RUNNER_TEMP/opencode-config"
-        # Clone the untagged verification branch directly instead of resolving a semver tag
+        # Clone directly from the untagged agents-md-compliance branch (step 1)
+        # instead of resolving latest semver tag.
+        branch_sha="fb679b8c26beeb0cd804ab55fd5e5a338e2346e5"
         git clone --quiet --branch agents-md-compliance --single-branch "$SOURCE_REPOSITORY" "$source_dir"
-        head_sha="fb679b8c26beeb0cd804ab55fd5e5a338e2346e5"
-        git -C "$source_dir" checkout --quiet --detach "$head_sha"
+        git -C "$source_dir" checkout --quiet --detach "$branch_sha"
         if [[ ! -d "$source_dir/$CONFIG_PATH" ]]; then
           printf 'Missing OpenCode configuration directory: %s\n' "$CONFIG_PATH" >&2
           exit 1
