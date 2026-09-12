@@ -12,7 +12,7 @@ import urllib.request
 from datetime import datetime, timezone
 
 AVAILABLE_TTL_HOURS = 24
-FAILED_TTL_HOURS = 2
+FAILED_TTL_HOURS = 24
 FREE_PATTERNS = [r"(?:-|:)free$", r"big-pickle"]
 PROVIDER_WHITELISTS: dict[str, list[str]] = {
     "openrouter": [r"(?:-|:)free$", r"big-pickle", r"glm", r"gpt-5\.6-luna", r"qwen", r"kimi"],
@@ -26,7 +26,8 @@ PROVIDERS = (
     ("openrouter", "OPENROUTER_API_KEY"),
 )
 MAX_CONCURRENT = 5
-PROBE_TIMEOUT_SECONDS = 60
+PROBE_TIMEOUT_SECONDS = 30
+PROBE_BUDGET = 30
 PROBE_PROMPT = "Respond with exactly OK."
 CACHE_ISSUE_TITLE = "model-discovery cache"
 
@@ -198,6 +199,40 @@ def is_cache_fresh(entry, now: datetime) -> bool:
     return (now - checked).total_seconds() < ttl_hours * 3600
 
 
+def candidate_priority(candidate: str) -> int:
+    """Lower = probed first. Workflow-critical models beat everything else."""
+    provider, _, model = candidate.partition("/")
+    if model == "big-pickle" or candidate == "big-pickle":
+        return 0
+    if candidate in ("opencode-go-openai/qwen3.8-flash", "opencode-go-openai-2/qwen3.8-flash"):
+        return 1
+    free = is_whitelisted(model, FREE_PATTERNS)
+    if provider == "opencode":
+        return 2 if free else 4
+    if provider == "openrouter":
+        return 3 if free else 7
+    if provider in ("opencode-go-openai", "opencode-go-openai-2"):
+        return 5
+    if provider in ("opencode-go-anthropic", "opencode-go-anthropic-2"):
+        return 6
+    return 7
+
+
+def prioritize_candidates(candidates: list[str]) -> list[str]:
+    """Stable sort by candidate_priority; input order preserved within a priority."""
+    return sorted(candidates, key=candidate_priority)
+
+
+def select_pending(candidates: list[str], cache: dict, now: datetime) -> tuple[list[str], int]:
+    """Stale candidates, highest priority first, capped at PROBE_BUDGET.
+
+    Returns (pending, skipped_count) so main() can report truncation.
+    """
+    all_pending = [c for c in candidates if not is_cache_fresh(cache.get(c), now)]
+    pending = prioritize_candidates(all_pending)[:PROBE_BUDGET]
+    return pending, len(all_pending) - len(pending)
+
+
 def probe_model(
     candidate: str, work_dir: str, timeout: int = PROBE_TIMEOUT_SECONDS
 ) -> bool:
@@ -301,7 +336,12 @@ def main() -> int:
     whitelisted_models, provider_models = discover_models()
     candidates = build_candidates(whitelisted_models, provider_models, os.environ)
     now = datetime.now(timezone.utc)
-    pending = [c for c in candidates if not is_cache_fresh(cache.get(c), now)]
+    pending, skipped = select_pending(candidates, cache, now)
+    if skipped:
+        print(
+            f"warning: {skipped} stale candidates skipped (probe budget {PROBE_BUDGET})",
+            file=sys.stderr,
+        )
     work_dir = os.environ.get("RUNNER_TEMP") or tempfile.gettempdir()
     results = probe_candidates(pending, work_dir)
     checked = now.strftime("%Y-%m-%dT%H:%M:%SZ")

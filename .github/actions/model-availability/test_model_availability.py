@@ -326,7 +326,7 @@ class TestIsCacheFresh:
 
     def test_expired_failed(self):
         now = datetime(2026, 9, 6, 15, 0, tzinfo=timezone.utc)
-        entry = {"ok": False, "checked": "2026-09-06T11:00:00Z"}
+        entry = {"ok": False, "checked": "2026-09-05T11:00:00Z"}  # 28h gap > 24h TTL
         assert not model_availability.is_cache_fresh(entry, now)
 
     def test_missing_or_malformed_entry(self):
@@ -334,6 +334,99 @@ class TestIsCacheFresh:
         assert not model_availability.is_cache_fresh(None, now)
         assert not model_availability.is_cache_fresh({"ok": "yes"}, now)
         assert not model_availability.is_cache_fresh({"ok": True}, now)
+
+
+class TestCandidatePriority:
+    def test_big_pickle_first(self):
+        assert model_availability.candidate_priority("opencode/big-pickle") == 0
+        assert model_availability.candidate_priority("big-pickle") == 0
+
+    def test_qwen_flash_second(self):
+        assert model_availability.candidate_priority("opencode-go-openai/qwen3.8-flash") == 1
+        assert model_availability.candidate_priority("opencode-go-openai-2/qwen3.8-flash") == 1
+
+    def test_opencode_free_before_openrouter_free(self):
+        assert model_availability.candidate_priority("opencode/a-free") == 2
+        assert model_availability.candidate_priority("openrouter/zai/GLM-4.5:free") == 3
+
+    def test_opencode_paid(self):
+        assert model_availability.candidate_priority("opencode/paid-model") == 4
+
+    def test_go_openai_providers(self):
+        assert model_availability.candidate_priority("opencode-go-openai/glm-5.3") == 5
+        assert model_availability.candidate_priority("opencode-go-openai-2/glm-5.3") == 5
+
+    def test_go_anthropic_providers(self):
+        assert model_availability.candidate_priority("opencode-go-anthropic/glm-5.3") == 6
+        assert model_availability.candidate_priority("opencode-go-anthropic-2/glm-5.3") == 6
+
+    def test_openrouter_paid_and_custom_provider_last(self):
+        assert model_availability.candidate_priority("openrouter/anthropic/claude-sonnet-4.5") == 7
+        assert model_availability.candidate_priority("custom-provider/other-free") == 7
+
+
+class TestPrioritizeCandidates:
+    def test_sorts_by_priority(self):
+        candidates = [
+            "openrouter/anthropic/claude-sonnet-4.5",
+            "opencode-go-openai/qwen3.8-flash",
+            "opencode/a-free",
+            "opencode/big-pickle",
+        ]
+        assert model_availability.prioritize_candidates(candidates) == [
+            "opencode/big-pickle",
+            "opencode-go-openai/qwen3.8-flash",
+            "opencode/a-free",
+            "openrouter/anthropic/claude-sonnet-4.5",
+        ]
+
+    def test_stable_within_same_priority(self):
+        candidates = ["opencode-go-openai/glm-5.3", "opencode-go-openai-2/kimi-k3"]
+        assert model_availability.prioritize_candidates(candidates) == candidates
+
+
+class TestSelectPending:
+    def test_stale_highest_priority_first(self):
+        now = datetime(2026, 9, 6, 15, 0, tzinfo=timezone.utc)
+        cache = {
+            "opencode/big-pickle": {"ok": False, "checked": "2026-09-05T11:00:00Z"},
+            "opencode/a-free": {"ok": False, "checked": "2026-09-05T11:00:00Z"},
+            "openrouter/anthropic/claude-sonnet-4.5": {"ok": False, "checked": "2026-09-05T11:00:00Z"},
+        }
+        pending, skipped = model_availability.select_pending(
+            list(cache), cache, now
+        )
+        assert pending == [
+            "opencode/big-pickle",
+            "opencode/a-free",
+            "openrouter/anthropic/claude-sonnet-4.5",
+        ]
+        assert skipped == 0
+
+    def test_skips_fresh_entries(self):
+        now = datetime(2026, 9, 6, 15, 0, tzinfo=timezone.utc)
+        cache = {
+            "opencode/big-pickle": {"ok": True, "checked": "2026-09-06T10:00:00Z"},
+            "opencode/a-free": {"ok": False, "checked": "2026-09-05T11:00:00Z"},
+        }
+        pending, skipped = model_availability.select_pending(list(cache), cache, now)
+        assert pending == ["opencode/a-free"]
+        assert skipped == 0
+
+    def test_caps_at_probe_budget(self):
+        now = datetime(2026, 9, 6, 15, 0, tzinfo=timezone.utc)
+        stale = {
+            f"opencode-go-openai/model-{i}": {"ok": False, "checked": "2026-09-05T11:00:00Z"}
+            for i in range(model_availability.PROBE_BUDGET + 10)
+        }
+        pending, skipped = model_availability.select_pending(list(stale), stale, now)
+        assert len(pending) == model_availability.PROBE_BUDGET
+        assert skipped == 10
+
+
+class TestProbeBudgetCoversCritical:
+    def test_budget_covers_workflow_critical_models(self):
+        assert model_availability.PROBE_BUDGET >= 28
 
 
 class TestMergeResults:
