@@ -15,7 +15,7 @@ AVAILABLE_TTL_HOURS = 24
 FAILED_TTL_HOURS = 24
 FREE_PATTERNS = [r"(?:-|:)free$", r"big-pickle"]
 PROVIDER_WHITELISTS: dict[str, list[str]] = {
-    "openrouter": [r"(?:-|:)free$", r"big-pickle", r"glm", r"gpt-5\.6-luna", r"qwen", r"kimi"],
+    "openrouter": [r"(?:-|:)free$", r"big-pickle"],
     "opencode": [r"(?:-|:)free$", r"big-pickle", r"glm", r"gpt-5\.6-luna", r"qwen", r"kimi"],
 }
 PROVIDERS = (
@@ -114,8 +114,8 @@ def parse_go_model_ids(models_json: str) -> list[str]:
         return []
 
 
-def load_provider_base_urls() -> dict[str, str]:
-    """Run `opencode debug config`, return {provider_id: baseURL} for providers with a baseURL."""
+def load_provider_config() -> dict[str, dict[str, str | None]]:
+    """{provider: {"baseURL": str, "apiKeyEnv": str | None}} from `opencode debug config`."""
     try:
         output = subprocess.run(
             ["opencode", "debug", "config"], check=True, capture_output=True, text=True, timeout=60
@@ -124,11 +124,40 @@ def load_provider_base_urls() -> dict[str, str]:
     except Exception as e:
         print(f"warning: failed to read opencode config: {e}", file=sys.stderr)
         return {}
+    result = {}
+    for name, provider in config.get("provider", {}).items():
+        options = provider.get("options", {})
+        api_key_env = None
+        api_key = options.get("apiKey")
+        if isinstance(api_key, str):
+            match = re.fullmatch(r"\{env:([^}]+)\}", api_key)
+            if match:
+                api_key_env = match.group(1)
+        result[name] = {"baseURL": options.get("baseURL"), "apiKeyEnv": api_key_env}
+    return result
+
+
+def load_provider_base_urls() -> dict[str, str]:
+    """Run `opencode debug config`, return {provider_id: baseURL} for providers with a baseURL."""
     return {
-        name: provider.get("options", {}).get("baseURL")
-        for name, provider in config.get("provider", {}).items()
-        if provider.get("options", {}).get("baseURL")
+        name: info["baseURL"]
+        for name, info in load_provider_config().items()
+        if info["baseURL"]
     }
+
+
+def provider_probeable(model_id: str, provider_config: dict, env: dict) -> bool:
+    """True if the model's provider can be probed. Built-in/unknown providers pass;
+    configured providers need an absolute baseURL and a set apiKey env var."""
+    provider = model_id.split("/", 1)[0] if "/" in model_id else ""
+    if not provider or provider not in provider_config:
+        return True
+    info = provider_config[provider]
+    base_url = info.get("baseURL")
+    if not base_url or not base_url.startswith(("http://", "https://")):
+        return False
+    api_key_env = info.get("apiKeyEnv")
+    return bool(api_key_env) and bool(env.get(api_key_env))
 
 
 def models_endpoint_for(base_url: str) -> str:
@@ -169,14 +198,28 @@ def discover_models() -> tuple[list[str], dict[str, list[str]]]:
     whitelisted_models = parse_whitelisted_models(
         result.stdout, PROVIDER_WHITELISTS.get("opencode", [ r".*"])
     )
-    base_urls = load_provider_base_urls()
+    provider_config = load_provider_config()
+    base_urls = {name: info["baseURL"] for name, info in provider_config.items() if info["baseURL"]}
+    kept, dropped = [], []
+    for model in whitelisted_models:
+        (kept if provider_probeable(model, provider_config, os.environ) else dropped).append(model)
+    if dropped:
+        providers = sorted({m.split("/", 1)[0] for m in dropped})
+        print(
+            f"warning: skipping {len(dropped)} models from unprobeable providers: {', '.join(providers)}",
+            file=sys.stderr,
+        )
+    whitelisted_models = kept
     provider_models = {}
     for provider, key_env in PROVIDERS:
         base_url = base_urls.get(provider)
-        if not base_url:
-            print(f"warning: no baseURL configured for {provider}", file=sys.stderr)
+        if not base_url or not base_url.startswith(("http://", "https://")):
+            print(f"warning: no valid baseURL configured for {provider}", file=sys.stderr)
             continue
         api_key = os.environ.get(key_env)
+        if not api_key:
+            print(f"warning: no API key configured for {provider}", file=sys.stderr)
+            continue
         model_ids = fetch_model_ids(models_endpoint_for(base_url), api_key=api_key)
         patterns = PROVIDER_WHITELISTS.get(provider, [ r".*"])
         if patterns:
