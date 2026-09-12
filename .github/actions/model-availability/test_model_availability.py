@@ -1,4 +1,5 @@
 import json
+import subprocess
 import types
 from datetime import datetime, timezone
 
@@ -539,12 +540,26 @@ class TestWriteCache:
         model_availability.write_cache("49", {"a": 1})
         assert calls == [("issue", "edit", "49", "--body", '{"a": 1}')]
 
-    def test_swallows_failure(self, monkeypatch):
+    def test_warns_on_failure(self, monkeypatch, capsys):
         def fail(*args):
             raise RuntimeError("gh failed")
 
         monkeypatch.setattr(model_availability, "run_gh", fail)
         model_availability.write_cache("49", {"a": 1})
+        assert "warning: failed to write cache issue 49" in capsys.readouterr().err
+
+    def test_warns_when_body_exceeds_limit(self, monkeypatch, capsys):
+        calls = []
+
+        def fake_run_gh(*args):
+            calls.append(args)
+
+        monkeypatch.setattr(model_availability, "run_gh", fake_run_gh)
+        model_availability.write_cache("49", {"x": "a" * 70000})
+        assert calls == []
+        err = capsys.readouterr().err
+        assert "warning: cache body is" in err
+        assert str(model_availability.GITHUB_ISSUE_BODY_LIMIT) in err
 
 
 class TestModelsEndpointFor:
@@ -628,6 +643,15 @@ class TestProbeModelLogging:
         log = tmp_path / "model-probes" / "probe-opencode-a-free.log"
         assert log.read_text() == "model unavailable\n"
 
+    def test_writes_timeout_marker(self, tmp_path, monkeypatch):
+        def timeout(*args, **kwargs):
+            raise subprocess.TimeoutExpired(cmd=args[0], timeout=30)
+
+        monkeypatch.setattr(model_availability.subprocess, "run", timeout)
+        assert model_availability.probe_model("opencode/a-free", str(tmp_path)) is False
+        log = tmp_path / "model-probes" / "probe-opencode-a-free.log"
+        assert log.read_text() == "TIMEOUT after 30s\n"
+
 
 class TestDiscoverModelsLogging:
     def test_writes_opencode_models_log(self, tmp_path, monkeypatch):
@@ -703,3 +727,28 @@ class TestOpencodeWhitelist:
         for model in ["opencode/a-free", "opencode/big-pickle", "opencode/qwen3.8-flash"]:
             assert model_availability.is_whitelisted(model, patterns)
         assert not model_availability.is_whitelisted("opencode/some-paid-model", patterns)
+
+
+class TestMainProbeSummary:
+    def test_prints_probe_outcome_summary(self, monkeypatch, capsys):
+        monkeypatch.setattr(model_availability, "resolve_cache_issue", lambda: None)
+        monkeypatch.setattr(
+            model_availability, "discover_models", lambda: (["opencode/a-free"], {})
+        )
+        monkeypatch.setattr(
+            model_availability, "build_candidates", lambda *args: ["opencode/a-free"]
+        )
+        monkeypatch.setattr(
+            model_availability, "select_pending", lambda *args: (["opencode/a-free"], 0)
+        )
+        monkeypatch.setattr(
+            model_availability, "probe_candidates", lambda *args: {"opencode/a-free": True}
+        )
+        monkeypatch.setattr(model_availability, "write_outputs", lambda *args: None)
+        assert model_availability.main() == 0
+        assert "probe results: 1 ok, 0 failed" in capsys.readouterr().out
+
+
+class TestDiscoveryTimeout:
+    def test_discovery_timeout_is_bounded(self):
+        assert model_availability.DISCOVERY_TIMEOUT_SECONDS <= 120

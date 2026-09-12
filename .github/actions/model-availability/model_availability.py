@@ -30,6 +30,8 @@ PROBE_TIMEOUT_SECONDS = 30
 PROBE_BUDGET = 30
 PROBE_PROMPT = "Respond with exactly OK."
 CACHE_ISSUE_TITLE = "model-discovery cache"
+DISCOVERY_TIMEOUT_SECONDS = 120
+GITHUB_ISSUE_BODY_LIMIT = 65536
 
 
 def run_gh(*args: str) -> str:
@@ -72,10 +74,18 @@ def read_cache(cache_issue: str) -> dict:
 
 
 def write_cache(cache_issue: str, cache: dict) -> None:
+    body = json.dumps(cache)
+    if len(body.encode("utf-8")) > GITHUB_ISSUE_BODY_LIMIT:
+        print(
+            f"warning: cache body is {len(body.encode('utf-8'))} bytes, exceeding the "
+            f"{GITHUB_ISSUE_BODY_LIMIT}-byte GitHub issue limit; cache not updated",
+            file=sys.stderr,
+        )
+        return
     try:
-        run_gh("issue", "edit", str(cache_issue), "--body", json.dumps(cache))
-    except Exception:
-        pass
+        run_gh("issue", "edit", str(cache_issue), "--body", body)
+    except Exception as e:
+        print(f"warning: failed to write cache issue {cache_issue}: {e}", file=sys.stderr)
 
 
 def is_whitelisted(model_id: str, patterns: list[str]) -> bool:
@@ -144,7 +154,7 @@ def fetch_model_ids(endpoint: str, api_key: str | None = None) -> list[str]:
 def discover_models() -> tuple[list[str], dict[str, list[str]]]:
     """whitelisted_models from `opencode models`; provider_models: {provider: model_ids} per provider."""
     result = subprocess.run(
-        ["opencode", "models"], check=True, capture_output=True, text=True, timeout=600
+        ["opencode", "models"], check=True, capture_output=True, text=True, timeout=DISCOVERY_TIMEOUT_SECONDS
     )
     log_dir = os.path.join(
         os.environ.get("RUNNER_TEMP") or tempfile.gettempdir(), "model-probes"
@@ -233,11 +243,21 @@ def select_pending(candidates: list[str], cache: dict, now: datetime) -> tuple[l
     return pending, len(all_pending) - len(pending)
 
 
+def _write_probe_log(log_path: str, content: str) -> None:
+    try:
+        os.makedirs(os.path.dirname(log_path), exist_ok=True)
+        with open(log_path, "w") as handle:
+            handle.write(content)
+    except OSError:
+        pass
+
+
 def probe_model(
     candidate: str, work_dir: str, timeout: int = PROBE_TIMEOUT_SECONDS
 ) -> bool:
     probe_dir = os.path.join(work_dir, "probe-" + candidate.replace("/", "-"))
     os.makedirs(probe_dir, exist_ok=True)
+    log_path = os.path.join(work_dir, "model-probes", "probe-" + candidate.replace("/", "-") + ".log")
     try:
         result = subprocess.run(
             [
@@ -255,17 +275,9 @@ def probe_model(
             timeout=timeout,
         )
     except subprocess.TimeoutExpired:
+        _write_probe_log(log_path, f"TIMEOUT after {timeout}s\n")
         return False
-    log_dir = os.path.join(work_dir, "model-probes")
-    try:
-        os.makedirs(log_dir, exist_ok=True)
-        with open(
-            os.path.join(log_dir, "probe-" + candidate.replace("/", "-") + ".log"), "w"
-        ) as handle:
-            handle.write(result.stdout)
-            handle.write(result.stderr)
-    except OSError:
-        pass
+    _write_probe_log(log_path, result.stdout + result.stderr)
     text = re.sub(r"\x1b\[[0-9;]*[a-zA-Z]", "", result.stdout)
     return result.returncode == 0 and re.fullmatch(r"\s*OK\.?\s*", text) is not None
 
@@ -344,6 +356,8 @@ def main() -> int:
         )
     work_dir = os.environ.get("RUNNER_TEMP") or tempfile.gettempdir()
     results = probe_candidates(pending, work_dir)
+    ok = sum(1 for v in results.values() if v)
+    print(f"probe results: {ok} ok, {len(results) - ok} failed")
     checked = now.strftime("%Y-%m-%dT%H:%M:%SZ")
     # Re-read the cache right before updating to avoid clobbering concurrent runs' updates
     if cache_issue is not None:
