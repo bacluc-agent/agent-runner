@@ -355,6 +355,20 @@ jobs:
           fi
           gh issue edit "$CACHE_ISSUE" -R "$ISSUE_REPOSITORY" --body "$new_cache" || true
 
+      - name: Install uv (completion check)
+        if: always() && steps.coordinator.outcome == 'success'
+        shell: bash
+        run: |
+          command -v uv >/dev/null 2>&1 || pipx install uv
+
+      - name: Completion check (harness backstop)
+        id: completion-check
+        if: always() && steps.coordinator.outcome == 'success'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          ./scripts/completion-check
+
       - name: Dump debug output
         if: always()
         shell: bash
