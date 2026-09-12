@@ -299,6 +299,7 @@ jobs:
 
       - name: Post run-start comment
         if: steps.target-issue.outputs.issue_number != ''
+        continue-on-error: true
         shell: bash
         env:
           ISSUE_NUMBER: ${{ steps.target-issue.outputs.issue_number }}
