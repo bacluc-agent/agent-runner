@@ -115,7 +115,7 @@ def parse_go_model_ids(models_json: str) -> list[str]:
 
 
 def load_provider_config() -> dict[str, dict[str, str | None]]:
-    """{provider: {"baseURL": str, "apiKeyEnv": str | None}} from `opencode debug config`."""
+    """{provider: {"baseURL": str, "apiKey": str | None}} from `opencode debug config`."""
     try:
         output = subprocess.run(
             ["opencode", "debug", "config"], check=True, capture_output=True, text=True, timeout=60
@@ -127,13 +127,7 @@ def load_provider_config() -> dict[str, dict[str, str | None]]:
     result = {}
     for name, provider in config.get("provider", {}).items():
         options = provider.get("options", {})
-        api_key_env = None
-        api_key = options.get("apiKey")
-        if isinstance(api_key, str):
-            match = re.fullmatch(r"\{env:([^}]+)\}", api_key)
-            if match:
-                api_key_env = match.group(1)
-        result[name] = {"baseURL": options.get("baseURL"), "apiKeyEnv": api_key_env}
+        result[name] = {"baseURL": options.get("baseURL"), "apiKey": options.get("apiKey")}
     return result
 
 
@@ -148,7 +142,7 @@ def load_provider_base_urls() -> dict[str, str]:
 
 def provider_probeable(model_id: str, provider_config: dict, env: dict) -> bool:
     """True if the model's provider can be probed. Built-in/unknown providers pass;
-    configured providers need an absolute baseURL and a set apiKey env var."""
+    configured providers need an absolute baseURL and an apiKey (resolved value or {env:NAME})."""
     provider = model_id.split("/", 1)[0] if "/" in model_id else ""
     if not provider or provider not in provider_config:
         return True
@@ -156,8 +150,10 @@ def provider_probeable(model_id: str, provider_config: dict, env: dict) -> bool:
     base_url = info.get("baseURL")
     if not base_url or not base_url.startswith(("http://", "https://")):
         return False
-    api_key_env = info.get("apiKeyEnv")
-    return bool(api_key_env) and bool(env.get(api_key_env))
+    api_key = info.get("apiKey")
+    if isinstance(api_key, str) and api_key.startswith("{env:"):
+        return bool(env.get(api_key[5:-1]))
+    return bool(api_key)
 
 
 def models_endpoint_for(base_url: str) -> str:
