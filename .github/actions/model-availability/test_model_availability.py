@@ -265,8 +265,75 @@ class TestDiscoverModels:
         assert "opencode-go-openai/glm-5.2" in free_models
         assert "opencode/a-free" in free_models
 
+    def test_provider_with_resolved_api_key_is_probeable(self, monkeypatch):
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def read(self):
+                return b'{"data": [{"id": "glm-5.2"}]}'
+
+        config = {
+            "provider": {
+                "opencode-go-openai": {
+                    "options": {
+                        "baseURL": "https://opencode.ai/zen/go/v1",
+                        "apiKey": "sk-resolved-key-value",
+                    }
+                },
+                "cortecs2": {"options": {"baseURL": "https://api.cortecs.ai/v1"}},
+            }
+        }
+        models_output = "opencode/a-free\nopencode-go-openai/glm-5.2\ncortecs2/glm-5.1\n"
+
+        def fake_run_resolved(args, *a, **kw):
+            if args == ["opencode", "models"]:
+                return types.SimpleNamespace(stdout=models_output)
+            if args == ["opencode", "debug", "config"]:
+                return types.SimpleNamespace(stdout=json.dumps(config))
+            raise AssertionError(f"unexpected args: {args}")
+
+        monkeypatch.setattr(
+            model_availability.urllib.request, "urlopen", lambda *a, **kw: FakeResponse()
+        )
+        monkeypatch.setattr(model_availability.subprocess, "run", fake_run_resolved)
+        free_models, provider_models = model_availability.discover_models()
+        assert "opencode-go-openai/glm-5.2" in free_models
+        assert "cortecs2/glm-5.1" not in free_models
+
 
 EXAMPLE_OPENCODE_WHITELIST = [r"(?:-|:)free$", r"big-pickle", r"glm", r"gpt-5\.6-luna", r"qwen", r"kimi"]
+
+class TestProviderProbeable:
+    def test_resolved_key(self):
+        config = {"openrouter": {"baseURL": "https://openrouter.ai/api/v1", "apiKey": "sk-or-xxx"}}
+        assert model_availability.provider_probeable("openrouter/foo:free", config, {})
+
+    def test_missing_key(self):
+        config = {"cortecs2": {"baseURL": "https://api.cortecs.ai/v1", "apiKey": None}}
+        assert not model_availability.provider_probeable("cortecs2/glm-5.1", config, {})
+
+    def test_env_template(self):
+        config = {
+            "openrouter": {
+                "baseURL": "https://openrouter.ai/api/v1",
+                "apiKey": "{env:OPENROUTER_API_KEY}",
+            }
+        }
+        assert model_availability.provider_probeable(
+            "openrouter/foo:free", config, {"OPENROUTER_API_KEY": "k"}
+        )
+        assert not model_availability.provider_probeable("openrouter/foo:free", config, {})
+
+    def test_unknown_provider_passes(self):
+        assert model_availability.provider_probeable("opencode/a-free", {}, {})
+
+    def test_invalid_baseurl(self):
+        config = {"openrouter": {"baseURL": "/chat/completions", "apiKey": "sk-or-xxx"}}
+        assert not model_availability.provider_probeable("openrouter/foo:free", config, {})
 
 class TestParseWhitelistedModels:
     def test_extracts_free_models(self):
