@@ -1,0 +1,44 @@
+name: Refresh ChatGPT auth
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      BACLUC_AGENT_GITHUB_TOKEN: ${{ secrets.BACLUC_AGENT_GITHUB_TOKEN }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          token: ${{ secrets.BACLUC_AGENT_GITHUB_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d388a244691a91f9c543c067 # v5.6.0
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install --quiet playwright pyotp && playwright install chromium --with-deps
+
+      - name: Refresh auth and update secret
+        env:
+          CHATGPT_EMAIL: ${{ secrets.CHATGPT_EMAIL || secrets.OPENAI_USERNAME }}
+          CHATGPT_PASSWORD: ${{ secrets.CHATGPT_PASSWORD || secrets.OPENAI_PASSWORD }}
+          CHATGPT_2FA_KEY: ${{ secrets.CHATGPT_2FA_KEY || secrets.OPENAI_2FA_KEY }}
+          OPENAI_USERNAME: ${{ secrets.OPENAI_USERNAME }}
+          OPENAI_PASSWORD: ${{ secrets.OPENAI_PASSWORD }}
+          OPENAI_2FA_KEY: ${{ secrets.OPENAI_2FA_KEY }}
+          CHATGPT_TOTP_KEY: ${{ secrets.CHATGPT_TOTP_KEY }}
+        run: |
+          set -Eeuo pipefail
+          auth_json=$(python3 scripts/chatgpt-login.py)
+          printf '%s\n' "$auth_json" | jq -e '.openai.type == "oauth" and .openai.access != "" and .openai.refresh != "" and (.openai.expires | type == "number")' >/dev/null
+          printf '::add-mask::%s\n' "$auth_json"
+          GH_TOKEN="$BACLUC_AGENT_GITHUB_TOKEN" gh secret set OPENCODE_AUTH_JSON --repo bacluc-agent/agent-todo --body "$auth_json"
+          printf 'Auth refreshed successfully\n'
