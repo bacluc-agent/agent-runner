@@ -25,32 +25,10 @@ runs:
         printf '::add-mask::%s\n' "${OPENCODE_GO_2_API_KEY:-}"
         source_dir="$RUNNER_TEMP/provision-machines"
         config_dir="$RUNNER_TEMP/opencode-config"
-        mapfile -t tags < <(git ls-remote --tags "$SOURCE_REPOSITORY" \
-          | awk '$2 !~ /\^\{\}$/ { sub("refs/tags/", "", $2); print $2 }' \
-          | grep -E '^[vV]?[0-9]+([.][0-9]+){1,2}([-.][0-9A-Za-z.-]+)?$' \
-          | sort -V)
-
-        if ((${#tags[@]} == 0)); then
-          printf '%s\n' 'No semver tags found in the source repository' >&2
-          exit 1
-        fi
-
-        tag="${tags[${#tags[@]}-1]}"
-        tag_refs="$(git ls-remote --tags "$SOURCE_REPOSITORY" "refs/tags/$tag" "refs/tags/$tag^{}")"
-        tag_sha="$(printf '%s\n' "$tag_refs" | awk -v tag="$tag" \
-          '$2 == "refs/tags/" tag "^{}" { peeled=$1 } $2 == "refs/tags/" tag { direct=$1 } END { print peeled ? peeled : direct }')"
-        if [[ ! "$tag_sha" =~ ^[0-9a-f]{40}$ ]]; then
-          printf 'Unable to resolve source config tag to a commit: %s\n' "$tag" >&2
-          exit 1
-        fi
-        printf 'Using source config tag: %s (commit %s)\n' "$tag" "$tag_sha"
-        git clone --quiet "$SOURCE_REPOSITORY" "$source_dir"
-        cloned_tag_sha="$(git -C "$source_dir" rev-parse --verify "refs/tags/$tag^{commit}" 2>/dev/null || true)"
-        if [[ "$cloned_tag_sha" != "$tag_sha" ]]; then
-          printf 'Source config tag changed while cloning: expected %s, got %s\n' "$tag_sha" "${cloned_tag_sha:-unresolved}" >&2
-          exit 1
-        fi
-        git -C "$source_dir" checkout --quiet --detach "$tag_sha"
+        # Clone the untagged verification branch directly instead of resolving a semver tag
+        git clone --quiet --branch agents-md-compliance --single-branch "$SOURCE_REPOSITORY" "$source_dir"
+        head_sha="fb679b8c26beeb0cd804ab55fd5e5a338e2346e5"
+        git -C "$source_dir" checkout --quiet --detach "$head_sha"
         if [[ ! -d "$source_dir/$CONFIG_PATH" ]]; then
           printf 'Missing OpenCode configuration directory: %s\n' "$CONFIG_PATH" >&2
           exit 1
