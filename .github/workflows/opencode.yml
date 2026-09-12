@@ -288,16 +288,18 @@ jobs:
       - name: Extract target issue number
         id: target-issue
         if: steps.select-model.outcome == 'success'
+        continue-on-error: true
         shell: bash
         env:
           PROMPT: ${{ inputs.prompt }}
         run: |
-          issue_num=$(printf '%s' "$PROMPT" | grep -oE 'issues/[0-9]+' | grep -oE '[0-9]+' | head -n1 || true)
+          issue_num=$(printf '%s' "$PROMPT" | grep -oE 'issues/[0-9]+' | grep -oE '[0-9]+' | head -n1)
           if [[ -n "$issue_num" ]]; then
             echo "issue_number=${issue_num}" >> "$GITHUB_OUTPUT"
             printf 'Target issue: #%s\n' "$issue_num"
           else
-            printf 'No target issue found in prompt; skipping progress-tracking steps.\n'
+            printf '::error::No target issue found in prompt; skipping progress-tracking steps.\n' >&2
+            exit 1
           fi
 
       - name: Post run-start comment
