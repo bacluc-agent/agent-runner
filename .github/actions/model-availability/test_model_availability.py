@@ -2,6 +2,9 @@ import json
 import subprocess
 import types
 from datetime import datetime, timezone
+from pathlib import Path
+
+import pytest
 
 import model_availability
 
@@ -13,6 +16,14 @@ CONFIG = {
         "openrouter": {"options": {"baseURL": "https://openrouter.ai/api/v1"}},
     }
 }
+
+
+@pytest.fixture(autouse=True)
+def _provider_api_keys(monkeypatch):
+    """Provider discovery tests exercise the real PROVIDERS loop; provide the keys."""
+    monkeypatch.setenv("OPENCODE_GO_API_KEY", "test-go-key")
+    monkeypatch.setenv("OPENCODE_GO_2_API_KEY", "test-go-2-key")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-or-key")
 
 
 def fake_run(args, *a, **kw):
@@ -49,7 +60,7 @@ class TestDiscoverModels:
         assert provider_models == {
             "opencode-go-openai": ["glm-5.2"],
             "opencode-go-anthropic": ["glm-5.2"],
-            "openrouter": ["glm-5.2"],
+            "openrouter": [],
         }
         assert captured["headers"]["User-agent"] == "curl/8.5.0"
         assert not any("Python-urllib" in v for v in captured["headers"].values())
@@ -135,13 +146,124 @@ class TestDiscoverModels:
         monkeypatch.setattr(model_availability.urllib.request, "urlopen", fake_urlopen)
         monkeypatch.setattr(model_availability.subprocess, "run", fake_run)
         free_models, provider_models = model_availability.discover_models()
-        assert provider_models["openrouter"] == [
-            "cohere/north-mini-code:free",
-            "qwen/qwen3-8b",
-            "zai/GLM-4.5",
-        ]
+        assert provider_models["openrouter"] == ["cohere/north-mini-code:free"]
         assert provider_models["opencode-go-openai"] == ["deepseek/deepseek-chat-v3.1"]
         assert ("openrouter", "OPENROUTER_API_KEY") in model_availability.PROVIDERS
+
+    def test_skips_provider_without_env_key(self, monkeypatch):
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def read(self):
+                return b'{"data": [{"id": "glm-5.2"}]}'
+
+        monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+        monkeypatch.setattr(
+            model_availability.urllib.request, "urlopen", lambda *a, **kw: FakeResponse()
+        )
+        monkeypatch.setattr(model_availability.subprocess, "run", fake_run)
+        free_models, provider_models = model_availability.discover_models()
+        assert "openrouter" not in provider_models
+        assert "opencode-go-openai" in provider_models
+
+    def test_skips_provider_with_invalid_baseurl(self, monkeypatch):
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def read(self):
+                return b'{"data": [{"id": "glm-5.2"}]}'
+
+        config = {
+            "provider": {
+                "opencode-go-openai": {
+                    "options": {
+                        "baseURL": "https://opencode.ai/zen/go/v1",
+                        "apiKey": "{env:OPENCODE_GO_API_KEY}",
+                    }
+                },
+                "openrouter": {
+                    "options": {
+                        "baseURL": "/chat/completions",
+                        "apiKey": "{env:OPENROUTER_API_KEY}",
+                    }
+                },
+            }
+        }
+
+        def fake_run_invalid(args, *a, **kw):
+            if args == ["opencode", "models"]:
+                return types.SimpleNamespace(stdout="opencode/a-free\n")
+            if args == ["opencode", "debug", "config"]:
+                return types.SimpleNamespace(stdout=json.dumps(config))
+            raise AssertionError(f"unexpected args: {args}")
+
+        monkeypatch.setattr(
+            model_availability.urllib.request, "urlopen", lambda *a, **kw: FakeResponse()
+        )
+        monkeypatch.setattr(model_availability.subprocess, "run", fake_run_invalid)
+        free_models, provider_models = model_availability.discover_models()
+        assert "openrouter" not in provider_models
+        assert "opencode-go-openai" in provider_models
+
+    def test_skips_whitelisted_models_from_unprobeable_providers(self, monkeypatch):
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def read(self):
+                return b'{"data": [{"id": "glm-5.2"}]}'
+
+        config = {
+            "provider": {
+                "cortecs2": {"options": {"baseURL": "https://api.cortecs.ai/v1"}},
+                "vshn-us-ai": {
+                    "options": {
+                        "baseURL": "{env:VSHN_US_BASE_URL}",
+                        "apiKey": "{env:VSHN_US_AI_API_KEY}",
+                    }
+                },
+                "opencode-go-openai": {
+                    "options": {
+                        "baseURL": "https://opencode.ai/zen/go/v1",
+                        "apiKey": "{env:OPENCODE_GO_API_KEY}",
+                    }
+                },
+            }
+        }
+        models_output = (
+            "opencode/a-free\n"
+            "cortecs2/glm-5.1\n"
+            "vshn-us-ai/subscription.glm-5.2\n"
+            "opencode-go-openai/glm-5.2\n"
+        )
+
+        def fake_run_filter(args, *a, **kw):
+            if args == ["opencode", "models"]:
+                return types.SimpleNamespace(stdout=models_output)
+            if args == ["opencode", "debug", "config"]:
+                return types.SimpleNamespace(stdout=json.dumps(config))
+            raise AssertionError(f"unexpected args: {args}")
+
+        monkeypatch.setattr(
+            model_availability.urllib.request, "urlopen", lambda *a, **kw: FakeResponse()
+        )
+        monkeypatch.setattr(model_availability.subprocess, "run", fake_run_filter)
+        free_models, provider_models = model_availability.discover_models()
+        assert "cortecs2/glm-5.1" not in free_models
+        assert "vshn-us-ai/subscription.glm-5.2" not in free_models
+        assert "opencode-go-openai/glm-5.2" in free_models
+        assert "opencode/a-free" in free_models
 
 
 EXAMPLE_OPENCODE_WHITELIST = [r"(?:-|:)free$", r"big-pickle", r"glm", r"gpt-5\.6-luna", r"qwen", r"kimi"]
@@ -330,6 +452,11 @@ class TestIsCacheFresh:
         entry = {"ok": False, "checked": "2026-09-05T11:00:00Z"}  # 28h gap > 24h TTL
         assert not model_availability.is_cache_fresh(entry, now)
 
+    def test_exactly_ttl_is_not_fresh(self):
+        now = datetime(2026, 9, 7, 10, 0, tzinfo=timezone.utc)
+        entry = {"ok": True, "checked": "2026-09-06T10:00:00Z"}  # exactly 24h: 86400 < 86400 is False
+        assert not model_availability.is_cache_fresh(entry, now)
+
     def test_missing_or_malformed_entry(self):
         now = datetime(2026, 9, 6, 12, 0, tzinfo=timezone.utc)
         assert not model_availability.is_cache_fresh(None, now)
@@ -411,6 +538,25 @@ class TestSelectPending:
             "opencode/a-free": {"ok": False, "checked": "2026-09-05T11:00:00Z"},
         }
         pending, skipped = model_availability.select_pending(list(cache), cache, now)
+        assert pending == ["opencode/a-free"]
+        assert skipped == 0
+
+    def test_all_fresh_returns_no_pending(self):
+        now = datetime(2026, 9, 6, 12, 0, tzinfo=timezone.utc)
+        cache = {
+            "opencode/big-pickle": {"ok": True, "checked": "2026-09-06T10:00:00Z"},
+            "opencode/a-free": {"ok": False, "checked": "2026-09-06T11:00:00Z"},
+        }
+        pending, skipped = model_availability.select_pending(list(cache), cache, now)
+        assert pending == []
+        assert skipped == 0
+
+    def test_missing_from_cache_is_pending(self):
+        now = datetime(2026, 9, 6, 12, 0, tzinfo=timezone.utc)
+        cache = {"opencode/big-pickle": {"ok": True, "checked": "2026-09-06T10:00:00Z"}}
+        pending, skipped = model_availability.select_pending(
+            ["opencode/big-pickle", "opencode/a-free"], cache, now
+        )
         assert pending == ["opencode/a-free"]
         assert skipped == 0
 
@@ -716,11 +862,14 @@ class TestRunGhRepoInjection:
 
 
 class TestOpencodeWhitelist:
-    def test_matches_openrouter_patterns(self):
-        assert (
-            model_availability.PROVIDER_WHITELISTS["opencode"]
-            == model_availability.PROVIDER_WHITELISTS["openrouter"]
-        )
+    def test_openrouter_whitelist_is_free_only(self):
+        patterns = model_availability.PROVIDER_WHITELISTS["openrouter"]
+        assert patterns == [r"(?:-|:)free$", r"big-pickle"]
+        assert model_availability.is_whitelisted("openrouter/thinkingmachines/inkling:free", patterns)
+        assert model_availability.is_whitelisted("openrouter/big-pickle", patterns)
+        assert not model_availability.is_whitelisted("openrouter/moonshotai/kimi-k2", patterns)
+        assert not model_availability.is_whitelisted("openrouter/qwen/qwen3-max", patterns)
+        assert not model_availability.is_whitelisted("openrouter/zai/GLM-4.5", patterns)
 
     def test_free_and_whitelisted_models_pass(self):
         patterns = model_availability.PROVIDER_WHITELISTS["opencode"]
@@ -752,3 +901,19 @@ class TestMainProbeSummary:
 class TestDiscoveryTimeout:
     def test_discovery_timeout_is_bounded(self):
         assert model_availability.DISCOVERY_TIMEOUT_SECONDS <= 120
+
+
+class TestWorkflowOpenRouterSelection:
+    WORKFLOWS = [
+        ".github/workflows/opencode.yml",
+        ".github/workflows/hourly-issue.yml",
+        ".github/workflows/refine-issues.yml",
+    ]
+
+    def test_workflows_select_openrouter_and_exclude_weak_free_models(self):
+        for path in self.WORKFLOWS:
+            content = Path(path).read_text()
+            assert "openrouter/*)" in content
+            assert '[[ -n "$OPENROUTER_API_KEY" ]]' in content
+            assert "OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}" in content
+            assert "/(ling-3\\.0-flash-fin|mimo-v2\\.5)(-free|:free)$|/nemotron-" in content
