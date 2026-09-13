@@ -143,12 +143,10 @@ class TestMain:
             "messages": [{"parts": [{"type": "text", "text": "all by myself"}]}],
         }
 
-        def fake_run_opencode(*args):
-            if args[0] == "session":
-                return sessions
-            return json.dumps(root_export)
-
-        monkeypatch.setattr(dump_subagent_transcripts, "run_opencode", fake_run_opencode)
+        monkeypatch.setattr(dump_subagent_transcripts, "run_opencode", lambda *args: sessions)
+        monkeypatch.setattr(
+            dump_subagent_transcripts, "export_to_json", lambda sid: (root_export, 123)
+        )
         assert dump_subagent_transcripts.main() == 0
         out_lines = capsys.readouterr().out.splitlines()
         assert re.fullmatch(r"::stop-commands::[0-9a-f]{64}", out_lines[0])
@@ -160,7 +158,12 @@ class TestMain:
 
     def test_renders_child_transcripts_fenced(self, monkeypatch, capsys):
         monkeypatch.setenv("COORDINATOR_SESSION_TITLE", "coordinator-run")
-        sessions = json.dumps([{"id": "ses_root", "title": "coordinator-run"}])
+        sessions = json.dumps(
+            [
+                {"id": "ses_root", "title": "coordinator-run"},
+                {"id": "ses_child1", "title": "subagent"},
+            ]
+        )
         root_export = {
             "info": {"agent": "coordinator"},
             "messages": [
@@ -214,12 +217,12 @@ class TestMain:
         }
         exports = {"ses_root": root_export, "ses_child1": child_export}
 
-        def fake_run_opencode(*args):
-            if args[0] == "session":
-                return sessions
-            return json.dumps(exports[args[1]])
+        monkeypatch.setattr(dump_subagent_transcripts, "run_opencode", lambda *args: sessions)
 
-        monkeypatch.setattr(dump_subagent_transcripts, "run_opencode", fake_run_opencode)
+        def fake_export(sid):
+            return (exports[sid], len(json.dumps(exports[sid])))
+
+        monkeypatch.setattr(dump_subagent_transcripts, "export_to_json", fake_export)
         assert dump_subagent_transcripts.main() == 0
         out = capsys.readouterr().out
         out_lines = out.splitlines()
@@ -243,12 +246,12 @@ class TestMain:
         monkeypatch.setenv("COORDINATOR_SESSION_TITLE", "coordinator-run")
         sessions = json.dumps([{"id": "ses_root", "title": "coordinator-run"}])
 
-        def fake_run_opencode(*args):
-            if args[0] == "session":
-                return sessions
-            raise subprocess.CalledProcessError(1, args)
+        monkeypatch.setattr(dump_subagent_transcripts, "run_opencode", lambda *args: sessions)
 
-        monkeypatch.setattr(dump_subagent_transcripts, "run_opencode", fake_run_opencode)
+        def fake_export(sid):
+            raise subprocess.CalledProcessError(1, ["opencode", "export", sid])
+
+        monkeypatch.setattr(dump_subagent_transcripts, "export_to_json", fake_export)
         assert dump_subagent_transcripts.main() == 0
         out_lines = capsys.readouterr().out.splitlines()
         assert re.fullmatch(r"::stop-commands::[0-9a-f]{64}", out_lines[0])
