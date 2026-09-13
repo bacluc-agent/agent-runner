@@ -292,6 +292,7 @@ jobs:
           PROMPT: ${{ inputs.prompt }}
           MODEL: ${{ steps.select-model.outputs.model }}
           COORDINATOR_TIMEOUT: ${{ inputs.timeout_minutes || 120 }}
+          NO_OUTPUT_TIMEOUT_MINUTES: "15"
           GITHUB_TOKEN: ${{ secrets.BACLUC_AGENT_GITHUB_TOKEN }}
           BACLUC_AGENT_GITHUB_TOKEN: ${{ secrets.BACLUC_AGENT_GITHUB_TOKEN }}
           OPENCODE_FATAL_STAGE: coordinator
@@ -307,10 +308,82 @@ jobs:
           printf 'Coordinator prompt:\n%s\n' "$PROMPT"
           printf '::%s::\n' "$stop_token"
           set +e
-          timeout "${COORDINATOR_TIMEOUT}m" opencode run --agent coordinator --model "$MODEL" --title "$coordinator_session_title" "$PROMPT" 2>&1 | tee "$RUNNER_TEMP/coordinator.out"
-          coordinator_statuses=("${PIPESTATUS[@]}")
-          coordinator_status=${coordinator_statuses[0]}
-          coordinator_tee_status=${coordinator_statuses[1]}
+          # ponytail: child-aware watchdog — 15m idle kill only when no children; per-subagent heartbeat if throughput needs finer
+          coord_out="$RUNNER_TEMP/coordinator.out"
+          : > "$coord_out"
+          opencode run --agent coordinator --model "$MODEL" --title "$coordinator_session_title" "$PROMPT" 2>&1 | tee "$coord_out" &
+          tee_pid=$!
+          start_ts=$(date +%s)
+          last_mtime=$(stat -c %Y "$coord_out" 2>/dev/null || echo "$start_ts")
+          last_out=$start_ts
+          no_output_timeout=$((NO_OUTPUT_TIMEOUT_MINUTES * 60))
+          coord_timeout=$((COORDINATOR_TIMEOUT * 60))
+          opencode_pid=""
+          for _ in $(seq 1 10); do
+            opencode_pid=$(ps -o pid,ppid,args 2>/dev/null | awk -v ppid=$$ '$2==ppid && $3=="opencode" {print $1; exit}')
+            if [[ -n "$opencode_pid" ]]; then break; fi
+            sleep 0.2
+          done
+          if [[ -z "$opencode_pid" ]]; then
+            opencode_pid=$(ps --ppid $$ -o pid,args 2>/dev/null | awk '/opencode/ {print $1; exit}')
+          fi
+          if [[ -z "$opencode_pid" ]]; then
+            opencode_pid=$(pgrep -P $$ 2>/dev/null | head -n 1 | tr -d '[:space:]')
+          fi
+          while kill -0 "$tee_pid" 2>/dev/null || { [[ -n "$opencode_pid" ]] && kill -0 "$opencode_pid" 2>/dev/null; }; do
+            sleep 30
+            now=$(date +%s)
+            cur_mtime=$(stat -c %Y "$coord_out" 2>/dev/null || echo "$last_mtime")
+            if [[ "$cur_mtime" != "$last_mtime" ]]; then
+              last_mtime=$cur_mtime
+              last_out=$now
+            fi
+            idle=$((now - last_out))
+            elapsed=$((now - start_ts))
+            has_child=""
+            if [[ -n "$opencode_pid" ]] && kill -0 "$opencode_pid" 2>/dev/null; then
+              has_child=$(ps --ppid "$opencode_pid" -o pid= 2>/dev/null | tr -d '[:space:]')
+            fi
+            if ((idle > no_output_timeout)) && [[ -z "$has_child" ]]; then
+              printf 'Watchdog: no output for %ss with no child processes, killing coordinator (pid %s)\n' "$idle" "$opencode_pid" >&2
+              if [[ -n "$opencode_pid" ]]; then kill "$opencode_pid" 2>/dev/null || true; fi
+              kill "$tee_pid" 2>/dev/null || true
+              sleep 5
+              if [[ -n "$opencode_pid" ]]; then kill -9 "$opencode_pid" 2>/dev/null || true; fi
+              kill -9 "$tee_pid" 2>/dev/null || true
+              break
+            fi
+            if ((elapsed > coord_timeout)); then
+              printf 'Watchdog: total timeout %ss exceeded, killing coordinator\n' "$elapsed" >&2
+              if [[ -n "$opencode_pid" ]]; then kill "$opencode_pid" 2>/dev/null || true; fi
+              kill "$tee_pid" 2>/dev/null || true
+              sleep 5
+              if [[ -n "$opencode_pid" ]]; then kill -9 "$opencode_pid" 2>/dev/null || true; fi
+              kill -9 "$tee_pid" 2>/dev/null || true
+              break
+            fi
+            if [[ -n "$opencode_pid" ]] && ! kill -0 "$opencode_pid" 2>/dev/null && ! kill -0 "$tee_pid" 2>/dev/null; then
+              break
+            fi
+          done
+          if [[ -n "$opencode_pid" ]]; then
+            wait "$opencode_pid" 2>/dev/null || true
+            coordinator_status=$?
+            # tee may already have exited; capture its status separately
+            wait "$tee_pid" 2>/dev/null || true
+            coordinator_tee_status=$?
+            # if opencode wait had no pid (killed and reaped), fall back to tee status
+            if ! kill -0 "$opencode_pid" 2>/dev/null && [[ "$coordinator_status" == 127 ]]; then
+              coordinator_status=$coordinator_tee_status
+            fi
+          else
+            wait "$tee_pid" 2>/dev/null || true
+            coordinator_status=$?
+            coordinator_tee_status=$coordinator_status
+          fi
+          # fallback when pid tracking missed: parse from jobs
+          if [[ -z "${coordinator_status:-}" ]]; then coordinator_status=1; fi
+          if [[ -z "${coordinator_tee_status:-}" ]]; then coordinator_tee_status=0; fi
           set -e
           printf 'Coordinator statuses: opencode=%s tee=%s\n' "$coordinator_status" "$coordinator_tee_status"
           echo "coordinator_status=${coordinator_status}" >> "$GITHUB_OUTPUT"
