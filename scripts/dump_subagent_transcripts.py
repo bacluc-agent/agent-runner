@@ -17,12 +17,8 @@ def run_opencode(*args) -> str:
 
 def run_opencode_to_file(*args, path: str) -> None:
     env = dict(os.environ)
-    try:
-        with open(path, "w") as out:
-            subprocess.run(["opencode", *args], stdout=out, check=True, env=env)
-    except (FileNotFoundError, subprocess.CalledProcessError):
-        with open(path, "w") as f:
-            f.write(run_opencode(*args))
+    with open(path, "w") as out:
+        subprocess.run(["opencode", *args], stdout=out, check=True, env=env)
 
 
 def compact_json(value) -> str:
@@ -100,10 +96,6 @@ def child_session_ids(root_export: dict) -> list[str]:
             part_agent = part_info.get("agent")
             if part_agent and isinstance(part_agent, str) and part_agent.startswith("ses_"):
                 ids.add(part_agent)
-            text = part.get("text") or ""
-            for label in AGENT_LABELS:
-                if label in text:
-                    pass
 
     return sorted(ids)
 
