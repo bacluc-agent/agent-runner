@@ -170,23 +170,49 @@ def main() -> int:
         except OSError:
             root_export_size = 0
         last_valid = "N/A"
+        repaired = None
         if root_tmp_path and os.path.exists(root_tmp_path):
             try:
                 with open(root_tmp_path, "r") as rf:
                     raw = rf.read()
-                snippet = raw[: e.pos] if hasattr(e, "pos") and e.pos else raw[:5000]
-                last_valid = str(snippet.count('"parts"'))
-                try:
-                    partial = json.loads(snippet + "]}") if snippet.strip() else {}
-                    if isinstance(partial, dict) and "messages" in partial:
-                        last_valid = str(len(partial.get("messages", [])) - 1)
-                except Exception:
-                    pass
+                pos = getattr(e, "pos", 0) or 0
+                prefix = raw[:pos] if pos else raw
+                bases = []
+                stripped = prefix.rstrip().rstrip(",")
+                if stripped not in bases:
+                    bases.append(stripped)
+                if "}," in prefix:
+                    head, _ = prefix.rsplit("},", 1)
+                    cand = (head + "}").rstrip().rstrip(",")
+                    if cand not in bases:
+                        bases.append(cand)
+                tried = set()
+                for base in bases:
+                    for suffix in ["]}", "]}}", "]}}}", "]}"]:
+                        candidate = base + suffix
+                        if candidate in tried:
+                            continue
+                        tried.add(candidate)
+                        try:
+                            parsed = json.loads(candidate)
+                            if isinstance(parsed, dict) and "messages" in parsed:
+                                repaired = parsed
+                                last_valid = str(len(parsed.get("messages", [])) - 1)
+                                break
+                        except Exception:
+                            continue
+                    if repaired is not None:
+                        break
+                if repaired is None:
+                    last_valid = str(prefix.count('"parts"'))
             except Exception:
                 last_valid = "N/A"
         msg = f"COORDINATOR_SESSION_TITLE={title} found={root_id is not None} total_sessions={len(sessions) if isinstance(sessions, list) else 'N/A'} root_export_bytes={root_export_size} last_valid_index={last_valid} error={e}"
         print(msg, file=sys.stderr)
-        root_export = None
+        if repaired is not None:
+            root_export = repaired
+        else:
+            root_export = None
     except Exception as e:
         try:
             root_export_size = os.path.getsize(root_tmp_path) if root_tmp_path and os.path.exists(root_tmp_path) else root_export_size
