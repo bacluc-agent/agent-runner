@@ -27,7 +27,7 @@ runs:
         config_dir="$RUNNER_TEMP/opencode-config"
         # Clone directly from the untagged agents-md-compliance branch (step 1)
         # instead of resolving latest semver tag.
-        branch_sha="e07f72ed1cf240cd15e56d99f3f79712c5531d61"
+        branch_sha="751afc026fbf0e099d2ec05d9458f3df833f175a"
         git clone --quiet --branch agents-md-compliance --single-branch "$SOURCE_REPOSITORY" "$source_dir"
         git -C "$source_dir" checkout --quiet --detach "$branch_sha"
         if [[ ! -d "$source_dir/$CONFIG_PATH" ]]; then
