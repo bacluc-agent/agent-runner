@@ -148,7 +148,14 @@ class TestMain:
                 return sessions
             return json.dumps(root_export)
 
+        def fake_run_opencode_to_file(*args, path: str):
+            with open(path, "w") as f:
+                f.write(fake_run_opencode(*args))
+
         monkeypatch.setattr(dump_subagent_transcripts, "run_opencode", fake_run_opencode)
+        monkeypatch.setattr(
+            dump_subagent_transcripts, "run_opencode_to_file", fake_run_opencode_to_file
+        )
         assert dump_subagent_transcripts.main() == 0
         out_lines = capsys.readouterr().out.splitlines()
         assert re.fullmatch(r"::stop-commands::[0-9a-f]{64}", out_lines[0])
@@ -219,7 +226,14 @@ class TestMain:
                 return sessions
             return json.dumps(exports[args[1]])
 
+        def fake_run_opencode_to_file(*args, path: str):
+            with open(path, "w") as f:
+                f.write(fake_run_opencode(*args))
+
         monkeypatch.setattr(dump_subagent_transcripts, "run_opencode", fake_run_opencode)
+        monkeypatch.setattr(
+            dump_subagent_transcripts, "run_opencode_to_file", fake_run_opencode_to_file
+        )
         assert dump_subagent_transcripts.main() == 0
         out = capsys.readouterr().out
         out_lines = out.splitlines()
@@ -248,7 +262,13 @@ class TestMain:
                 return sessions
             raise subprocess.CalledProcessError(1, args)
 
+        def fake_run_opencode_to_file(*args, path: str):
+            raise subprocess.CalledProcessError(1, args)
+
         monkeypatch.setattr(dump_subagent_transcripts, "run_opencode", fake_run_opencode)
+        monkeypatch.setattr(
+            dump_subagent_transcripts, "run_opencode_to_file", fake_run_opencode_to_file
+        )
         assert dump_subagent_transcripts.main() == 0
         out_lines = capsys.readouterr().out.splitlines()
         assert re.fullmatch(r"::stop-commands::[0-9a-f]{64}", out_lines[0])
