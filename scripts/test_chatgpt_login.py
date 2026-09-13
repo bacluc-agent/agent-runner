@@ -1,5 +1,6 @@
 import json
 import sys
+import types
 from pathlib import Path
 
 import importlib.util
@@ -66,3 +67,81 @@ def test_stdout_single_json_line(capsys, tmp_path, monkeypatch):
     assert out.count("\n") == 0
     parsed = json.loads(out)
     assert parsed == {"openai": {"type": "oauth", "access": "tokA", "refresh": "tokR", "expires": 42}}
+
+
+def test_main_missing_creds_returns_1(monkeypatch, capsys):
+    monkeypatch.delenv("CHATGPT_EMAIL", raising=False)
+    monkeypatch.delenv("OPENAI_USERNAME", raising=False)
+    monkeypatch.delenv("CHATGPT_PASSWORD", raising=False)
+    monkeypatch.delenv("OPENAI_PASSWORD", raising=False)
+    assert chatgpt_login.main() == 1
+    assert "must be set" in capsys.readouterr().err
+
+
+def test_env_fallback_chain(monkeypatch):
+    monkeypatch.delenv("CHATGPT_EMAIL", raising=False)
+    monkeypatch.setenv("OPENAI_USERNAME", "fb@x.com")
+    assert chatgpt_login._env("CHATGPT_EMAIL", ["OPENAI_USERNAME"]) == "fb@x.com"
+    monkeypatch.delenv("OPENAI_USERNAME", raising=False)
+    assert chatgpt_login._env("CHATGPT_EMAIL", ["OPENAI_USERNAME"]) is None
+    monkeypatch.setenv("CHATGPT_EMAIL", "primary@x.com")
+    monkeypatch.setenv("OPENAI_USERNAME", "fb@x.com")
+    assert chatgpt_login._env("CHATGPT_EMAIL", ["OPENAI_USERNAME"]) == "primary@x.com"
+
+
+def test_env_fallback_totp_three_level(monkeypatch):
+    monkeypatch.delenv("CHATGPT_2FA_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_2FA_KEY", raising=False)
+    monkeypatch.setenv("CHATGPT_TOTP_KEY", "last")
+    assert chatgpt_login._env("CHATGPT_2FA_KEY", ["OPENAI_2FA_KEY", "CHATGPT_TOTP_KEY"]) == "last"
+    monkeypatch.setenv("OPENAI_2FA_KEY", "middle")
+    assert chatgpt_login._env("CHATGPT_2FA_KEY", ["OPENAI_2FA_KEY", "CHATGPT_TOTP_KEY"]) == "middle"
+    monkeypatch.setenv("CHATGPT_2FA_KEY", "first")
+    assert chatgpt_login._env("CHATGPT_2FA_KEY", ["OPENAI_2FA_KEY", "CHATGPT_TOTP_KEY"]) == "first"
+
+
+def test_main_captcha_returns_2(monkeypatch, capsys):
+    monkeypatch.setenv("CHATGPT_EMAIL", "e@x.com")
+    monkeypatch.setenv("CHATGPT_PASSWORD", "pw")
+
+    class FakePage:
+        def goto(self, *a, **k):
+            pass
+
+        def content(self):
+            return "<html><body>Verify you are human captcha</body></html>"
+
+        def locator(self, *a, **k):
+            raise AssertionError("locator should not be called when content contains captcha")
+
+    class FakeContext:
+        def new_page(self):
+            return FakePage()
+
+    class FakeBrowser:
+        def new_context(self):
+            return FakeContext()
+
+        def close(self):
+            pass
+
+    class FakeChromium:
+        def launch(self, headless=True):
+            return FakeBrowser()
+
+    class FakeP:
+        def __init__(self):
+            self.chromium = FakeChromium()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            pass
+
+    fake_sync = types.ModuleType("playwright.sync_api")
+    fake_sync.sync_playwright = lambda: FakeP()
+    monkeypatch.setitem(sys.modules, "playwright.sync_api", fake_sync)
+
+    assert chatgpt_login.main() == 2
+    assert "Login blocked" in capsys.readouterr().err
