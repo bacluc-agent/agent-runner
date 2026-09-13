@@ -48,10 +48,19 @@ def main() -> int:
         return 1
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
+        try:
+            browser = p.chromium.launch(headless=True)
+        except Exception as e:
+            print(f"Failed to launch browser: {e}. If chromium is not installed, run: playwright install chromium", file=sys.stderr)
+            return 1
         context = browser.new_context()
         page = context.new_page()
-        page.goto("https://chatgpt.com/auth/login", wait_until="domcontentloaded")
+        try:
+            page.goto("https://chatgpt.com/auth/login", wait_until="domcontentloaded")
+        except Exception as e:
+            print(f"Failed to reach chatgpt.com: {e}", file=sys.stderr)
+            browser.close()
+            return 1
 
         def _has_blocking_screen() -> str | None:
             checks = [
@@ -148,7 +157,7 @@ def main() -> int:
 
         if needs_2fa:
             if not totp_key:
-                print("2FA required but no TOTP key (CHATGPT_2FA_KEY/OPENAI_2FA_KEY) set", file=sys.stderr)
+                print("2FA required but no TOTP key (CHATGPT_2FA_KEY/OPENAI_2FA_KEY/CHATGPT_TOTP_KEY) set", file=sys.stderr)
                 browser.close()
                 return 1
             try:
