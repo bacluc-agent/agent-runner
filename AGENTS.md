@@ -4,6 +4,11 @@
 ./scripts/completion-check
 ```
 
+Note: The harness (GitHub Actions workflow `.github/workflows/opencode.yml`)
+reads this declaration and runs the command after the coordinator exits,
+failing the job if the check fails. The `bacluc-opencode-completion-check-command`
+plugin is no longer required; the harness enforces the check directly.
+
 ## Renovate
 
 Renovate must be able to update all dependencies.

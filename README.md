@@ -40,3 +40,5 @@ Set these in Settings → Secrets and variables → Actions → Variables:
 ## Completion check
 
 Run `./scripts/completion-check` before pushing. It runs all quality checks (Prettier formatting check, actionlint, and pytest) in Docker and exits non-zero if any check fails. `.github/workflows/ci.yml` runs the same script on every push and pull request.
+
+The harness (`.github/workflows/opencode.yml`) reads the `/completion-check-command` declaration in `AGENTS.md` and runs the command after the coordinator exits, failing the job if the check fails. This replaces the previous plugin-based mechanism (`bacluc-opencode-completion-check-command`), which relied on `session.idle` hooks that do not fire reliably in headless `opencode run` and cannot force continuation without an interactive session.

@@ -320,6 +320,32 @@ jobs:
           fi
           exit "$coordinator_tee_status"
 
+      - name: Harness completion check
+        id: harness-check
+        if: always()
+        shell: bash
+        env:
+          OPENCODE_FATAL_STAGE: harness-check
+        run: |
+          set -Eeuo pipefail
+          # shellcheck disable=SC2016,SC2028,SC2129
+          # Read the declared completion-check command from AGENTS.md.
+          # The harness enforces the check directly instead of relying on
+          # the model to invoke /completion-check-command via the plugin.
+          command_file="$RUNNER_TEMP/completion-check-command.txt"
+          # Extract the first bash code block after /completion-check-command
+          python_script="$RUNNER_TEMP/extract-check.py"
+          cp .github/scripts/extract-check.py "$python_script"
+          python3 "$python_script" "$command_file"
+          if [[ ! -s "$command_file" ]]; then
+            printf 'No /completion-check-command declaration found in AGENTS.md; skipping harness check.\n'
+            exit 0
+          fi
+          printf 'Harness completion check command (from AGENTS.md):\n'
+          cat "$command_file"
+          printf '\nRunning harness completion check...\n'
+          bash -c "$(cat "$command_file")"
+
       - name: Fatal guard
         id: fatal-guard
         if: always() && steps.select-model.outcome == 'success'
