@@ -135,7 +135,17 @@ jobs:
           printf '::add-mask::%s\n' "$OPENCODE_GO_API_KEY"
           printf '::add-mask::%s\n' "$OPENCODE_GO_2_API_KEY"
           [[ -n "${OPENCODE_AUTH_CONTENT:-}" ]] && printf '::add-mask::%s\n' "$OPENCODE_AUTH_CONTENT"
-          [[ -n "${OPENCODE_AUTH_CONTENT:-}" ]] && { mkdir -p ~/.local/share/opencode; printf '%s' "$OPENCODE_AUTH_CONTENT" > ~/.local/share/opencode/auth.json; }
+          if [[ -n "${OPENCODE_AUTH_CONTENT:-}" ]]; then
+            mkdir -p ~/.local/share/opencode
+            printf '%s' "$OPENCODE_AUTH_CONTENT" > ~/.local/share/opencode/auth.json
+            if ! jq -e '.openai.type == "oauth" and .openai.access != "" and .openai.refresh != "" and (.openai.expires | type == "number")' ~/.local/share/opencode/auth.json >/dev/null 2>&1; then
+              echo "::warning::OPENCODE_AUTH_CONTENT is not valid opencode auth JSON (expected {openai:{type:oauth,access,refresh,expires:number}}); removing auth.json and continuing without it" >&2
+              rm -f ~/.local/share/opencode/auth.json
+            elif command -v opencode >/dev/null 2>&1 && ! opencode --help >/dev/null 2>&1; then
+              echo "::warning::opencode config check failed with provided auth.json; removing auth.json and continuing" >&2
+              rm -f ~/.local/share/opencode/auth.json
+            fi
+          fi
 
           available_models_file="$RUNNER_TEMP/available-models.txt"
           printf '%s\n' "$AVAILABLE_MODELS" > "$available_models_file"
@@ -260,8 +270,8 @@ jobs:
           }
 
           requested_model="$model"
-          if [[ "$model" == openai/* && -n "${OPENCODE_AUTH_CONTENT:-}" ]]; then
-            printf 'Model availability: requested %q is openai/* and OPENCODE_AUTH_CONTENT is set; skipping fallback\n' "$model"
+          if [[ "$model" == openai/* && -f ~/.local/share/opencode/auth.json ]]; then
+            printf 'Model availability: requested %q is openai/* and auth.json is present; skipping fallback\n' "$model"
             echo "model=${model}" >> "$GITHUB_OUTPUT"
             printf '\n\n\n\n\n\n'
             printf 'Chosen model is %s\n' "$model"
