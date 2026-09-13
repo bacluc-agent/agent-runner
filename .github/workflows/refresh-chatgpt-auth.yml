@@ -38,7 +38,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           auth_json=$(python3 scripts/chatgpt-login.py)
+          [[ -n "${auth_json:-}" ]] && printf '::add-mask::%s\n' "$auth_json"
           printf '%s\n' "$auth_json" | jq -e '.openai.type == "oauth" and .openai.access != "" and .openai.refresh != "" and (.openai.expires | type == "number")' >/dev/null
-          printf '::add-mask::%s\n' "$auth_json"
           GH_TOKEN="$BACLUC_AGENT_GITHUB_TOKEN" gh secret set OPENCODE_AUTH_JSON --repo "$GITHUB_REPOSITORY" --body "$auth_json"
           printf 'Auth refreshed successfully\n'
