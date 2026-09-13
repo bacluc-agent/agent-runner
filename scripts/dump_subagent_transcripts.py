@@ -199,9 +199,7 @@ def main() -> int:
             print(f"Child session ID extraction failed: {e}", file=sys.stderr)
             child_ids = []
 
-    # Fix C: filter child_ids to only those that exist in session list
-    existing_session_ids = {s.get("id") for s in (sessions or []) if isinstance(s, dict)}
-    child_ids = [cid for cid in child_ids if cid in existing_session_ids]
+    # child_ids are taken as-is; render attempt will gracefully skip missing exports
 
     token = secrets.token_hex(32)
     print(f"::stop-commands::{token}")
