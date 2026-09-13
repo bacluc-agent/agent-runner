@@ -16,9 +16,13 @@ def run_opencode(*args) -> str:
 
 
 def run_opencode_to_file(*args, path: str) -> None:
-    result = run_opencode(*args)
-    with open(path, "w") as f:
-        f.write(result)
+    env = dict(os.environ)
+    try:
+        with open(path, "w") as out:
+            subprocess.run(["opencode", *args], stdout=out, check=True, env=env)
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        with open(path, "w") as f:
+            f.write(run_opencode(*args))
 
 
 def compact_json(value) -> str:
@@ -74,7 +78,6 @@ def child_session_ids(root_export: dict) -> list[str]:
                 )
                 if session_id:
                     ids.add(session_id)
-            # Inspect info/agent fields for session references
             info = node.get("info") or {}
             agent = info.get("agent")
             if agent and isinstance(agent, str) and agent.startswith("ses_"):
@@ -85,10 +88,8 @@ def child_session_ids(root_export: dict) -> list[str]:
             for value in node:
                 walk(value)
 
-    # Walk full export for task metadata session IDs
     walk(root_export)
 
-    # Also inspect messages/parts for agent info and inline markers
     for message in root_export.get("messages") or []:
         msg_info = message.get("info") or {}
         msg_agent = msg_info.get("agent")
@@ -99,27 +100,21 @@ def child_session_ids(root_export: dict) -> list[str]:
             part_agent = part_info.get("agent")
             if part_agent and isinstance(part_agent, str) and part_agent.startswith("ses_"):
                 ids.add(part_agent)
-            # Fallback: text markers that reference agent names (not session IDs)
             text = part.get("text") or ""
             for label in AGENT_LABELS:
                 if label in text:
-                    # Inline agent segment detected; no separate session ID
                     pass
 
     return sorted(ids)
 
 
 def inline_agent_segments(root_export: dict) -> list[tuple[str, dict]]:
-    """Extract inline subagent segments from coordinator transcript.
-    Returns list of (agent_name, pseudo_session_dict) for rendering.
     # ponytail: inline segment extraction; upgrade to structured session refs if needed
-    """
     segments = []
     for message in root_export.get("messages") or []:
         msg_info = message.get("info") or {}
         msg_agent = msg_info.get("agent")
         agent_name = msg_agent if msg_agent else None
-        # Fallback: detect agent from text markers in parts
         for part in message.get("parts") or []:
             text = part.get("text") or ""
             for label in AGENT_LABELS:
@@ -127,19 +122,18 @@ def inline_agent_segments(root_export: dict) -> list[tuple[str, dict]]:
                     agent_name = label.strip("[]")
                     break
             if agent_name and not msg_agent:
-                # Build pseudo-session from this message's parts
                 pseudo = {
                     "info": {"agent": agent_name},
                     "messages": [{"parts": message.get("parts", [])}],
                 }
                 segments.append((agent_name, pseudo))
+                break
         if agent_name and msg_agent and not any(s[0] == agent_name for s in segments):
             pseudo = {
                 "info": {"agent": agent_name},
                 "messages": [{"parts": message.get("parts", [])}],
             }
             segments.append((agent_name, pseudo))
-    # Deduplicate by agent name, keep first
     seen = set()
     deduped = []
     for agent_name, pseudo in segments:
@@ -162,12 +156,12 @@ def main() -> int:
         sessions = json.loads(run_opencode("session", "list", "--format", "json"))
         root_id = coordinator_session_id(sessions, title)
     except Exception:
+        sessions = []
         root_id = None
     if not root_id:
         print("No coordinator session found; skipping subagent transcripts.")
         return 0
 
-    # Fix A + B: temp-file export with graceful truncation diagnostics
     root_export = None
     root_export_size = 0
     root_tmp_path = None
@@ -179,10 +173,35 @@ def main() -> int:
         with open(root_tmp_path) as f:
             root_export = json.load(f)
     except json.JSONDecodeError as e:
-        print(f"COORDINATOR_SESSION_TITLE={title} found={root_id is not None} total_sessions={len(sessions) if isinstance(sessions, list) else 'N/A'} root_export_bytes={root_export_size} last_valid_index=N/A error={e}", file=sys.stderr)
+        try:
+            root_export_size = os.path.getsize(root_tmp_path) if root_tmp_path and os.path.exists(root_tmp_path) else 0
+        except OSError:
+            root_export_size = 0
+        last_valid = "N/A"
+        if root_tmp_path and os.path.exists(root_tmp_path):
+            try:
+                with open(root_tmp_path, "r") as rf:
+                    raw = rf.read()
+                snippet = raw[: e.pos] if hasattr(e, "pos") and e.pos else raw[:5000]
+                last_valid = str(snippet.count('"parts"'))
+                try:
+                    partial = json.loads(snippet + "]}") if snippet.strip() else {}
+                    if isinstance(partial, dict) and "messages" in partial:
+                        last_valid = str(len(partial.get("messages", [])) - 1)
+                except Exception:
+                    pass
+            except Exception:
+                last_valid = "N/A"
+        msg = f"COORDINATOR_SESSION_TITLE={title} found={root_id is not None} total_sessions={len(sessions) if isinstance(sessions, list) else 'N/A'} root_export_bytes={root_export_size} last_valid_index={last_valid} error={e}"
+        print(msg, file=sys.stderr)
         root_export = None
     except Exception as e:
-        print(f"COORDINATOR_SESSION_TITLE={title} found={root_id is not None} total_sessions={len(sessions) if isinstance(sessions, list) else 'N/A'} root_export_bytes={root_export_size if root_tmp_path else 0} error={e}", file=sys.stderr)
+        try:
+            root_export_size = os.path.getsize(root_tmp_path) if root_tmp_path and os.path.exists(root_tmp_path) else root_export_size
+        except OSError:
+            pass
+        msg = f"COORDINATOR_SESSION_TITLE={title} found={root_id is not None} total_sessions={len(sessions) if isinstance(sessions, list) else 'N/A'} root_export_bytes={root_export_size} error={e}"
+        print(msg, file=sys.stderr)
         root_export = None
     finally:
         if root_tmp_path and os.path.exists(root_tmp_path):
@@ -197,9 +216,13 @@ def main() -> int:
             child_ids = child_session_ids(root_export)
         except Exception as e:
             print(f"Child session ID extraction failed: {e}", file=sys.stderr)
+            print(f"Child session ID extraction failed: {e}")
             child_ids = []
 
-    # child_ids are taken as-is; render attempt will gracefully skip missing exports
+    session_ids_set = {s.get("id") for s in sessions if isinstance(s, dict) and s.get("id")} if isinstance(sessions, list) else set()
+    filtered_child_ids = [cid for cid in child_ids if cid in session_ids_set] if session_ids_set else child_ids
+    if not filtered_child_ids and child_ids:
+        filtered_child_ids = child_ids
 
     token = secrets.token_hex(32)
     print(f"::stop-commands::{token}")
@@ -210,15 +233,14 @@ def main() -> int:
     else:
         print("--- Coordinator transcript: export failed ---")
 
-    # Fix C: render inline agent segments when no separate child IDs exist
     inline_segments = []
     if root_export is not None:
         inline_segments = inline_agent_segments(root_export)
 
-    if not child_ids and not inline_segments:
+    if not filtered_child_ids and not inline_segments:
         print("(No subagents were spawned.)")
     else:
-        for child_id in child_ids:
+        for child_id in filtered_child_ids:
             child_tmp_path = None
             try:
                 with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as tmp:
@@ -237,18 +259,17 @@ def main() -> int:
                     except OSError:
                         pass
 
-        # Render inline segments from coordinator transcript
         for agent_name, pseudo in inline_segments:
             pseudo_id = f"inline-{agent_name.lower().replace(' ', '-')}-segment"
             for line in render_transcript(pseudo, pseudo_id, label=f"Inline agent segment: {agent_name}"):
                 print(line)
 
-    # Fix D: diagnostics when root_export is None or no child_ids
     if root_export is None:
-        print(f"COORDINATOR_SESSION_TITLE={title} found={root_id is not None} total_sessions={len(sessions) if isinstance(sessions, list) else 'N/A'} root_export_bytes={root_export_size if root_tmp_path else 0} messages=N/A")
-    elif not child_ids:
+        print(f"COORDINATOR_SESSION_TITLE={title} found={root_id is not None} total_sessions={len(sessions) if isinstance(sessions, list) else 'N/A'} root_export_bytes={root_export_size} messages=N/A")
+    elif not filtered_child_ids:
         msg_count = len(root_export.get("messages", [])) if isinstance(root_export, dict) else 0
-        print(f"COORDINATOR_SESSION_TITLE={title} found={root_id is not None} total_sessions={len(sessions) if isinstance(sessions, list) else 'N/A'} root_export_bytes={root_export_size if root_tmp_path else 0} messages={msg_count}")
+        raw_size = root_export_size
+        print(f"COORDINATOR_SESSION_TITLE={title} found={root_id is not None} total_sessions={len(sessions) if isinstance(sessions, list) else 'N/A'} root_export_bytes={raw_size} messages={msg_count}")
 
     print(f"::{token}::")
     return 0
