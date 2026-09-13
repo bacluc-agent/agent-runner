@@ -298,8 +298,7 @@ jobs:
             echo "issue_number=${issue_num}" >> "$GITHUB_OUTPUT"
             printf 'Target issue: #%s\n' "$issue_num"
           else
-            printf '::error::No target issue found in prompt; skipping progress-tracking steps.\n' >&2
-            exit 1
+            printf 'No target issue found in prompt; skipping progress-tracking steps.\n'
           fi
 
       - name: Post run-start comment
