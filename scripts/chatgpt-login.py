@@ -243,7 +243,7 @@ def main() -> int:
         expires_raw = data.get("accessTokenExpiresAt") or data.get("oai-accessTokenExpiresAt")
 
         if not access or not refresh or not expires_raw:
-            print(f"Tokens not found in localStorage: {data}", file=sys.stderr)
+            print(f"Tokens not found in localStorage, found keys: {[k for k, v in data.items() if v]}", file=sys.stderr)
             browser.close()
             return 1
 
