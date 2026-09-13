@@ -208,7 +208,6 @@ def main() -> int:
             child_ids = child_session_ids(root_export)
         except Exception as e:
             print(f"Child session ID extraction failed: {e}", file=sys.stderr)
-            print(f"Child session ID extraction failed: {e}")
             child_ids = []
 
     session_ids_set = {s.get("id") for s in sessions if isinstance(s, dict) and s.get("id")} if isinstance(sessions, list) else set()
