@@ -24,7 +24,7 @@ jobs:
         run: uv sync --all-extras
 
       - name: Install playwright browsers
-        run: uv run playwright install --with-deps chromium
+        run: uv run playwright install --with-deps chrome
 
       - name: Refresh auth and update secret
         env:
