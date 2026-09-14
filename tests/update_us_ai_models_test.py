@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import os
 
 _SCRIPT = os.path.join(
@@ -44,3 +45,21 @@ def test_npm_name_scoped() -> None:
 def test_npm_name_no_version() -> None:
     assert mod.npm_name("@scope/name") is None
     assert mod.npm_name("plain") is None
+
+
+def test_oauth_openai_model_is_available_in_model_catalog() -> None:
+    config_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "deploys",
+        "development_tools",
+        "ai_agent_devcontainer",
+        "files",
+        "opencode",
+        "opencode.jsonc",
+    )
+    with open(config_path) as config_file:
+        config = json.loads(mod.strip_jsonc_comments(config_file.read()))
+
+    assert config["provider"]["openai"]["models"]["gpt-5.6-luna"] == {
+        "name": "gpt-5.6-luna"
+    }

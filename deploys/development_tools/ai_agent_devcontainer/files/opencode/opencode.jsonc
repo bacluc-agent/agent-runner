@@ -62,6 +62,13 @@
         }
       }
     },
+    "openai": {
+      "models": {
+        "gpt-5.6-luna": {
+          "name": "gpt-5.6-luna"
+        }
+      }
+    },
     "opencode-go-anthropic": {
       "npm": "@ai-sdk/anthropic",
       "name": "opencode-go-anthropic",
