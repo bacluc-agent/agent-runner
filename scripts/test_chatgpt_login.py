@@ -145,3 +145,75 @@ def test_main_captcha_returns_2(monkeypatch, capsys):
 
     assert chatgpt_login.main() == 2
     assert "Login blocked" in capsys.readouterr().err
+
+
+def _jq_valid_auth(content: str) -> bool:
+    import subprocess
+
+    jq_filter = '.openai.type == "oauth" and .openai.access != "" and .openai.refresh != "" and (.openai.expires | type == "number")'
+    result = subprocess.run(["jq", "-e", jq_filter], input=content, text=True, capture_output=True)
+    return result.returncode == 0
+
+
+def test_jq_rejects_invalid_json():
+    assert not _jq_valid_auth("not json")
+    assert not _jq_valid_auth("{ invalid")
+    assert not _jq_valid_auth("")
+
+
+def test_jq_rejects_schema_mismatch():
+    assert not _jq_valid_auth(json.dumps({"openai": {"type": "oauth"}}))
+    assert not _jq_valid_auth(json.dumps({"openai": {"type": "oauth", "access": "a", "refresh": "r"}}))
+    assert not _jq_valid_auth(json.dumps({"openai": {"type": "oauth", "access": "a", "refresh": "r", "expires": "123"}}))
+    assert not _jq_valid_auth(json.dumps({"openai": {"type": "not-oauth", "access": "a", "refresh": "r", "expires": 1}}))
+    assert not _jq_valid_auth(json.dumps({"openai": {"type": "oauth", "access": "", "refresh": "r", "expires": 1}}))
+
+
+def test_jq_accepts_valid_auth():
+    valid = json.dumps({"openai": {"type": "oauth", "access": "acc", "refresh": "ref", "expires": 1234567890000}})
+    assert _jq_valid_auth(valid)
+
+
+def test_workflow_removes_invalid_auth_and_continues(tmp_path, monkeypatch):
+    import subprocess
+
+    auth_path = tmp_path / "auth.json"
+    for content, should_exist in [
+        ("not json", False),
+        (json.dumps({"openai": {"type": "oauth"}}), False),
+        (json.dumps({"openai": {"type": "oauth", "access": "a", "refresh": "r", "expires": 1}}), True),
+    ]:
+        auth_path.write_text(content, encoding="utf-8")
+        jq_filter = '.openai.type == "oauth" and .openai.access != "" and .openai.refresh != "" and (.openai.expires | type == "number")'
+        result = subprocess.run(["jq", "-e", jq_filter, str(auth_path)], capture_output=True)
+        if result.returncode != 0:
+            auth_path.unlink(missing_ok=True)
+        assert auth_path.exists() == should_exist
+
+
+def test_opencode_help_check_removes_broken_auth(tmp_path, monkeypatch):
+    import subprocess
+
+    auth_path = tmp_path / "auth.json"
+    auth_path.parent.mkdir(parents=True, exist_ok=True)
+    auth_path.write_text(json.dumps({"openai": {"type": "oauth", "access": "a", "refresh": "r", "expires": 1}}))
+
+    def fake_opencode_help_fails(*a, **kw):
+        return subprocess.CompletedProcess(args=["opencode", "--help"], returncode=1, stdout="", stderr="crash")
+
+    monkeypatch.setattr(subprocess, "run", fake_opencode_help_fails)
+    result = subprocess.run(["opencode", "--help"], capture_output=True)  # type: ignore[call-overload]
+    if result.returncode != 0:
+        auth_path.unlink(missing_ok=True)
+    assert not auth_path.exists()
+
+    auth_path.write_text(json.dumps({"openai": {"type": "oauth", "access": "a", "refresh": "r", "expires": 1}}))
+
+    def fake_opencode_help_ok(*a, **kw):
+        return subprocess.CompletedProcess(args=["opencode", "--help"], returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_opencode_help_ok)
+    result = subprocess.run(["opencode", "--help"], capture_output=True)  # type: ignore[call-overload]
+    if result.returncode != 0:
+        auth_path.unlink(missing_ok=True)
+    assert auth_path.exists()
