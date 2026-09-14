@@ -72,7 +72,7 @@ jobs:
           fi
 
       - name: Set secret (refreshed token)
-        if: steps.refresh.outputs.refreshed == 'true' && steps.validate.outputs.refreshed != 'false'
+        if: steps.refresh.outputs.refreshed == 'true' && steps.validate.outcome == 'success'
         run: |
           set -Eeuo pipefail
           auth_json=$(cat "$RUNNER_TEMP/auth.json")
@@ -82,7 +82,7 @@ jobs:
 
       - name: Browser login (fallback)
         id: browser-login
-        if: steps.refresh.outputs.refreshed != 'true' || steps.validate.outputs.refreshed == 'false'
+        if: steps.refresh.outputs.refreshed != 'true' || steps.validate.outcome != 'success'
         env:
           CHATGPT_EMAIL: ${{ secrets.CHATGPT_EMAIL || secrets.OPENAI_USERNAME }}
           CHATGPT_PASSWORD: ${{ secrets.CHATGPT_PASSWORD || secrets.OPENAI_PASSWORD }}
