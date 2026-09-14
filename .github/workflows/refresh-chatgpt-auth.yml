@@ -67,6 +67,7 @@ jobs:
             cat "$RUNNER_TEMP/opencode-validate.log"
             echo "refreshed=false" >> "$GITHUB_OUTPUT"
             printf 'Refreshed token rejected by opencode, falling back to browser login\n'
+            exit 1
           else
             printf 'Refreshed token accepted by opencode\n'
           fi
