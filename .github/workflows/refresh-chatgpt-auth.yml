@@ -18,13 +18,13 @@ jobs:
         with:
           token: ${{ secrets.BACLUC_AGENT_GITHUB_TOKEN }}
 
-      - name: Set up Python
-        uses: actions/setup-python@a26af69be951a213d388a244691a91f9c543c067 # v5.6.0
-        with:
-          python-version: "3.12"
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
 
       - name: Install dependencies
-        run: pip install --quiet playwright pyotp && playwright install chromium --with-deps
+        run: uv sync --all-extras
+
+      - name: Install playwright browsers
+        run: uv run playwright install --with-deps chromium
 
       - name: Refresh auth and update secret
         env:
@@ -37,7 +37,16 @@ jobs:
           CHATGPT_TOTP_KEY: ${{ secrets.CHATGPT_TOTP_KEY }}
         run: |
           set -Eeuo pipefail
-          auth_json=$(python3 scripts/chatgpt-login.py)
+          set +e
+          xvfb-run -a uv run scripts/chatgpt-login.py > "$RUNNER_TEMP/auth.json" 2> "$RUNNER_TEMP/chatgpt-login.stderr"
+          status=$?
+          set -e
+          if (( status != 0 )); then
+            cat "$RUNNER_TEMP/auth.json" >&2
+            cat "$RUNNER_TEMP/chatgpt-login.stderr" >&2
+            exit "$status"
+          fi
+          auth_json=$(cat "$RUNNER_TEMP/auth.json")
           [[ -n "${auth_json:-}" ]] && printf '::add-mask::%s\n' "$auth_json"
           printf '%s\n' "$auth_json" | jq -e '.openai.type == "oauth" and .openai.access != "" and .openai.refresh != "" and (.openai.expires | type == "number")' >/dev/null
           GH_TOKEN="$BACLUC_AGENT_GITHUB_TOKEN" gh secret set OPENCODE_AUTH_JSON --repo "$GITHUB_REPOSITORY" --body "$auth_json"

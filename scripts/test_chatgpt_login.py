@@ -100,6 +100,81 @@ def test_env_fallback_totp_three_level(monkeypatch):
     assert chatgpt_login._env("CHATGPT_2FA_KEY", ["OPENAI_2FA_KEY", "CHATGPT_TOTP_KEY"]) == "first"
 
 
+def test_is_headless_default(monkeypatch):
+    monkeypatch.delenv("CHATGPT_HEADLESS", raising=False)
+    assert chatgpt_login._is_headless() is False
+
+
+def test_is_headless_true(monkeypatch):
+    monkeypatch.setenv("CHATGPT_HEADLESS", "1")
+    assert chatgpt_login._is_headless() is True
+
+
+def test_is_headless_false_string(monkeypatch):
+    monkeypatch.setenv("CHATGPT_HEADLESS", "true")
+    assert chatgpt_login._is_headless() is True
+
+
+def test_is_headless_explicit_false(monkeypatch):
+    monkeypatch.setenv("CHATGPT_HEADLESS", "0")
+    assert chatgpt_login._is_headless() is False
+
+
+def test_wait_for_blocking_clear_returns_none_after_challenge_clears(monkeypatch):
+    clock = {"t": 0.0}
+    monkeypatch.setattr(chatgpt_login.time, "monotonic", lambda: clock["t"])
+    monkeypatch.setattr(chatgpt_login.time, "sleep", lambda s: clock.update(t=clock["t"] + s))
+
+    calls = {"n": 0}
+
+    class FakePage:
+        def content(self):
+            calls["n"] += 1
+            return "<html>captcha</html>" if calls["n"] <= 2 else "<html>clean</html>"
+
+        def locator(self, *a, **k):
+            raise AssertionError("locator should not be called when content contains captcha")
+
+    assert chatgpt_login._wait_for_blocking_clear(FakePage()) is None
+    assert calls["n"] == 3
+
+
+def test_wait_for_blocking_clear_returns_label_on_persistent_blocking(monkeypatch):
+    clock = {"t": 0.0}
+    monkeypatch.setattr(chatgpt_login.time, "monotonic", lambda: clock["t"])
+    monkeypatch.setattr(chatgpt_login.time, "sleep", lambda s: clock.update(t=clock["t"] + s))
+
+    class FakePage:
+        def content(self):
+            return "<html>Verify you are human captcha</html>"
+
+        def locator(self, *a, **k):
+            raise AssertionError("locator should not be called when content contains captcha")
+
+    assert chatgpt_login._wait_for_blocking_clear(FakePage(), timeout_s=1) == "captcha/device verification detected"
+
+
+def test_wait_for_blocking_clear_keeps_polling_on_transient_error(monkeypatch):
+    clock = {"t": 0.0}
+    monkeypatch.setattr(chatgpt_login.time, "monotonic", lambda: clock["t"])
+    monkeypatch.setattr(chatgpt_login.time, "sleep", lambda s: clock.update(t=clock["t"] + s))
+
+    calls = {"n": 0}
+
+    class FakePage:
+        def content(self):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise RuntimeError("Execution context was destroyed")
+            return "<html>clean</html>"
+
+        def locator(self, *a, **k):
+            raise AssertionError("locator should not be called when content contains captcha")
+
+    assert chatgpt_login._wait_for_blocking_clear(FakePage()) is None
+    assert calls["n"] == 2
+
+
 def test_main_captcha_returns_2(monkeypatch, capsys):
     monkeypatch.setenv("CHATGPT_EMAIL", "e@x.com")
     monkeypatch.setenv("CHATGPT_PASSWORD", "pw")

@@ -1,6 +1,7 @@
 import json
 import os
 import sys
+import time
 from pathlib import Path
 
 
@@ -32,6 +33,46 @@ def _env(name: str, fallbacks: list[str]) -> str | None:
     return None
 
 
+def _is_headless() -> bool:
+    return os.environ.get("CHATGPT_HEADLESS", "").lower() in ("1", "true")
+
+
+def _has_blocking_screen(page) -> str | None:
+    checks = [
+        ("Verify you are human", 'text="Verify you are human"'),
+        ("captcha iframe", 'iframe[src*="captcha"]'),
+        ("Checking your browser", 'text="Checking your browser"'),
+        ("Verify your email", 'text="Verify your email"'),
+        ("Check your email", 'text="Check your email"'),
+        ("human verification", 'text="human verification"'),
+        ("device verification", 'text="device verification"'),
+    ]
+    content = page.content().lower()
+    if "captcha" in content or "human verification" in content or "device verification" in content:
+        return "captcha/device verification detected"
+    for label, sel in checks:
+        try:
+            if page.locator(sel).first.is_visible(timeout=1000):
+                return label
+        except Exception:
+            continue
+    return None
+
+
+def _wait_for_blocking_clear(page, timeout_s=60) -> str | None:
+    deadline = time.monotonic() + timeout_s
+    while True:
+        try:
+            blocking = _has_blocking_screen(page)
+        except Exception:
+            blocking = "challenge in progress"
+        if blocking is None:
+            return None
+        if time.monotonic() >= deadline:
+            return blocking
+        time.sleep(5)
+
+
 def main() -> int:
     email = _env("CHATGPT_EMAIL", ["OPENAI_USERNAME"])
     password = _env("CHATGPT_PASSWORD", ["OPENAI_PASSWORD"])
@@ -49,7 +90,7 @@ def main() -> int:
 
     with sync_playwright() as p:
         try:
-            browser = p.chromium.launch(headless=True)
+            browser = p.chromium.launch(headless=_is_headless())
         except Exception as e:
             print(f"Failed to launch browser: {e}. If chromium is not installed, run: playwright install chromium", file=sys.stderr)
             return 1
@@ -62,35 +103,14 @@ def main() -> int:
             browser.close()
             return 1
 
-        def _has_blocking_screen() -> str | None:
-            checks = [
-                ("Verify you are human", 'text="Verify you are human"'),
-                ("captcha iframe", 'iframe[src*="captcha"]'),
-                ("Checking your browser", 'text="Checking your browser"'),
-                ("Verify your email", 'text="Verify your email"'),
-                ("Check your email", 'text="Check your email"'),
-                ("human verification", 'text="human verification"'),
-                ("device verification", 'text="device verification"'),
-            ]
-            content = page.content().lower()
-            if "captcha" in content or "human verification" in content or "device verification" in content:
-                return "captcha/device verification detected"
-            for label, sel in checks:
-                try:
-                    if page.locator(sel).first.is_visible(timeout=1000):
-                        return label
-                except Exception:
-                    continue
-            return None
-
-        blocking = _has_blocking_screen()
+        blocking = _has_blocking_screen(page)
         if blocking:
             print(f"Login blocked: {blocking} — cannot automate with credentials alone", file=sys.stderr)
             browser.close()
             return 2
 
         try:
-            page.locator('input[type="email"]').first.wait_for(timeout=15000)
+            page.locator('input[type="email"]').first.wait_for(timeout=30000)
             page.locator('input[type="email"]').first.fill(email)
             # Continue button
             for sel in ['button:has-text("Continue")', 'button[type="submit"]']:
@@ -101,21 +121,19 @@ def main() -> int:
                         break
                 except Exception:
                     continue
-            page.wait_for_timeout(2000)
+            blocking = _wait_for_blocking_clear(page)
+            if blocking:
+                print(f"Login blocked after email: {blocking}", file=sys.stderr)
+                browser.close()
+                return 2
         except Exception as e:
             print(f"Failed at email step: {e}", file=sys.stderr)
             browser.close()
             return 1
 
-        blocking = _has_blocking_screen()
-        if blocking:
-            print(f"Login blocked after email: {blocking}", file=sys.stderr)
-            browser.close()
-            return 2
-
         try:
-            page.locator('input[type="password"]').first.wait_for(timeout=15000)
-            page.locator('input[type="password"]').first.fill(password)
+            page.locator('input[type="password"]:visible').first.wait_for(timeout=15000)
+            page.locator('input[type="password"]:visible').first.fill(password)
             for sel in ['button:has-text("Continue")', 'button:has-text("Log in")', 'button[type="submit"]']:
                 try:
                     loc = page.locator(sel).first
@@ -124,17 +142,15 @@ def main() -> int:
                         break
                 except Exception:
                     continue
-            page.wait_for_timeout(3000)
+            blocking = _wait_for_blocking_clear(page)
+            if blocking:
+                print(f"Login blocked after password: {blocking}", file=sys.stderr)
+                browser.close()
+                return 2
         except Exception as e:
             print(f"Failed at password step: {e}", file=sys.stderr)
             browser.close()
             return 1
-
-        blocking = _has_blocking_screen()
-        if blocking:
-            print(f"Login blocked after password: {blocking}", file=sys.stderr)
-            browser.close()
-            return 2
 
         # 2FA handling
         otp_loc = None
@@ -194,8 +210,7 @@ def main() -> int:
                         break
                 except Exception:
                     continue
-            page.wait_for_timeout(3000)
-            blocking = _has_blocking_screen()
+            blocking = _wait_for_blocking_clear(page)
             if blocking:
                 print(f"Login blocked after 2FA: {blocking}", file=sys.stderr)
                 browser.close()
@@ -206,7 +221,7 @@ def main() -> int:
         except Exception:
             pass
 
-        blocking = _has_blocking_screen()
+        blocking = _has_blocking_screen(page)
         if blocking:
             print(f"Login blocked before token read: {blocking}", file=sys.stderr)
             browser.close()
