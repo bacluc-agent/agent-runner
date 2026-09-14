@@ -120,6 +120,70 @@ def test_is_headless_explicit_false(monkeypatch):
     assert chatgpt_login._is_headless() is False
 
 
+def test_click_first_visible_prefers_submit_button():
+    clicked = []
+
+    class FakeLocator:
+        def __init__(self, text, visible=True):
+            self._text = text
+            self._visible = visible
+
+        @property
+        def first(self):
+            return self
+
+        def is_visible(self, timeout=0):
+            return self._visible
+
+        def click(self):
+            clicked.append(self._text)
+
+    class FakePage:
+        def locator(self, sel):
+            if sel == 'button[type="submit"]':
+                return FakeLocator("Continue")
+            if sel == 'button:has-text("Continue")':
+                return FakeLocator("Continue with Google")
+            raise AssertionError(f"unexpected selector {sel}")
+
+    assert chatgpt_login._click_first_visible(
+        FakePage(), ['button[type="submit"]', 'button:has-text("Continue")']
+    )
+    assert clicked == ["Continue"]
+
+
+def test_click_first_visible_skips_hidden_and_falls_back():
+    clicked = []
+
+    class FakeLocator:
+        def __init__(self, text, visible=True):
+            self._text = text
+            self._visible = visible
+
+        @property
+        def first(self):
+            return self
+
+        def is_visible(self, timeout=0):
+            return self._visible
+
+        def click(self):
+            clicked.append(self._text)
+
+    class FakePage:
+        def locator(self, sel):
+            if sel == 'button[type="submit"]':
+                return FakeLocator("Continue", visible=False)
+            if sel == 'button:has-text("Continue")':
+                return FakeLocator("Continue with Google")
+            raise AssertionError(f"unexpected selector {sel}")
+
+    assert chatgpt_login._click_first_visible(
+        FakePage(), ['button[type="submit"]', 'button:has-text("Continue")']
+    )
+    assert clicked == ["Continue with Google"]
+
+
 def test_wait_for_blocking_clear_returns_none_after_challenge_clears(monkeypatch):
     clock = {"t": 0.0}
     monkeypatch.setattr(chatgpt_login.time, "monotonic", lambda: clock["t"])

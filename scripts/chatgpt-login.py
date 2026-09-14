@@ -59,6 +59,18 @@ def _has_blocking_screen(page) -> str | None:
     return None
 
 
+def _click_first_visible(page, selectors: list[str]) -> bool:
+    for sel in selectors:
+        try:
+            loc = page.locator(sel).first
+            if loc.is_visible(timeout=2000):
+                loc.click()
+                return True
+        except Exception:
+            continue
+    return False
+
+
 def _wait_for_blocking_clear(page, timeout_s=60) -> str | None:
     deadline = time.monotonic() + timeout_s
     while True:
@@ -112,15 +124,9 @@ def main() -> int:
         try:
             page.locator('input[type="email"]').first.wait_for(timeout=30000)
             page.locator('input[type="email"]').first.fill(email)
-            # Continue button
-            for sel in ['button:has-text("Continue")', 'button[type="submit"]']:
-                try:
-                    loc = page.locator(sel).first
-                    if loc.is_visible(timeout=2000):
-                        loc.click()
-                        break
-                except Exception:
-                    continue
+            # Continue button: prefer the real submit button; the social login
+            # buttons ("Continue with Google/Apple/phone") are type=button.
+            _click_first_visible(page, ['button[type="submit"]', 'button:has-text("Continue")'])
             blocking = _wait_for_blocking_clear(page)
             if blocking:
                 print(f"Login blocked after email: {blocking}", file=sys.stderr)
@@ -134,14 +140,7 @@ def main() -> int:
         try:
             page.locator('input[type="password"]:visible').first.wait_for(timeout=15000)
             page.locator('input[type="password"]:visible').first.fill(password)
-            for sel in ['button:has-text("Continue")', 'button:has-text("Log in")', 'button[type="submit"]']:
-                try:
-                    loc = page.locator(sel).first
-                    if loc.is_visible(timeout=2000):
-                        loc.click()
-                        break
-                except Exception:
-                    continue
+            _click_first_visible(page, ['button[type="submit"]', 'button:has-text("Continue")', 'button:has-text("Log in")'])
             blocking = _wait_for_blocking_clear(page)
             if blocking:
                 print(f"Login blocked after password: {blocking}", file=sys.stderr)
@@ -202,14 +201,7 @@ def main() -> int:
                 browser.close()
                 return 1
             otp_loc.fill(code)
-            for sel in ['button:has-text("Continue")', 'button:has-text("Verify")', 'button[type="submit"]']:
-                try:
-                    loc = page.locator(sel).first
-                    if loc.is_visible(timeout=2000):
-                        loc.click()
-                        break
-                except Exception:
-                    continue
+            _click_first_visible(page, ['button[type="submit"]', 'button:has-text("Continue")', 'button:has-text("Verify")'])
             blocking = _wait_for_blocking_clear(page)
             if blocking:
                 print(f"Login blocked after 2FA: {blocking}", file=sys.stderr)
