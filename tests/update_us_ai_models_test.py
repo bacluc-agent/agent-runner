@@ -60,6 +60,4 @@ def test_oauth_openai_model_is_available_in_model_catalog() -> None:
     with open(config_path) as config_file:
         config = json.loads(mod.strip_jsonc_comments(config_file.read()))
 
-    assert config["provider"]["openai"]["models"]["gpt-5.6-luna"] == {
-        "name": "gpt-5.6-luna"
-    }
+    assert config["provider"]["openai"]["models"]["gpt-5.6-luna"] == {"name": "gpt-5.6-luna"}
