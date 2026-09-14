@@ -46,7 +46,9 @@ jobs:
             cat "$RUNNER_TEMP/chatgpt-login.stderr" >&2
             exit "$status"
           fi
-          auth_json=$(cat "$RUNNER_TEMP/auth.json")
+          # xvfb-run merges the script's stderr into stdout, so drop the
+          # [chatgpt-login] step-log lines before validating the JSON.
+          auth_json=$(grep -v '^\[chatgpt-login\]' "$RUNNER_TEMP/auth.json")
           [[ -n "${auth_json:-}" ]] && printf '::add-mask::%s\n' "$auth_json"
           printf '%s\n' "$auth_json" | jq -e '.openai.type == "oauth" and .openai.access != "" and .openai.refresh != "" and (.openai.expires | type == "number")' >/dev/null
           GH_TOKEN="$BACLUC_AGENT_GITHUB_TOKEN" gh secret set OPENCODE_AUTH_JSON --repo "$GITHUB_REPOSITORY" --body "$auth_json"
