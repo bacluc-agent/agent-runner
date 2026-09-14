@@ -292,5 +292,25 @@ def main() -> int:
     return 0
 
 
+def demo() -> None:
+    # Minimal self-check: verify core helpers work with synthetic data
+    session = {
+        "info": {"agent": "planner"},
+        "messages": [{"parts": [{"type": "text", "text": "hello"}]}],
+    }
+    lines = render_transcript(session, "ses_demo")
+    assert any("hello" in line for line in lines)
+    assert any("planner" in line for line in lines)
+    ids = child_session_ids({"messages": [{"info": {"agent": "ses_x"}}]})
+    assert "ses_x" in ids
+    segments = inline_agent_segments({"messages": [{"parts": [{"type": "text", "text": "[Build Agent] done"}]}]})
+    assert len(segments) == 1
+    assert segments[0][0] == "Build Agent"
+    print("demo: OK")
+
+
 if __name__ == "__main__":
-    sys.exit(main())
+    if len(sys.argv) > 1 and sys.argv[1] == "--demo":
+        demo()
+    else:
+        sys.exit(main())
