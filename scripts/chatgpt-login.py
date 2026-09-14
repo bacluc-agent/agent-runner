@@ -4,6 +4,18 @@ import sys
 import time
 from pathlib import Path
 
+OTP_SELECTORS = [
+    'input[name="otp"]',
+    'input[inputmode="numeric"]',
+    'input[autocomplete="one-time-code"]',
+    'input[type="tel"]',
+    'input[name="code"]',
+    'input[data-testid*="otp"]',
+    'input[data-testid*="code"]',
+]
+
+TWO_FA_TEXTS = ["Two-factor", "Two-factor authentication", "authenticator"]
+
 
 def build_auth_json(access: str, refresh: str, expires: int) -> dict:
     if not isinstance(access, str) or not access:
@@ -85,6 +97,39 @@ def _wait_for_blocking_clear(page, timeout_s=60) -> str | None:
         time.sleep(5)
 
 
+def _log_step(page, name: str) -> None:
+    try:
+        print(f"[chatgpt-login] step={name} url={page.url} title={page.title()}", file=sys.stderr)
+    except Exception:
+        print(f"[chatgpt-login] step={name} url=<unknown> title=<unknown>", file=sys.stderr)
+
+
+def _dump_page_state(page) -> None:
+    try:
+        print(f"[chatgpt-login] failure url={page.url} title={page.title()}", file=sys.stderr)
+    except Exception:
+        print("[chatgpt-login] failure url=<unknown> title=<unknown>", file=sys.stderr)
+    try:
+        text = " ".join(page.inner_text("body").split())
+        print(f"[chatgpt-login] body_text={text[:600]!r}", file=sys.stderr)
+    except Exception:
+        print("[chatgpt-login] body_text=<unavailable>", file=sys.stderr)
+    try:
+        for inp in page.locator("input").all():
+            try:
+                print(
+                    "[chatgpt-login] input "
+                    f"type={inp.get_attribute('type')} name={inp.get_attribute('name')} "
+                    f"id={inp.get_attribute('id')} autocomplete={inp.get_attribute('autocomplete')} "
+                    f"visible={inp.is_visible()}",
+                    file=sys.stderr,
+                )
+            except Exception:
+                continue
+    except Exception:
+        print("[chatgpt-login] inputs=<unavailable>", file=sys.stderr)
+
+
 def main() -> int:
     email = _env("CHATGPT_EMAIL", ["OPENAI_USERNAME"])
     password = _env("CHATGPT_PASSWORD", ["OPENAI_PASSWORD"])
@@ -115,6 +160,8 @@ def main() -> int:
             browser.close()
             return 1
 
+        _log_step(page, "goto")
+
         blocking = _has_blocking_screen(page)
         if blocking:
             print(f"Login blocked: {blocking} — cannot automate with credentials alone", file=sys.stderr)
@@ -132,6 +179,7 @@ def main() -> int:
                 print(f"Login blocked after email: {blocking}", file=sys.stderr)
                 browser.close()
                 return 2
+            _log_step(page, "email")
         except Exception as e:
             print(f"Failed at email step: {e}", file=sys.stderr)
             browser.close()
@@ -146,6 +194,7 @@ def main() -> int:
                 print(f"Login blocked after password: {blocking}", file=sys.stderr)
                 browser.close()
                 return 2
+            _log_step(page, "password")
         except Exception as e:
             print(f"Failed at password step: {e}", file=sys.stderr)
             browser.close()
@@ -153,7 +202,7 @@ def main() -> int:
 
         # 2FA handling
         otp_loc = None
-        for sel in ['input[name="otp"]', 'input[inputmode="numeric"]', 'input[autocomplete="one-time-code"]']:
+        for sel in OTP_SELECTORS:
             try:
                 loc = page.locator(sel).first
                 if loc.is_visible(timeout=3000):
@@ -164,11 +213,13 @@ def main() -> int:
         # also text detection
         needs_2fa = otp_loc is not None
         if not needs_2fa:
-            try:
-                if page.locator('text="Two-factor"').first.is_visible(timeout=2000):
-                    needs_2fa = True
-            except Exception:
-                pass
+            for txt in TWO_FA_TEXTS:
+                try:
+                    if page.locator(f'text="{txt}"').first.is_visible(timeout=2000):
+                        needs_2fa = True
+                        break
+                except Exception:
+                    continue
 
         if needs_2fa:
             if not totp_key:
@@ -188,7 +239,7 @@ def main() -> int:
                 browser.close()
                 return 1
             if otp_loc is None:
-                for sel in ['input[name="otp"]', 'input[inputmode="numeric"]', 'input[autocomplete="one-time-code"]']:
+                for sel in OTP_SELECTORS:
                     try:
                         loc = page.locator(sel).first
                         if loc.is_visible(timeout=2000):
@@ -207,6 +258,7 @@ def main() -> int:
                 print(f"Login blocked after 2FA: {blocking}", file=sys.stderr)
                 browser.close()
                 return 2
+            _log_step(page, "2fa")
 
         try:
             page.wait_for_url("https://chatgpt.com/**", timeout=30000)
@@ -218,6 +270,8 @@ def main() -> int:
             print(f"Login blocked before token read: {blocking}", file=sys.stderr)
             browser.close()
             return 2
+
+        _log_step(page, "token-read")
 
         js = """
         () => {
@@ -250,6 +304,7 @@ def main() -> int:
         expires_raw = data.get("accessTokenExpiresAt") or data.get("oai-accessTokenExpiresAt")
 
         if not access or not refresh or not expires_raw:
+            _dump_page_state(page)
             print(f"Tokens not found in localStorage, found keys: {[k for k, v in data.items() if v]}", file=sys.stderr)
             browser.close()
             return 1
