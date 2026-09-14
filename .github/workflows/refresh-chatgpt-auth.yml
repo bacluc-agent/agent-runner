@@ -2,6 +2,10 @@ name: Refresh ChatGPT auth
 
 on:
   workflow_dispatch:
+  schedule:
+    # Twice a month (~half of the refresh token lifetime). The refresh step
+    # rotates the token, so it never gets close to expiry.
+    - cron: '0 0 1,15 * *'
 
 permissions:
   contents: read
@@ -26,7 +30,30 @@ jobs:
       - name: Install playwright browsers
         run: uv run playwright install --with-deps chrome
 
-      - name: Refresh auth and update secret
+      - name: Try token refresh (no browser)
+        id: refresh
+        env:
+          OPENCODE_AUTH_CONTENT: ${{ secrets.OPENCODE_AUTH_JSON }}
+        run: |
+          set -Eeuo pipefail
+          set +e
+          uv run scripts/refresh-token.py > "$RUNNER_TEMP/auth.json" 2> "$RUNNER_TEMP/refresh-token.stderr"
+          status=$?
+          set -e
+          if (( status == 0 )); then
+            auth_json=$(cat "$RUNNER_TEMP/auth.json")
+            [[ -n "${auth_json:-}" ]] && printf '::add-mask::%s\n' "$auth_json"
+            printf '%s\n' "$auth_json" | jq -e '.openai.type == "oauth" and .openai.access != "" and .openai.refresh != "" and (.openai.expires | type == "number")' >/dev/null
+            GH_TOKEN="$BACLUC_AGENT_GITHUB_TOKEN" gh secret set OPENCODE_AUTH_JSON --repo "$GITHUB_REPOSITORY" --body "$auth_json"
+            echo "refreshed=true" >> "$GITHUB_OUTPUT"
+            printf 'Auth refreshed via refresh token\n'
+          else
+            cat "$RUNNER_TEMP/refresh-token.stderr" >&2
+            printf 'Refresh token invalid, falling back to browser login\n'
+          fi
+
+      - name: Browser login (fallback)
+        if: steps.refresh.outputs.refreshed != 'true'
         env:
           CHATGPT_EMAIL: ${{ secrets.CHATGPT_EMAIL || secrets.OPENAI_USERNAME }}
           CHATGPT_PASSWORD: ${{ secrets.CHATGPT_PASSWORD || secrets.OPENAI_PASSWORD }}
@@ -52,4 +79,4 @@ jobs:
           [[ -n "${auth_json:-}" ]] && printf '::add-mask::%s\n' "$auth_json"
           printf '%s\n' "$auth_json" | jq -e '.openai.type == "oauth" and .openai.access != "" and .openai.refresh != "" and (.openai.expires | type == "number")' >/dev/null
           GH_TOKEN="$BACLUC_AGENT_GITHUB_TOKEN" gh secret set OPENCODE_AUTH_JSON --repo "$GITHUB_REPOSITORY" --body "$auth_json"
-          printf 'Auth refreshed successfully\n'
+          printf 'Auth refreshed via browser login\n'
