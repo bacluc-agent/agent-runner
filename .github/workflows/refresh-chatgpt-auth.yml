@@ -53,6 +53,7 @@ jobs:
           fi
 
       - name: Browser login (fallback)
+        id: browser-login
         if: steps.refresh.outputs.refreshed != 'true'
         env:
           CHATGPT_EMAIL: ${{ secrets.CHATGPT_EMAIL || secrets.OPENAI_USERNAME }}
@@ -80,3 +81,23 @@ jobs:
           printf '%s\n' "$auth_json" | jq -e '.openai.type == "oauth" and .openai.access != "" and .openai.refresh != "" and (.openai.expires | type == "number")' >/dev/null
           GH_TOKEN="$BACLUC_AGENT_GITHUB_TOKEN" gh secret set OPENCODE_AUTH_JSON --repo "$GITHUB_REPOSITORY" --body "$auth_json"
           printf 'Auth refreshed via browser login\n'
+
+      - name: Agent-usable primitives fallback (start/status/step)
+        if: steps.refresh.outputs.refreshed != 'true' && steps.browser-login.outcome == 'failure'
+        env:
+          CHATGPT_EMAIL: ${{ secrets.CHATGPT_EMAIL || secrets.OPENAI_USERNAME }}
+          CHATGPT_PASSWORD: ${{ secrets.CHATGPT_PASSWORD || secrets.OPENAI_PASSWORD }}
+          CHATGPT_2FA_KEY: ${{ secrets.CHATGPT_2FA_KEY || secrets.OPENAI_2FA_KEY }}
+          OPENAI_USERNAME: ${{ secrets.OPENAI_USERNAME }}
+          OPENAI_PASSWORD: ${{ secrets.OPENAI_PASSWORD }}
+          OPENAI_2FA_KEY: ${{ secrets.OPENAI_2FA_KEY }}
+          CHATGPT_TOTP_KEY: ${{ secrets.CHATGPT_TOTP_KEY }}
+        run: |
+          set -Eeuo pipefail
+          # Fallback: use agent-usable primitives to try login manually
+          # start launches Chrome with CDP, status reports step, step performs one action
+          echo "Agent fallback: attempting login via primitives..."
+          uv run scripts/chatgpt-login.py start || true
+          uv run scripts/chatgpt-login.py status || true
+          uv run scripts/chatgpt-login.py step || true
+          printf 'Agent primitives fallback attempted\n'
