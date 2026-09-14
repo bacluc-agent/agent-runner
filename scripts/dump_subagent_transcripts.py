@@ -188,7 +188,7 @@ def main() -> int:
                         bases.append(cand)
                 tried = set()
                 for base in bases:
-                    for suffix in ["]}", "]}}", "]}}}", "]}"]:
+                    for suffix in ["}", "}}", "]}", "]}}", "]}}}", "]}"]:
                         candidate = base + suffix
                         if candidate in tried:
                             continue
