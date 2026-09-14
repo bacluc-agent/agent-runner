@@ -5,7 +5,7 @@ on:
   schedule:
     # Twice a month (~half of the refresh token lifetime). The refresh step
     # rotates the token, so it never gets close to expiry.
-    - cron: '0 0 1,15 * *'
+    - cron: "0 0 1,15 * *"
 
 permissions:
   contents: read
