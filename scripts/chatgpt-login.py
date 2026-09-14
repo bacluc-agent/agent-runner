@@ -49,6 +49,58 @@ def _is_headless() -> bool:
     return os.environ.get("CHATGPT_HEADLESS", "").lower() in ("1", "true")
 
 
+_DESKTOP_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.7103.92 Safari/537.36"
+_DESKTOP_VIEWPORT = {"width": 1440, "height": 900}
+
+
+def _launch_browser(p, headless: bool):
+    args = ["--disable-blink-features=AutomationControlled", "--no-sandbox"]
+    try:
+        return p.chromium.launch(headless=headless, channel="chrome", args=args)
+    except Exception:
+        return p.chromium.launch(headless=headless, args=args)
+
+
+def _is_error_page(page) -> bool:
+    try:
+        title = page.title()
+    except Exception:
+        title = ""
+    try:
+        body = page.inner_text("body")
+    except Exception:
+        body = ""
+    return "Oops, an error occurred" in title or "Oops, an error occurred" in body or "Route Error" in body
+
+
+def _submit_password_with_retry(page, password) -> str | None:
+    """Submit the password, retrying on the OpenAI error page. Returns a blocking label or None."""
+
+    def submit() -> str | None:
+        page.locator('input[type="password"]:visible').first.wait_for(timeout=15000)
+        page.locator('input[type="password"]:visible').first.fill(password)
+        _click_first_visible(page, ['button[type="submit"]', 'button:has-text("Continue")', 'button:has-text("Log in")'])
+        return _wait_for_blocking_clear(page)
+
+    blocking = submit()
+    if blocking:
+        return blocking
+    for attempt in range(2):
+        if not _is_error_page(page):
+            return None
+        print(f"[chatgpt-login] OpenAI error page after password submit, retry {attempt + 1}/2", file=sys.stderr)
+        time.sleep(2)
+        _click_first_visible(page, ['a:has-text("Try again")', 'button:has-text("Try again")'])
+        try:
+            page.locator('input[type="password"]:visible').first.wait_for(timeout=15000)
+        except Exception:
+            return None
+        blocking = submit()
+        if blocking:
+            return blocking
+    return None
+
+
 def _has_blocking_screen(page) -> str | None:
     checks = [
         ("Verify you are human", 'text="Verify you are human"'),
@@ -147,11 +199,11 @@ def main() -> int:
 
     with sync_playwright() as p:
         try:
-            browser = p.chromium.launch(headless=_is_headless())
+            browser = _launch_browser(p, _is_headless())
         except Exception as e:
             print(f"Failed to launch browser: {e}. If chromium is not installed, run: playwright install chromium", file=sys.stderr)
             return 1
-        context = browser.new_context()
+        context = browser.new_context(user_agent=_DESKTOP_UA, viewport=_DESKTOP_VIEWPORT)
         page = context.new_page()
         try:
             page.goto("https://chatgpt.com/auth/login", wait_until="domcontentloaded")
@@ -186,10 +238,7 @@ def main() -> int:
             return 1
 
         try:
-            page.locator('input[type="password"]:visible').first.wait_for(timeout=15000)
-            page.locator('input[type="password"]:visible').first.fill(password)
-            _click_first_visible(page, ['button[type="submit"]', 'button:has-text("Continue")', 'button:has-text("Log in")'])
-            blocking = _wait_for_blocking_clear(page)
+            blocking = _submit_password_with_retry(page, password)
             if blocking:
                 print(f"Login blocked after password: {blocking}", file=sys.stderr)
                 browser.close()

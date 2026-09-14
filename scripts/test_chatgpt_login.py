@@ -184,6 +184,137 @@ def test_click_first_visible_skips_hidden_and_falls_back():
     assert clicked == ["Continue with Google"]
 
 
+def test_is_error_page_detects_error_title():
+    class FakePage:
+        def title(self):
+            return "Oops, an error occurred! - OpenAI"
+
+        def inner_text(self, sel):
+            return "Try again"
+
+    assert chatgpt_login._is_error_page(FakePage()) is True
+
+
+def test_is_error_page_detects_route_error_body():
+    class FakePage:
+        def title(self):
+            return "Enter your password - OpenAI"
+
+        def inner_text(self, sel):
+            return "Oops, an error occurred! Route Error (400 Invalid content type)"
+
+    assert chatgpt_login._is_error_page(FakePage()) is True
+
+
+def test_is_error_page_false_on_normal_page():
+    class FakePage:
+        def title(self):
+            return "Enter your password - OpenAI"
+
+        def inner_text(self, sel):
+            return "Enter your password"
+
+    assert chatgpt_login._is_error_page(FakePage()) is False
+
+
+def test_submit_password_retries_on_error_page_then_succeeds(monkeypatch, capsys):
+    state = {"error": True, "submits": 0, "fills": 0}
+    monkeypatch.setattr(chatgpt_login.time, "sleep", lambda s: None)
+
+    class FakeLocator:
+        def __init__(self, sel, visible=True):
+            self._sel = sel
+            self._visible = visible
+
+        @property
+        def first(self):
+            return self
+
+        def is_visible(self, timeout=0):
+            return self._visible
+
+        def wait_for(self, timeout=0):
+            if not self._visible:
+                raise TimeoutError("not visible")
+
+        def fill(self, value):
+            state["fills"] += 1
+
+        def click(self):
+            if "Try again" in self._sel:
+                return
+            state["submits"] += 1
+            state["error"] = state["submits"] == 1
+
+    class FakePage:
+        def content(self):
+            return "<html>clean</html>"
+
+        def title(self):
+            return "Oops, an error occurred! - OpenAI" if state["error"] else "Enter your password - OpenAI"
+
+        def inner_text(self, sel):
+            return "Oops, an error occurred!" if state["error"] else "Enter your password"
+
+        def locator(self, sel):
+            if sel in ('input[type="password"]:visible', 'button[type="submit"]', 'a:has-text("Try again")'):
+                return FakeLocator(sel, visible=True)
+            return FakeLocator(sel, visible=False)
+
+    assert chatgpt_login._submit_password_with_retry(FakePage(), "pw") is None
+    assert state["submits"] == 2
+    assert state["fills"] == 2
+    assert "retry 1/2" in capsys.readouterr().err
+
+
+def test_submit_password_retry_exhausts_after_three_attempts(monkeypatch, capsys):
+    state = {"submits": 0, "fills": 0}
+    monkeypatch.setattr(chatgpt_login.time, "sleep", lambda s: None)
+
+    class FakeLocator:
+        def __init__(self, sel, visible=True):
+            self._sel = sel
+            self._visible = visible
+
+        @property
+        def first(self):
+            return self
+
+        def is_visible(self, timeout=0):
+            return self._visible
+
+        def wait_for(self, timeout=0):
+            if not self._visible:
+                raise TimeoutError("not visible")
+
+        def fill(self, value):
+            state["fills"] += 1
+
+        def click(self):
+            if "Try again" not in self._sel:
+                state["submits"] += 1
+
+    class FakePage:
+        def content(self):
+            return "<html>clean</html>"
+
+        def title(self):
+            return "Oops, an error occurred! - OpenAI"
+
+        def inner_text(self, sel):
+            return "Oops, an error occurred! Route Error"
+
+        def locator(self, sel):
+            if sel in ('input[type="password"]:visible', 'button[type="submit"]', 'a:has-text("Try again")'):
+                return FakeLocator(sel, visible=True)
+            return FakeLocator(sel, visible=False)
+
+    assert chatgpt_login._submit_password_with_retry(FakePage(), "pw") is None
+    assert state["submits"] == 3
+    assert state["fills"] == 3
+    assert "retry 2/2" in capsys.readouterr().err
+
+
 def test_wait_for_blocking_clear_returns_none_after_challenge_clears(monkeypatch):
     clock = {"t": 0.0}
     monkeypatch.setattr(chatgpt_login.time, "monotonic", lambda: clock["t"])
@@ -258,14 +389,14 @@ def test_main_captcha_returns_2(monkeypatch, capsys):
             return FakePage()
 
     class FakeBrowser:
-        def new_context(self):
+        def new_context(self, **kwargs):
             return FakeContext()
 
         def close(self):
             pass
 
     class FakeChromium:
-        def launch(self, headless=True):
+        def launch(self, headless=True, **kwargs):
             return FakeBrowser()
 
     class FakeP:
