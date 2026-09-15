@@ -12,7 +12,7 @@ import urllib.request
 from datetime import datetime, timezone
 
 AVAILABLE_TTL_HOURS = 24
-FAILED_TTL_HOURS = 24
+FAILED_TTL_HOURS = 2
 FREE_PATTERNS = [r"(?:-|:)free$", r"big-pickle"]
 PROVIDER_WHITELISTS: dict[str, list[str]] = {
     "openrouter": [r"(?:-|:)free$", r"big-pickle"],
