@@ -502,9 +502,11 @@ jobs:
           set -Eeuo pipefail
           bash .github/scripts/trigger-workflows.sh || true
           if [[ -f "${RUNNER_TEMP:-/tmp}/workflow-run-urls.txt" ]]; then
-            echo "workflow_urls<<EOF" >> "$GITHUB_OUTPUT"
-            cat "${RUNNER_TEMP:-/tmp}/workflow-run-urls.txt" >> "$GITHUB_OUTPUT"
-            echo "EOF"
+            {
+              echo "workflow_urls<<EOF"
+              cat "${RUNNER_TEMP:-/tmp}/workflow-run-urls.txt"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
           fi
 
       - name: Post run-result comment
