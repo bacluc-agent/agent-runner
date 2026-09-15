@@ -439,9 +439,7 @@ class TestParseWhitelistedModels:
             "opencode/gpt-5.6-luna-preview\n"
             "opencode/ling-3.0-flash-fin-free\n"
         )
-        assert model_availability.parse_whitelisted_models(
-            output, EXAMPLE_OPENCODE_WHITELIST
-        ) == [
+        assert model_availability.parse_whitelisted_models(output) == [
             "opencode/ling-3.0-flash-fin-free",
             "openai/gpt-5.3-codex-spark",
             "openai/gpt-5.3-codex-sparky",
@@ -471,9 +469,7 @@ class TestParseWhitelistedModels:
             "openrouter/cohere/north-mini-code:free\n"
             "openrouter/google/gemma-4-31b-it:free\n"
         )
-        assert model_availability.parse_whitelisted_models(
-            output, EXAMPLE_OPENCODE_WHITELIST
-        ) == [
+        assert model_availability.parse_whitelisted_models(output) == [
             "big-pickle",
             "custom-provider/big-pickle",
             "custom-provider/other-free",
@@ -493,19 +489,16 @@ class TestParseWhitelistedModels:
     def test_deduplicates(self):
         assert model_availability.parse_whitelisted_models(
             "opencode/a-free\nopencode/a-free\n",
-            EXAMPLE_OPENCODE_WHITELIST,
         ) == ["opencode/a-free"]
 
     def test_free_first_then_whitelisted(self):
         assert model_availability.parse_whitelisted_models(
             "opencode/glm-5.3\nopencode/z-free\n",
-            EXAMPLE_OPENCODE_WHITELIST,
         ) == ["opencode/z-free", "opencode/glm-5.3"]
 
     def test_case_insensitive_matching(self):
         assert model_availability.parse_whitelisted_models(
             "openrouter/cohere/north-mini-code:free\n",
-            EXAMPLE_OPENCODE_WHITELIST,
         ) == ["openrouter/cohere/north-mini-code:free"]
 
 
