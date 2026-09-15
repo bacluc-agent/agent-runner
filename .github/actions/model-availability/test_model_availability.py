@@ -430,6 +430,16 @@ class TestProviderProbeable:
             "openai/gpt-5.6-luna", config, {"OPENCODE_AUTH_CONTENT": json.dumps(auth)}
         )
 
+    def test_openai_not_probeable_without_auth_and_isolated_home(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("HOME", str(tmp_path))
+        config = {"openai": {"baseURL": "https://api.openai.com/v1"}}
+        assert not model_availability.provider_probeable("openai/gpt-5.6-luna", config, {})
+        auth = {"openai": {"type": "oauth", "access": "a", "refresh": "r", "expires": 999}}
+        auth_file = tmp_path / ".local/share/opencode/auth.json"
+        auth_file.parent.mkdir(parents=True)
+        auth_file.write_text(json.dumps(auth))
+        assert model_availability.provider_probeable("openai/gpt-5.6-luna", config, {})
+
 class TestParseWhitelistedModels:
     def test_uses_exact_openai_patterns_without_changing_opencode_matching(self):
         output = (
