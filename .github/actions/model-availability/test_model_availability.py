@@ -447,6 +447,10 @@ class TestParseWhitelistedModels:
             "openai/gpt-5.3-codex-spark\n"
             "openai/gpt-5.6-luna-preview\n"
             "openai/gpt-5.3-codex-sparky\n"
+            "openai/gpt-5.6-sol\n"
+            "openai/gpt-5.6-sol-fast\n"
+            "openai/gpt-5.6-terra\n"
+            "openai/gpt-5.6-terra-fast\n"
             "opencode/gpt-5.6-luna-preview\n"
             "opencode/ling-3.0-flash-fin-free\n"
         )
@@ -456,6 +460,10 @@ class TestParseWhitelistedModels:
             "openai/gpt-5.3-codex-sparky",
             "openai/gpt-5.6-luna",
             "openai/gpt-5.6-luna-preview",
+            "openai/gpt-5.6-sol",
+            "openai/gpt-5.6-sol-fast",
+            "openai/gpt-5.6-terra",
+            "openai/gpt-5.6-terra-fast",
             "opencode/gpt-5.6-luna-preview",
         ]
 
@@ -1083,16 +1091,24 @@ class TestOpencodeWhitelist:
             assert model_availability.is_whitelisted(model, patterns)
         assert not model_availability.is_whitelisted("opencode/some-paid-model", patterns)
 
-    def test_openai_whitelist_prohibits_only_sol_and_terra(self):
+    def test_openai_whitelist_allows_all_openai_models(self):
         patterns = model_availability.PROVIDER_WHITELISTS["openai"]
-        assert model_availability.is_whitelisted("gpt-5.6-luna", patterns)
-        assert model_availability.is_whitelisted("gpt-5.3-codex-spark", patterns)
-        assert model_availability.is_whitelisted("gpt-5.6-luna-preview", patterns)
-        assert model_availability.is_whitelisted("gpt-5.3-codex-spark-plus", patterns)
-        assert not model_availability.is_whitelisted("gpt-5.6-sol", patterns)
-        assert not model_availability.is_whitelisted("gpt-5.6-terra", patterns)
-        assert not model_availability.is_whitelisted("gpt-5.6-sol-preview", patterns)
-        assert not model_availability.is_whitelisted("gpt-5.6-terra-preview", patterns)
+        for model in [
+            "gpt-5.3-codex-spark",
+            "gpt-5.4",
+            "gpt-5.4-fast",
+            "gpt-5.4-mini",
+            "gpt-5.4-mini-fast",
+            "gpt-5.5",
+            "gpt-5.5-fast",
+            "gpt-5.6-luna",
+            "gpt-5.6-luna-fast",
+            "gpt-5.6-sol",
+            "gpt-5.6-sol-fast",
+            "gpt-5.6-terra",
+            "gpt-5.6-terra-fast",
+        ]:
+            assert model_availability.is_whitelisted(model, patterns)
 
 
 class TestModelAvailabilityAction:
