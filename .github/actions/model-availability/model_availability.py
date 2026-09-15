@@ -10,6 +10,8 @@ import sys
 import tempfile
 import urllib.request
 from datetime import datetime, timezone
+from pathlib import Path
+from urllib.parse import urlsplit
 
 AVAILABLE_TTL_HOURS = 24
 FAILED_TTL_HOURS = 24
@@ -115,20 +117,135 @@ def parse_go_model_ids(models_json: str) -> list[str]:
 
 
 def load_provider_config() -> dict[str, dict[str, str | None]]:
-    """{provider: {"baseURL": str, "apiKey": str | None}} from `opencode debug config`."""
+    """Load provider settings from debug output, then documented local config sources."""
+    debug_config = _read_debug_config()
+    if debug_config is not None:
+        return _provider_config(debug_config)
+    for config in _read_local_configs():
+        if config is not None:
+            return _provider_config(config)
+    print("warning: failed to read opencode config; no provider configuration loaded", file=sys.stderr)
+    return {}
+
+
+def _read_debug_config() -> dict | None:
     try:
         output = subprocess.run(
             ["opencode", "debug", "config"], check=True, capture_output=True, text=True, timeout=60
         ).stdout
+        if len(output.encode("utf-8")) >= GITHUB_ISSUE_BODY_LIMIT:
+            return None
         config = json.loads(output)
-    except Exception as e:
-        print(f"warning: failed to read opencode config: {e}", file=sys.stderr)
-        return {}
+        return config if _usable_config(config) else None
+    except Exception:
+        return None
+
+
+def _usable_config(config: object) -> bool:
+    return isinstance(config, dict) and isinstance(config.get("provider"), dict)
+
+
+def _provider_config(config: dict) -> dict[str, dict[str, str | None]]:
     result = {}
     for name, provider in config.get("provider", {}).items():
+        if not isinstance(name, str) or not isinstance(provider, dict):
+            continue
         options = provider.get("options", {})
+        if not isinstance(options, dict):
+            continue
         result[name] = {"baseURL": options.get("baseURL"), "apiKey": options.get("apiKey")}
     return result
+
+
+def _read_local_configs() -> list[dict | None]:
+    paths = []
+    if path := os.environ.get("OPENCODE_CONFIG", "").strip():
+        paths.append(Path(path))
+    if content := os.environ.get("OPENCODE_CONFIG_CONTENT"):
+        parsed = _parse_config(content)
+        if parsed is not None:
+            return [parsed]
+    config_dir = os.environ.get("OPENCODE_CONFIG_DIR", "").strip()
+    if config_dir:
+        paths.extend(Path(config_dir) / name for name in ("opencode.json", "opencode.jsonc"))
+    else:
+        paths.extend(
+            Path(directory) / name
+            for directory in (
+                os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config")) + "/opencode",
+            )
+            for name in ("opencode.json", "opencode.jsonc")
+        )
+    configs = []
+    for path in paths:
+        try:
+            parsed = _parse_config(path.read_text())
+        except (OSError, UnicodeError):
+            continue
+        if parsed is not None:
+            configs.append(parsed)
+    return configs
+
+
+def _parse_config(content: str) -> dict | None:
+    try:
+        parsed = json.loads(content)
+    except json.JSONDecodeError:
+        try:
+            parsed = json.loads(_strip_jsonc(content))
+        except json.JSONDecodeError:
+            return None
+    return parsed if _usable_config(parsed) else None
+
+
+def _strip_jsonc(content: str) -> str:
+    output = []
+    in_string = False
+    escaped = False
+    index = 0
+    while index < len(content):
+        char = content[index]
+        if in_string:
+            output.append(char)
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            index += 1
+            continue
+        if char == '"':
+            in_string = True
+            output.append(char)
+            index += 1
+        elif content.startswith("//", index):
+            newline = content.find("\n", index)
+            index = len(content) if newline == -1 else newline
+        elif content.startswith("/*", index):
+            end = content.find("*/", index + 2)
+            index = len(content) if end == -1 else end + 2
+        else:
+            output.append(char)
+            index += 1
+    return re.sub(r",\s*([}\]])", r"\1", "".join(output))
+
+
+def is_valid_http_url(value: object) -> bool:
+    if not isinstance(value, str) or any(char.isspace() for char in value):
+        return False
+    try:
+        parsed = urlsplit(value)
+    except ValueError:
+        return False
+    return parsed.scheme in ("http", "https") and bool(parsed.netloc)
+
+
+def resolved_api_key(value: object, env: dict) -> bool:
+    if not isinstance(value, str) or not value:
+        return False
+    match = re.fullmatch(r"\{env:([A-Za-z_][A-Za-z0-9_]*)\}", value)
+    return bool(env.get(match.group(1))) if match else not value.startswith("{env:")
 
 
 def load_provider_base_urls() -> dict[str, str]:
@@ -148,12 +265,9 @@ def provider_probeable(model_id: str, provider_config: dict, env: dict) -> bool:
         return True
     info = provider_config[provider]
     base_url = info.get("baseURL")
-    if not base_url or not base_url.startswith(("http://", "https://")):
+    if not is_valid_http_url(base_url):
         return False
-    api_key = info.get("apiKey")
-    if isinstance(api_key, str) and api_key.startswith("{env:"):
-        return bool(env.get(api_key[5:-1]))
-    return bool(api_key)
+    return resolved_api_key(info.get("apiKey"), env)
 
 
 def models_endpoint_for(base_url: str) -> str:
@@ -209,7 +323,7 @@ def discover_models() -> tuple[list[str], dict[str, list[str]]]:
     provider_models = {}
     for provider, key_env in PROVIDERS:
         base_url = base_urls.get(provider)
-        if not base_url or not base_url.startswith(("http://", "https://")):
+        if not is_valid_http_url(base_url):
             print(f"warning: no valid baseURL configured for {provider}", file=sys.stderr)
             continue
         api_key = os.environ.get(key_env)
