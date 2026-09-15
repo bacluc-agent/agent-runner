@@ -313,6 +313,25 @@ class TestDiscoverModels:
 EXAMPLE_OPENCODE_WHITELIST = [r"(?:-|:)free$", r"big-pickle", r"glm", r"gpt-5\.6-luna", r"qwen", r"kimi"]
 
 class TestProviderProbeable:
+    @pytest.mark.parametrize("config", [{"openrouter": []}, {"openrouter": {"baseURL": []}}])
+    def test_malformed_provider_config_is_not_probeable(self, config):
+        assert not model_availability.provider_probeable("openrouter/foo:free", config, {})
+
+    @pytest.mark.parametrize(
+        "provider_config",
+        [
+            {"provider": {"openrouter": []}},
+            {"provider": {"openrouter": {"options": []}}},
+        ],
+    )
+    def test_malformed_discovered_provider_config_is_ignored(self, monkeypatch, provider_config):
+        monkeypatch.setattr(
+            model_availability.subprocess,
+            "run",
+            lambda *args, **kwargs: types.SimpleNamespace(stdout=json.dumps(provider_config)),
+        )
+        assert model_availability.load_provider_config() == {}
+
     def test_resolved_key(self):
         config = {"openrouter": {"baseURL": "https://openrouter.ai/api/v1", "apiKey": "sk-or-xxx"}}
         assert model_availability.provider_probeable("openrouter/foo:free", config, {})
