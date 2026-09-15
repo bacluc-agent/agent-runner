@@ -23,8 +23,17 @@ map_file_to_workflow() {
 
 # Detect changed .github/ files in the current branch vs main
 changed_files=""
-if git rev-parse --verify HEAD >/dev/null 2>&1 && git rev-parse --verify main >/dev/null 2>&1; then
-  changed_files=$(git diff --name-only main HEAD 2>/dev/null | grep '^\.github/' || true)
+if git rev-parse --verify HEAD >/dev/null 2>&1; then
+  base_ref=""
+  for ref in main origin/main; do
+    if git rev-parse --verify "$ref" >/dev/null 2>&1; then
+      base_ref="$ref"
+      break
+    fi
+  done
+  if [[ -n "$base_ref" ]]; then
+    changed_files=$(git diff --name-only "$base_ref" HEAD 2>/dev/null | grep '^\.github/' || true)
+  fi
 fi
 
 # Also check unstaged/staged changes
@@ -43,14 +52,23 @@ if [[ -n "$changed_files" ]]; then
     workflow=$(map_file_to_workflow "$file")
     printf 'Triggering workflow %s for changed file %s\n' "$workflow" "$file"
     # Trigger workflow_dispatch and capture URL
-    url=$(gh workflow run "$workflow" --repo "${GITHUB_REPOSITORY}" 2>/dev/null | grep -oE 'https://github.com/[^/]+/[^/]+/actions/runs/[0-9]+' || true)
+    if [[ "$workflow" == "opencode" ]]; then
+      url=$(gh workflow run opencode.yml --repo "${GITHUB_REPOSITORY}" --ref "${GITHUB_REF_NAME:-main}" --field prompt="Test .github workflow trigger for issue #201" 2>/dev/null | grep -oE 'https://github.com/[^/]+/[^/]+/actions/runs/[0-9]+' || true)
+    else
+      url=$(gh workflow run "$workflow" --repo "${GITHUB_REPOSITORY}" --ref "${GITHUB_REF_NAME:-main}" 2>/dev/null | grep -oE 'https://github.com/[^/]+/[^/]+/actions/runs/[0-9]+' || true)
+    fi
     if [[ -n "$url" ]]; then
       printf 'Workflow %s triggered: %s\n' "$workflow" "$url"
       run_urls="${run_urls}${workflow}: ${url}\n"
     else
       # Try API approach
-      api_url=$(gh api repos/"${GITHUB_REPOSITORY}"/actions/workflows/"${workflow}".yml/dispatches \
-        -X POST -F ref="${GITHUB_REF_NAME:-main}" 2>/dev/null | jq -r '.html_url // empty' || true)
+      if [[ "$workflow" == "opencode" ]]; then
+        api_url=$(gh api repos/"${GITHUB_REPOSITORY}"/actions/workflows/opencode.yml/dispatches \
+          -X POST -F ref="${GITHUB_REF_NAME:-main}" -F inputs='{"prompt":"Test .github workflow trigger for issue #201"}' 2>/dev/null | jq -r '.html_url // empty' || true)
+      else
+        api_url=$(gh api repos/"${GITHUB_REPOSITORY}"/actions/workflows/"${workflow}".yml/dispatches \
+          -X POST -F ref="${GITHUB_REF_NAME:-main}" 2>/dev/null | jq -r '.html_url // empty' || true)
+      fi
       if [[ -n "$api_url" ]]; then
         printf 'Workflow %s triggered (API): %s\n' "$workflow" "$api_url"
         run_urls="${run_urls}${workflow}: ${api_url}\n"

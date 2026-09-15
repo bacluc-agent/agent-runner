@@ -525,6 +525,9 @@ jobs:
           if [[ -n "${{ steps.push-work.outputs.pushed_repos }}" ]]; then
             BODY="${BODY}"$'\n\nPushed repositories:\n'"${{ steps.push-work.outputs.pushed_repos }}"
           fi
+          if [[ -n "${{ steps.trigger-workflows.outputs.workflow_urls }}" ]]; then
+            BODY="${BODY}"$'\n\nTriggered workflow runs (changed .github/ paths):\n'"${{ steps.trigger-workflows.outputs.workflow_urls }}"
+          fi
 
           gh issue comment "$ISSUE_NUMBER" -R "$ISSUE_REPOSITORY" --body "$BODY"
 
