@@ -116,14 +116,26 @@ def parse_go_model_ids(models_json: str) -> list[str]:
 
 def load_provider_config() -> dict[str, dict[str, str | None]]:
     """{provider: {"baseURL": str, "apiKey": str | None}} from `opencode debug config`."""
+    tmp_path = None
     try:
-        output = subprocess.run(
-            ["opencode", "debug", "config"], check=True, capture_output=True, text=True, timeout=60
-        ).stdout
-        config = json.loads(output)
+        # `opencode debug config` truncates stdout at 65536 bytes when stdout is a
+        # pipe (opencode bug); redirect to a file so the full config is captured.
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False) as tmp:
+            tmp_path = tmp.name
+            subprocess.run(
+                ["opencode", "debug", "config"], check=True, stdout=tmp, text=True, timeout=60
+            )
+        with open(tmp_path, encoding="utf-8") as fh:
+            config = json.load(fh)
     except Exception as e:
         print(f"warning: failed to read opencode config: {e}", file=sys.stderr)
         return {}
+    finally:
+        if tmp_path is not None:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
     result = {}
     for name, provider in config.get("provider", {}).items():
         options = provider.get("options", {})
