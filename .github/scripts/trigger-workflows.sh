@@ -11,7 +11,7 @@ printf '::add-mask::%s\n' "${GITHUB_TOKEN:-}"
 map_file_to_workflow_file() {
   local file="$1"
   case "$file" in
-    .github/workflows/ci.yml) echo "skip" ;;  # no workflow_dispatch trigger
+    .github/workflows/ci.yml) echo "" ;;  # no workflow_dispatch trigger
     .github/workflows/hourly-issue.yml) echo "hourly-issue.yml" ;;
     .github/workflows/opencode.yml) echo "opencode.yml" ;;
     .github/workflows/refine-issues.yml) echo "refine-issues.yml" ;;
@@ -59,23 +59,29 @@ if [[ -n "$changed_files" ]]; then
   while IFS= read -r file; do
     [[ -n "$file" ]] || continue
     workflow_file=$(map_file_to_workflow_file "$file")
-    if [[ "$workflow_file" == "skip" ]]; then
-      printf 'Skipping %s (no workflow_dispatch)\n' "$file"
-      continue
-    fi
     workflow_name="${workflow_file%.yml}"
     if [[ ! -f ".github/workflows/$workflow_file" ]]; then
       printf 'Workflow file %s not found, skipping\n' "$workflow_file"
       continue
     fi
     printf 'Triggering workflow %s (%s) for changed file %s\n' "$workflow_name" "$workflow_file" "$file"
-    # Trigger workflow_dispatch and capture URL (gh workflow run outputs plain URL)
+    # Trigger workflow_dispatch and capture URL
     if [[ "$workflow_file" == "opencode.yml" ]]; then
       url=""
-      url=$(gh workflow run opencode.yml --repo "${GITHUB_REPOSITORY}" --ref "${GITHUB_REF_NAME:-main}" --field prompt="Test .github workflow trigger for issue #201" 2>/dev/null | grep -oE 'https://github.com/[^/]+/[^/]+/actions/runs/[0-9]+' || true)
+      if command -v jq >/dev/null 2>&1; then
+        url=$(gh workflow run opencode.yml --repo "${GITHUB_REPOSITORY}" --ref "${GITHUB_REF_NAME:-main}" --field prompt="Test .github workflow trigger for issue #201" 2>/dev/null | jq -r '.html_url // empty' 2>/dev/null || true)
+      fi
+      if [[ -z "$url" ]]; then
+        url=$(gh workflow run opencode.yml --repo "${GITHUB_REPOSITORY}" --ref "${GITHUB_REF_NAME:-main}" --field prompt="Test .github workflow trigger for issue #201" 2>/dev/null | grep -oE 'https://github.com/[^/]+/[^/]+/actions/runs/[0-9]+' || true)
+      fi
     else
       url=""
-      url=$(gh workflow run "$workflow_file" --repo "${GITHUB_REPOSITORY}" --ref "${GITHUB_REF_NAME:-main}" 2>/dev/null | grep -oE 'https://github.com/[^/]+/[^/]+/actions/runs/[0-9]+' || true)
+      if command -v jq >/dev/null 2>&1; then
+        url=$(gh workflow run "$workflow_file" --repo "${GITHUB_REPOSITORY}" --ref "${GITHUB_REF_NAME:-main}" 2>/dev/null | jq -r '.html_url // empty' 2>/dev/null || true)
+      fi
+      if [[ -z "$url" ]]; then
+        url=$(gh workflow run "$workflow_file" --repo "${GITHUB_REPOSITORY}" --ref "${GITHUB_REF_NAME:-main}" 2>/dev/null | grep -oE 'https://github.com/[^/]+/[^/]+/actions/runs/[0-9]+' || true)
+      fi
     fi
     if [[ -n "$url" ]]; then
       printf 'Workflow %s triggered: %s\n' "$workflow_name" "$url"
@@ -83,19 +89,19 @@ if [[ -n "$changed_files" ]]; then
     else
       # Try API approach
       if [[ "$workflow_file" == "opencode.yml" ]]; then
-        api_response=$(gh api -i repos/"${GITHUB_REPOSITORY}"/actions/workflows/opencode.yml/dispatches \
-          -X POST -F ref="${GITHUB_REF_NAME:-main}" -F inputs='{"prompt":"Test .github workflow trigger for issue #201"}' 2>/dev/null || true)
+        if command -v jq >/dev/null 2>&1; then
+          api_url=$(gh api repos/"${GITHUB_REPOSITORY}"/actions/workflows/opencode.yml/dispatches \
+            -X POST -F ref="${GITHUB_REF_NAME:-main}" -F inputs='{"prompt":"Test .github workflow trigger for issue #201"}' 2>/dev/null | jq -r '.html_url // empty' || true)
+        else
+          api_url=""
+        fi
       else
-        api_response=$(gh api -i repos/"${GITHUB_REPOSITORY}"/actions/workflows/"${workflow_file}"/dispatches \
-          -X POST -F ref="${GITHUB_REF_NAME:-main}" 2>/dev/null || true)
-      fi
-      # Handle 204 (empty body) as success; parse html_url from body if present
-      api_status=$(printf '%s\n' "$api_response" | head -n1 | grep -oE 'HTTP/[0-9.]+ [0-9]+' | awk '{print $2}' || true)
-      api_body=$(printf '%s\n' "$api_response" | tail -n +2 || true)
-      if [[ "$api_status" == "204" ]]; then
-        api_url="https://github.com/${GITHUB_REPOSITORY}/actions/runs"
-      else
-        api_url=$(printf '%s\n' "$api_body" | jq -r '.html_url // empty' || true)
+        if command -v jq >/dev/null 2>&1; then
+          api_url=$(gh api repos/"${GITHUB_REPOSITORY}"/actions/workflows/"${workflow_file}"/dispatches \
+            -X POST -F ref="${GITHUB_REF_NAME:-main}" 2>/dev/null | jq -r '.html_url // empty' || true)
+        else
+          api_url=""
+        fi
       fi
       if [[ -n "$api_url" ]]; then
         printf 'Workflow %s triggered (API): %s\n' "$workflow_name" "$api_url"
@@ -106,10 +112,8 @@ if [[ -n "$changed_files" ]]; then
 fi
 
 # Output URLs for downstream steps
-RUNNER_TEMP="${RUNNER_TEMP:-/tmp}"
 if [[ -n "$run_urls" ]]; then
   printf 'Triggered workflow URLs:\n%s\n' "$run_urls"
   # Write to a file that can be read by other steps
-  tmp_dir="${RUNNER_TEMP:-/tmp}"
-  printf '%s' "$run_urls" > "$tmp_dir"/workflow-run-urls.txt
+  printf '%s' "$run_urls" > "$RUNNER_TEMP"/workflow-run-urls.txt
 fi
