@@ -444,7 +444,9 @@ class TestParseWhitelistedModels:
         ) == [
             "opencode/ling-3.0-flash-fin-free",
             "openai/gpt-5.3-codex-spark",
+            "openai/gpt-5.3-codex-sparky",
             "openai/gpt-5.6-luna",
+            "openai/gpt-5.6-luna-preview",
             "opencode/gpt-5.6-luna-preview",
         ]
 
@@ -1077,12 +1079,14 @@ class TestOpencodeWhitelist:
             assert model_availability.is_whitelisted(model, patterns)
         assert not model_availability.is_whitelisted("opencode/some-paid-model", patterns)
 
-    def test_openai_whitelist_matches_only_exact_supported_models(self):
+    def test_openai_whitelist_prohibits_only_sol_and_terra(self):
         patterns = model_availability.PROVIDER_WHITELISTS["openai"]
         assert model_availability.is_whitelisted("gpt-5.6-luna", patterns)
         assert model_availability.is_whitelisted("gpt-5.3-codex-spark", patterns)
-        assert not model_availability.is_whitelisted("gpt-5.6-luna-preview", patterns)
-        assert not model_availability.is_whitelisted("gpt-5.3-codex-spark-plus", patterns)
+        assert model_availability.is_whitelisted("gpt-5.6-luna-preview", patterns)
+        assert model_availability.is_whitelisted("gpt-5.3-codex-spark-plus", patterns)
+        assert not model_availability.is_whitelisted("gpt-5.6-sol", patterns)
+        assert not model_availability.is_whitelisted("gpt-5.6-terra", patterns)
 
 
 class TestModelAvailabilityAction:
