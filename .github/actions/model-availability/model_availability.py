@@ -139,9 +139,16 @@ def load_provider_config() -> dict[str, dict[str, str | None]]:
                 os.unlink(tmp_path)
             except OSError:
                 pass
+    providers = config.get("provider", {}) if isinstance(config, dict) else {}
+    if not isinstance(providers, dict):
+        return {}
     result = {}
-    for name, provider in config.get("provider", {}).items():
+    for name, provider in providers.items():
+        if not isinstance(provider, dict):
+            continue
         options = provider.get("options", {})
+        if not isinstance(options, dict):
+            continue
         result[name] = {"baseURL": options.get("baseURL"), "apiKey": options.get("apiKey")}
     return result
 
@@ -163,7 +170,7 @@ def provider_probeable(model_id: str, provider_config: dict, env: dict) -> bool:
         return True
     if provider == "openai":
         info = provider_config.get(provider)
-        if not info or not valid_base_url(info.get("baseURL")):
+        if not isinstance(info, dict) or not valid_base_url(info.get("baseURL")):
             return False
         auth_content = env.get("OPENCODE_AUTH_CONTENT")
         if not auth_content:
@@ -176,6 +183,8 @@ def provider_probeable(model_id: str, provider_config: dict, env: dict) -> bool:
     if provider not in provider_config:
         return True
     info = provider_config[provider]
+    if not isinstance(info, dict):
+        return False
     base_url = info.get("baseURL")
     if not valid_base_url(base_url):
         return False
