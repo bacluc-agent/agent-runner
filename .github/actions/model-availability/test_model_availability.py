@@ -1081,6 +1081,8 @@ class TestOpencodeWhitelist:
         assert model_availability.is_whitelisted("gpt-5.3-codex-spark-plus", patterns)
         assert not model_availability.is_whitelisted("gpt-5.6-sol", patterns)
         assert not model_availability.is_whitelisted("gpt-5.6-terra", patterns)
+        assert not model_availability.is_whitelisted("gpt-5.6-sol-preview", patterns)
+        assert not model_availability.is_whitelisted("gpt-5.6-terra-preview", patterns)
 
 
 class TestModelAvailabilityAction:
