@@ -353,7 +353,7 @@ jobs:
           rm -f "$RUNNER_TEMP/opencode-fatal.json"
 
           coordinator_session_title='coordinator-run'
-          PROMPT=$(printf 'model: %s \n RULE: You must never ask clarifying questions during GitHub Actions runs. OpenAI models must continue with explicit assumptions rather than asking clarifying questions, state them clearly, and document any questions or assumptions as comments on the target issue. %s' "$MODEL" "$PROMPT")
+          PROMPT=$(printf 'model: %s \n RULE: GitHub Actions runs are non-interactive: you must never ask clarifying questions. OpenAI models must continue with explicit assumptions rather than asking clarifying questions, state them clearly, and document any questions or assumptions as comments on the target issue. %s' "$MODEL" "$PROMPT")
           printf 'Final coordinator command: opencode run --agent coordinator --model %q --title %q\n' "$MODEL" "$coordinator_session_title"
           stop_token="$(openssl rand -hex 8)"
           printf '::stop-commands::%s\n' "$stop_token"
