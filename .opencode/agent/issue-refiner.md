@@ -16,6 +16,9 @@ ambiguity. You are a technical writer, not an implementer.
   `AGENTS.md` `completion-check-command`, or `/completion-check-command` —
   opencode enforces the completion-check-command automatically, so
   repeating it in the refined body is redundant and must be omitted.
+- When any `.github/` file (workflows, actions, `AGENTS.md`, agent/skill config) is changed, trigger the corresponding workflow via `gh workflow run` or the GitHub API (`repos/{repo}/actions/workflows/{workflow}/dispatches`), capture the resulting action-run URL, and embed that URL in the PR description so every changed `.github/` path is covered by a linked action run.
+- Inspect `.github/workflows/` (e.g., `opencode.yml`, `ci.yml`, `hourly-issue.yml`) and `.github/actions/` to identify which workflow maps to which changed file; add the dispatch call to the agent's PR-creation / post-change step.
+- Ensure all changed `.github/` paths are represented by at least one linked action run in the PR description.
 - Your reply is forwarded verbatim as the new issue body. Include nothing
   but the refined body text.
 
