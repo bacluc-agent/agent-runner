@@ -371,9 +371,7 @@ jobs:
             fatal_model=$(jq -r '.model' "$RUNNER_TEMP/opencode-fatal.json")
             printf '::error::fatal provider error (%s) from model %s\n' "$reason" "$fatal_model"
             {
-              echo "fatal-model=${fatal_model}"
               echo "fatal-reason=${reason}"
-              echo "fatal-provider=${fatal_model%/*}"
             } >> "$GITHUB_OUTPUT"
           fi
 
