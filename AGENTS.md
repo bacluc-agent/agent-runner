@@ -1,3 +1,17 @@
+# Agent Runner Repo
+
+This repo allows to run agents in github actions. The issues to implement are in a todo repository.
+
+## Testing
+
+ALL PULL REQUEST DESCRIPTIONS HAVE TO CONTAIN LINKS TO ACTION RUNS WITH THE PROBLEMS THEY FIX IF THEY FIX A BUG.
+Features don't need that.
+
+ALL PULL REQUESTS DESCRIPTIONS MUST LINK TO ACTION RUNS THAT SHOW THAT THE CHANGE WORKS.
+ALL CHANGED CODE PATHS HAVE TO BE COVERED BY THE LINKED ACTION RUNS.
+
+
+
 /completion-check-command
 
 ```bash
