@@ -62,18 +62,7 @@ if [[ -n "$changed_files" ]]; then
       printf 'Workflow %s triggered: %s\n' "$workflow_name" "$url"
       run_urls="${run_urls}${workflow_name}: ${url}\n"
     else
-      # Try API approach
-      if [[ "$workflow_file" == "opencode.yml" ]]; then
-        api_url=$(gh api repos/"${GITHUB_REPOSITORY}"/actions/workflows/opencode.yml/dispatches \
-          -X POST -F ref="${GITHUB_REF_NAME:-main}" -F inputs='{"prompt":"Test .github workflow trigger for issue #201"}' 2>/dev/null | jq -r '.html_url // empty' || true)
-      else
-        api_url=$(gh api repos/"${GITHUB_REPOSITORY}"/actions/workflows/"${workflow_file}"/dispatches \
-          -X POST -F ref="${GITHUB_REF_NAME:-main}" 2>/dev/null | jq -r '.html_url // empty' || true)
-      fi
-      if [[ -n "$api_url" ]]; then
-        printf 'Workflow %s triggered (API): %s\n' "$workflow_name" "$api_url"
-        run_urls="${run_urls}${workflow_name}: ${api_url}\n"
-      fi
+      printf 'Workflow %s not triggered (no URL captured)\n' "$workflow_name"
     fi
   done <<< "$changed_files"
 fi
