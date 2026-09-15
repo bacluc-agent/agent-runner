@@ -102,6 +102,7 @@ def child_session_ids(root_export: dict) -> list[str]:
 
 def inline_agent_segments(root_export: dict) -> list[tuple[str, dict]]:
     # ponytail: inline segment extraction; upgrade to structured session refs if needed
+    root_agent = (root_export.get("info") or {}).get("agent")
     segments = []
     for message in root_export.get("messages") or []:
         msg_info = message.get("info") or {}
@@ -120,7 +121,12 @@ def inline_agent_segments(root_export: dict) -> list[tuple[str, dict]]:
                 }
                 segments.append((agent_name, pseudo))
                 break
-        if agent_name and msg_agent and not any(s[0] == agent_name for s in segments):
+        if (
+            agent_name
+            and msg_agent
+            and agent_name != root_agent
+            and not any(s[0] == agent_name for s in segments)
+        ):
             pseudo = {
                 "info": {"agent": agent_name},
                 "messages": [{"parts": message.get("parts", [])}],
@@ -236,16 +242,10 @@ def main() -> int:
             print(f"Child session ID extraction failed: {e}", file=sys.stderr)
             child_ids = []
 
-    session_ids_set = set()
-    if isinstance(sessions, list):
-        for s in sessions:
-            sid = s.get("id")
-            if sid:
-                session_ids_set.add(sid)
-
-    # ponytail: include all spawned subagents, not just those in session list
-    # (session list may miss recently spawned agents; upgrade to union if needed)
-    filtered_child_ids = [cid for cid in child_ids if cid in session_ids_set]
+    # ponytail: export all spawned subagent sessions; session list misses them
+    # (subagent sessions are exportable even when not listed; add a session-list
+    # check only if exporting stale IDs ever becomes a problem)
+    filtered_child_ids = child_ids
 
     token = secrets.token_hex(32)
     print(f"::stop-commands::{token}")

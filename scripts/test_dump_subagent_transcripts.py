@@ -167,10 +167,7 @@ class TestMain:
 
     def test_renders_child_transcripts_fenced(self, monkeypatch, capsys):
         monkeypatch.setenv("COORDINATOR_SESSION_TITLE", "coordinator-run")
-        sessions = json.dumps([
-            {"id": "ses_root", "title": "coordinator-run"},
-            {"id": "ses_child1", "title": "subagent"},
-        ])
+        sessions = json.dumps([{"id": "ses_root", "title": "coordinator-run"}])
         root_export = {
             "info": {"agent": "coordinator"},
             "messages": [
@@ -327,10 +324,7 @@ class TestRegression189:
     def test_valid_session_does_not_report_false_no_subagents_or_export_failed(self, monkeypatch, capsys):
         # Fails if script reports false "no subagents spawned" or "export failed" for valid session
         monkeypatch.setenv("COORDINATOR_SESSION_TITLE", "coordinator-run")
-        sessions = json.dumps([
-            {"id": "ses_root", "title": "coordinator-run"},
-            {"id": "ses_child1", "title": "subagent"},
-        ])
+        sessions = json.dumps([{"id": "ses_root", "title": "coordinator-run"}])
         root_export = {
             "info": {"agent": "coordinator"},
             "messages": [
