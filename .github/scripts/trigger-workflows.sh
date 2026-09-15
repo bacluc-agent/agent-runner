@@ -80,11 +80,14 @@ if [[ -n "$changed_files" ]]; then
       continue
     fi
     printf 'Triggering workflow %s (%s)\n' "$workflow_name" "$workflow_file"
-    if [[ "$workflow_file" == "opencode.yml" ]]; then
-      url=$(gh workflow run opencode.yml --repo "${GITHUB_REPOSITORY}" --ref "$TRIGGER_REF" --field prompt="$TRIGGER_PROMPT" --field skip_workflow_trigger=true 2>&1 | grep -oE 'https://github.com/[^/]+/[^/]+/actions/runs/[0-9]+' | head -1 || true)
-    else
-      url=$(gh workflow run "$workflow_file" --repo "${GITHUB_REPOSITORY}" --ref "$TRIGGER_REF" --field skip_workflow_trigger=true 2>&1 | grep -oE 'https://github.com/[^/]+/[^/]+/actions/runs/[0-9]+' | head -1 || true)
+    extra_args=()
+    if grep -q 'skip_workflow_trigger' ".github/workflows/$workflow_file" 2>/dev/null; then
+      extra_args+=(--field skip_workflow_trigger=true)
     fi
+    if [[ "$workflow_file" == "opencode.yml" ]]; then
+      extra_args+=(--field prompt="$TRIGGER_PROMPT")
+    fi
+    url=$(gh workflow run "$workflow_file" --repo "${GITHUB_REPOSITORY}" --ref "$TRIGGER_REF" "${extra_args[@]}" 2>&1 | grep -oE 'https://github.com/[^/]+/[^/]+/actions/runs/[0-9]+' | head -1 || true)
     if [[ -z "$url" ]]; then
       for _ in 1 2 3; do
         sleep 5
