@@ -7,6 +7,10 @@ prompt="${1:-Test the .github workflow changes on this branch}"
 RUNNER_TEMP="${RUNNER_TEMP:-/tmp}"
 mkdir -p "$RUNNER_TEMP"
 BRANCH="${BRANCH:-${GITHUB_REF_NAME:-main}}"
+TRIGGER_REF="${TRIGGER_REF:-${BRANCH:-${GITHUB_REF_NAME:-main}}}"
+TRIGGER_PROMPT="${TRIGGER_PROMPT:-${prompt:-Test .github workflow trigger for issue #${ISSUE_NUMBER:-201}}}"
+BRANCH="$TRIGGER_REF"
+prompt="$TRIGGER_PROMPT"
 
 # Map changed .github/ paths to workflow file names
 map_file_to_workflow_file() {
@@ -37,12 +41,12 @@ if git rev-parse --verify HEAD >/dev/null 2>&1; then
     fi
   done
   if [[ -n "$base_ref" ]]; then
-    changed_files=$(git diff --name-only "$base_ref"...HEAD 2>/dev/null | grep -E '^(\.github/|AGENTS\.md)' || true)
+    changed_files=$(git diff --name-only "$base_ref...HEAD" 2>/dev/null | grep -E '^(\.github/|AGENTS\.md)' || true)
   fi
   if [[ -z "$base_ref" ]]; then
     if git rev-parse --verify HEAD~1 >/dev/null 2>&1; then
       base_ref="HEAD~1"
-      changed_files=$(git diff --name-only "$base_ref"...HEAD 2>/dev/null | grep -E '^(\.github/|AGENTS\.md)' || true)
+      changed_files=$(git diff --name-only "$base_ref...HEAD" 2>/dev/null | grep -E '^(\.github/|AGENTS\.md)' || true)
     fi
   fi
 fi
@@ -77,14 +81,14 @@ if [[ -n "$changed_files" ]]; then
     fi
     printf 'Triggering workflow %s (%s)\n' "$workflow_name" "$workflow_file"
     if [[ "$workflow_file" == "opencode.yml" ]]; then
-      url=$(gh workflow run opencode.yml --repo "${GITHUB_REPOSITORY}" --ref "$BRANCH" --field prompt="$prompt" --field skip_workflow_trigger=true 2>&1 | grep -oE 'https://github.com/[^/]+/[^/]+/actions/runs/[0-9]+' | head -1 || true)
+      url=$(gh workflow run opencode.yml --repo "${GITHUB_REPOSITORY}" --ref "$TRIGGER_REF" --field prompt="$TRIGGER_PROMPT" --field skip_workflow_trigger=true 2>&1 | grep -oE 'https://github.com/[^/]+/[^/]+/actions/runs/[0-9]+' | head -1 || true)
     else
-      url=$(gh workflow run "$workflow_file" --repo "${GITHUB_REPOSITORY}" --ref "$BRANCH" --field skip_workflow_trigger=true 2>&1 | grep -oE 'https://github.com/[^/]+/[^/]+/actions/runs/[0-9]+' | head -1 || true)
+      url=$(gh workflow run "$workflow_file" --repo "${GITHUB_REPOSITORY}" --ref "$TRIGGER_REF" --field skip_workflow_trigger=true 2>&1 | grep -oE 'https://github.com/[^/]+/[^/]+/actions/runs/[0-9]+' | head -1 || true)
     fi
     if [[ -z "$url" ]]; then
       for _ in 1 2 3; do
         sleep 5
-        url=$(gh run list --workflow="$workflow_file" --repo "${GITHUB_REPOSITORY}" --branch "$BRANCH" --limit 5 --json databaseId,url -q ".[] | select(.databaseId != ${GITHUB_RUN_ID:-0}) | .url" 2>/dev/null | head -1 || true)
+        url=$(gh run list --workflow="$workflow_file" --repo "${GITHUB_REPOSITORY}" --branch "$TRIGGER_REF" --limit 5 --json databaseId,url -q ".[] | select(.databaseId != ${GITHUB_RUN_ID:-0}) | .url" 2>/dev/null | head -1 || true)
         [[ -n "$url" ]] && break
       done
     fi

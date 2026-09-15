@@ -502,6 +502,9 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
           BRANCH: ${{ steps.push-work.outputs.branch_name }}
           PROMPT: ${{ inputs.prompt }}
+          ISSUE_NUMBER: ${{ steps.target-issue.outputs.issue_number }}
+          TRIGGER_REF: ${{ steps.push-work.outputs.branch_name }}
+          TRIGGER_PROMPT: "Test .github workflow trigger for issue #${{ steps.target-issue.outputs.issue_number }}"
         run: |
           set -Eeuo pipefail
           bash .github/scripts/trigger-workflows.sh "$PROMPT" || true
