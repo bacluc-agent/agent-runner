@@ -81,7 +81,11 @@ if [[ -n "$changed_files" ]]; then
       url=$(gh workflow run "$workflow_file" --repo "${GITHUB_REPOSITORY}" --ref "$BRANCH" 2>&1 | grep -oE 'https://github.com/[^/]+/[^/]+/actions/runs/[0-9]+' | head -1 || true)
     fi
     if [[ -z "$url" ]]; then
-      url=$(gh run list --workflow="$workflow_file" --repo "${GITHUB_REPOSITORY}" --branch "$BRANCH" --limit 5 --json databaseId,url -q ".[] | select(.databaseId != ${GITHUB_RUN_ID:-0}) | .url" 2>/dev/null | head -1 || true)
+      for _ in 1 2 3; do
+        sleep 5
+        url=$(gh run list --workflow="$workflow_file" --repo "${GITHUB_REPOSITORY}" --branch "$BRANCH" --limit 5 --json databaseId,url -q ".[] | select(.databaseId != ${GITHUB_RUN_ID:-0}) | .url" 2>/dev/null | head -1 || true)
+        [[ -n "$url" ]] && break
+      done
     fi
     if [[ -n "$url" ]]; then
       printf 'Workflow %s triggered: %s\n' "$workflow_name" "$url"
@@ -91,7 +95,6 @@ if [[ -n "$changed_files" ]]; then
 fi
 
 # Output URLs for downstream steps
-RUNNER_TEMP="${RUNNER_TEMP:-/tmp}"
 if [[ -n "$run_urls" ]]; then
   printf 'Triggered workflow URLs:\n%s\n' "$run_urls"
   # Write to a file that can be read by other steps

@@ -1,3 +1,4 @@
+# ponytail: test fixture for issue-201 — keep for this verification run, delete before final merge if guard is covered elsewhere
 name: Test workflow-call guard (issue-201)
 
 on:
