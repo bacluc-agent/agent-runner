@@ -406,9 +406,13 @@ def main() -> int:
             file=sys.stderr,
         )
     work_dir = os.environ.get("RUNNER_TEMP") or tempfile.gettempdir()
-    results = probe_candidates(pending, work_dir)
+    results = probe_candidates(pending, work_dir) if pending else {}
     ok = sum(1 for v in results.values() if v)
-    print(f"probe results: {ok} ok, {len(results) - ok} failed")
+    if pending:
+        print(f"probe results: {len(results)} checked, {ok} ok, {len(results) - ok} failed")
+    else:
+        fresh = len(candidates) - skipped
+        print(f"probe results: 0 checked, 0 ok, 0 failed ({fresh} candidates fresh)")
     checked = now.strftime("%Y-%m-%dT%H:%M:%SZ")
     # Re-read the cache right before updating to avoid clobbering concurrent runs' updates
     if cache_issue is not None:
