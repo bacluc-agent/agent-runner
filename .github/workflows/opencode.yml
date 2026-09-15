@@ -527,20 +527,3 @@ jobs:
           fi
 
           gh issue comment "$ISSUE_NUMBER" -R "$ISSUE_REPOSITORY" --body "$BODY"
-
-      - name: Trigger .github workflow tests
-        if: always() && steps.push-work.outputs.branch_name != ''
-        id: trigger-workflows
-        shell: bash
-        env:
-          GITHUB_TOKEN: ${{ secrets.BACLUC_AGENT_GITHUB_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-        run: |
-          set -Eeuo pipefail
-          printf '::add-mask::%s\n' "$GITHUB_TOKEN"
-          bash .github/scripts/trigger-workflows.sh || true
-          if [[ -f "$RUNNER_TEMP/workflow-run-urls.txt" ]]; then
-            echo "workflow_urls<<EOF" >> "$GITHUB_OUTPUT"
-            cat "$RUNNER_TEMP/workflow-run-urls.txt" >> "$GITHUB_OUTPUT"
-            echo "EOF"
-          fi
