@@ -58,14 +58,6 @@ runs:
         rm -rf "$config_dir"
         cp -a "$source_dir/$CONFIG_PATH" "$config_dir"
 
-        # Repair unterminated quoted strings in fetched opencode config files
-        # (root cause for "failed to read opencode config: Unterminated string" and
-        # subsequent "no valid baseURL configured" warnings for all providers).
-        mapfile -t repair_files < <(find "$config_dir" -type f \( -name '*.json' -o -name '*.jsonc' -o -name '*.yaml' -o -name '*.yml' \))
-        if ((${#repair_files[@]} > 0)); then
-          python3 "$GITHUB_ACTION_PATH/repair_config.py" "${repair_files[@]}"
-        fi
-
         if [[ ! -d "$source_dir/$SKILLS_PATH" ]]; then
           printf 'Missing skills directory: %s\n' "$SKILLS_PATH" >&2
           exit 1
