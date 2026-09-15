@@ -329,6 +329,8 @@ def candidate_priority(candidate: str) -> int:
     free = is_whitelisted(model, FREE_PATTERNS)
     if provider == "opencode":
         return 2 if free else 4
+    if provider == "openai":
+        return 4
     if provider == "openrouter":
         return 3 if free else 7
     if provider in ("opencode-go-openai", "opencode-go-openai-2"):
