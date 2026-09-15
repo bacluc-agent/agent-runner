@@ -487,7 +487,7 @@ class TestParseWhitelistedModels:
             "opencode-go-openai/gpt-5.6-luna",
             "opencode-go-openai/kimi-k3",
             "opencode-go-openai/qwen3.8-flash",
-            "openrouter/zai/GLM-4.5",
+            "other/paid-model",
         ]
 
     def test_deduplicates(self):
@@ -504,9 +504,9 @@ class TestParseWhitelistedModels:
 
     def test_case_insensitive_matching(self):
         assert model_availability.parse_whitelisted_models(
-            "openrouter/zai/GLM-4.5\n",
+            "openrouter/cohere/north-mini-code:free\n",
             EXAMPLE_OPENCODE_WHITELIST,
-        ) == ["openrouter/zai/GLM-4.5"]
+        ) == ["openrouter/cohere/north-mini-code:free"]
 
 
 class TestIsWhitelisted:
