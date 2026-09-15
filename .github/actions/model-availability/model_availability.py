@@ -94,7 +94,7 @@ def is_whitelisted(model_id: str, patterns: list[str]) -> bool:
     return any(re.search(pattern, model_id, re.IGNORECASE) for pattern in patterns)
 
 
-def parse_whitelisted_models(opencode_models_output: str, patterns: list[str]) -> list[str]:
+def parse_whitelisted_models(opencode_models_output: str) -> list[str]:
     free = []
     rest = []
     for line in opencode_models_output.splitlines():
@@ -258,9 +258,7 @@ def discover_models() -> tuple[list[str], dict[str, list[str]]]:
             handle.write(getattr(result, "stderr", ""))
     except OSError:
         pass
-    whitelisted_models = parse_whitelisted_models(
-        result.stdout, PROVIDER_WHITELISTS.get("opencode", [ r".*"])
-    )
+    whitelisted_models = parse_whitelisted_models(result.stdout)
     provider_config = load_provider_config()
     base_urls = {
         name: info["baseURL"]
@@ -288,7 +286,7 @@ def discover_models() -> tuple[list[str], dict[str, list[str]]]:
             print(f"warning: no API key configured for {provider}", file=sys.stderr)
             continue
         model_ids = fetch_model_ids(models_endpoint_for(base_url), api_key=api_key)
-        patterns = PROVIDER_WHITELISTS.get(provider, [ r".*"])
+        patterns = PROVIDER_WHITELISTS.get(provider, [r".*"])
         if patterns:
             model_ids = [m for m in model_ids if is_whitelisted(m, patterns)]
         provider_models[provider] = model_ids
