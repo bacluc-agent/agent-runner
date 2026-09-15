@@ -1,21 +1,11 @@
 #!/usr/bin/env python3
 """Repair unterminated quoted strings in fetched opencode config files."""
 import sys
-import json
 
 
 def repair(path: str) -> None:
     with open(path, "r", newline="") as fh:
         content = fh.read()
-
-    # Only process files that actually contain unterminated baseURL strings
-    # Skip files that parse cleanly as JSON/JSONC
-    try:
-        # Basic check: if the file has an odd number of quotes around baseURL,
-        # it may be broken. But don't corrupt files with escaped quotes.
-        pass
-    except Exception:
-        pass
 
     lines = content.splitlines(keepends=True)
     fixed_lines = []
