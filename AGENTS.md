@@ -16,6 +16,11 @@ ALL CHANGED CODE PATHS HAVE TO BE COVERED BY THE LINKED ACTION RUNS.
 ./scripts/completion-check
 ```
 
+The GitHub Actions harness (`.github/workflows/opencode.yml`) reads the
+declaration above and runs the command after the coordinator exits, failing
+the job if the check fails. The agent does not need to invoke it; the
+`bacluc-opencode-completion-check-command` plugin is not used.
+
 ## Renovate
 
 Renovate must be able to update all dependencies.
