@@ -263,6 +263,8 @@ def is_cache_fresh(entry, now: datetime) -> bool:
 def candidate_priority(candidate: str) -> int:
     """Lower = probed first. Workflow-critical models beat everything else."""
     provider, _, model = candidate.partition("/")
+    if re.search(r"gpt", model, re.IGNORECASE):
+        return 2 if provider in ("opencode-go-openai", "opencode-go-openai-2") else 6
     if model == "big-pickle" or candidate == "big-pickle":
         return 0
     if candidate in ("opencode-go-openai/qwen3.8-flash", "opencode-go-openai-2/qwen3.8-flash"):

@@ -556,6 +556,26 @@ class TestCandidatePriority:
         assert model_availability.candidate_priority("opencode-go-openai/glm-5.3") == 5
         assert model_availability.candidate_priority("opencode-go-openai-2/glm-5.3") == 5
 
+    def test_go_openai_gpt_priority(self):
+        assert model_availability.candidate_priority("opencode-go-openai/gpt-4") == 2
+        assert model_availability.candidate_priority("opencode-go-openai-2/gpt-4") == 2
+        assert model_availability.candidate_priority("opencode-go-openai/GPT-4") == 2
+        assert model_availability.candidate_priority("opencode-go-openai/gpt-5.6-luna") == 2
+        assert model_availability.candidate_priority("opencode-go-openai-2/gpt-4o") == 2
+
+    def test_openai_provider_gpt_priority(self):
+        assert model_availability.candidate_priority("openai/gpt-5.6-luna") == 6
+        assert model_availability.candidate_priority("openai/gpt-4") == 6
+        assert model_availability.candidate_priority("openai/GPT-4") == 6
+        assert model_availability.candidate_priority("openrouter/openai/gpt-4o") == 6
+
+    def test_go_openai_non_gpt_priority(self):
+        assert model_availability.candidate_priority("opencode-go-openai/glm-5.3") == 5
+        assert model_availability.candidate_priority("opencode-go-openai-2/glm-5.3") == 5
+
+    def test_openai_non_gpt_priority(self):
+        assert model_availability.candidate_priority("openai/other-model") == 7
+
     def test_go_anthropic_providers(self):
         assert model_availability.candidate_priority("opencode-go-anthropic/glm-5.3") == 6
         assert model_availability.candidate_priority("opencode-go-anthropic-2/glm-5.3") == 6
