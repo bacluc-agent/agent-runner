@@ -8,7 +8,7 @@ printf '::add-mask::%s\n' "${GITHUB_TOKEN:-}"
 map_file_to_workflow_file() {
   local file="$1"
   case "$file" in
-    .github/workflows/ci.yml) echo "ci.yml" ;;
+    .github/workflows/ci.yml) echo "" ;;  # no workflow_dispatch trigger
     .github/workflows/hourly-issue.yml) echo "hourly-issue.yml" ;;
     .github/workflows/opencode.yml) echo "opencode.yml" ;;
     .github/workflows/refine-issues.yml) echo "refine-issues.yml" ;;
@@ -33,6 +33,12 @@ if git rev-parse --verify HEAD >/dev/null 2>&1; then
   done
   if [[ -n "$base_ref" ]]; then
     changed_files=$(git diff --name-only "$base_ref" HEAD 2>/dev/null | grep '^\.github/' || true)
+  fi
+  if [[ -z "$base_ref" ]]; then
+    if git rev-parse --verify HEAD~1 >/dev/null 2>&1; then
+      base_ref="HEAD~1"
+      changed_files=$(git diff --name-only "$base_ref" HEAD 2>/dev/null | grep '^\.github/' || true)
+    fi
   fi
 fi
 
