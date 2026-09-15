@@ -340,7 +340,7 @@ class TestProviderProbeable:
         config = {"openrouter": {"baseURL": "/chat/completions", "apiKey": "sk-or-xxx"}}
         assert not model_availability.provider_probeable("openrouter/foo:free", config, {})
 
-    @pytest.mark.parametrize("base_url", ["https://", "ftp://api.example.com/v1", "/v1"])
+    @pytest.mark.parametrize("base_url", ["https://", "ftp://api.example.com/v1", "/v1", "http://["])
     def test_openai_requires_absolute_http_baseurl(self, base_url):
         config = {"openai": {"baseURL": base_url}}
         auth = {
@@ -363,6 +363,7 @@ class TestProviderProbeable:
             {"openai": {"type": "oauth", "access": "", "refresh": "r", "expires": 1}},
             {"openai": {"type": "oauth", "access": "a", "refresh": "", "expires": 1}},
             {"openai": {"type": "oauth", "access": "a", "refresh": "r", "expires": "1"}},
+            {"openai": []},
         ],
     )
     def test_openai_requires_valid_oauth_credentials(self, auth):
@@ -386,6 +387,24 @@ class TestProviderProbeable:
         )
 
 class TestParseWhitelistedModels:
+    def test_uses_exact_openai_patterns_without_changing_opencode_matching(self):
+        output = (
+            "openai/gpt-5.6-luna\n"
+            "openai/gpt-5.3-codex-spark\n"
+            "openai/gpt-5.6-luna-preview\n"
+            "openai/gpt-5.3-codex-sparky\n"
+            "opencode/gpt-5.6-luna-preview\n"
+            "opencode/ling-3.0-flash-fin-free\n"
+        )
+        assert model_availability.parse_whitelisted_models(
+            output, EXAMPLE_OPENCODE_WHITELIST
+        ) == [
+            "opencode/ling-3.0-flash-fin-free",
+            "openai/gpt-5.3-codex-spark",
+            "openai/gpt-5.6-luna",
+            "opencode/gpt-5.6-luna-preview",
+        ]
+
     def test_extracts_free_models(self):
         output = (
             "opencode/big-pickle\n"
