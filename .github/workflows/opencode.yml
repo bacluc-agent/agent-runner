@@ -45,6 +45,11 @@ on:
         required: false
         type: number
         default: 120
+      skip_workflow_trigger:
+        description: Skip the .github workflow-trigger step (set by the trigger mechanism itself to prevent re-trigger cascades)
+        required: false
+        type: boolean
+        default: false
   workflow_call:
     inputs:
       prompt:
@@ -133,7 +138,6 @@ jobs:
           requested="${MODEL_TEXT:-}"
           if [[ -z "$requested" && "${MODEL_CHOICE:-auto}" != auto ]]; then requested="$MODEL_CHOICE"; fi
 
-          printf '::add-mask::%s\n' "$GITHUB_TOKEN"
           printf '::add-mask::%s\n' "$OPENCODE_GO_API_KEY"
           printf '::add-mask::%s\n' "$OPENCODE_GO_2_API_KEY"
           [[ -n "${OPENCODE_AUTH_CONTENT:-}" ]] && printf '::add-mask::%s\n' "$OPENCODE_AUTH_CONTENT"
@@ -334,7 +338,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.BACLUC_AGENT_GITHUB_TOKEN }}
           MODEL: ${{ steps.select-model.outputs.model }}
         run: |
-          printf '::add-mask::%s\n' "$GITHUB_TOKEN"
           gh issue comment "$ISSUE_NUMBER" -R "$ISSUE_REPOSITORY" \
             --body "Run started: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID — model: $MODEL"
 
@@ -436,7 +439,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.BACLUC_AGENT_GITHUB_TOKEN }}
         run: |
           set -Eeuo pipefail
-          printf '::add-mask::%s\n' "$GITHUB_TOKEN"
           BRANCH_NAME="agent-run/${ISSUE_NUMBER}-${GITHUB_RUN_ID}"
           PUSHED_REPOS=""
           WORK_BRANCH=""
@@ -490,7 +492,7 @@ jobs:
           fi
 
       - name: Trigger .github workflow tests
-        if: always() && steps.push-work.outputs.branch_name != ''
+        if: always() && steps.push-work.outputs.branch_name != '' && github.event.inputs.skip_workflow_trigger != 'true'
         id: trigger-workflows
         shell: bash
         env:
@@ -498,7 +500,6 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
           set -Eeuo pipefail
-          printf '::add-mask::%s\n' "$GITHUB_TOKEN"
           bash .github/scripts/trigger-workflows.sh || true
           if [[ -f "${RUNNER_TEMP:-/tmp}/workflow-run-urls.txt" ]]; then
             echo "workflow_urls<<EOF" >> "$GITHUB_OUTPUT"
@@ -514,7 +515,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.BACLUC_AGENT_GITHUB_TOKEN }}
         run: |
           set -Eeuo pipefail
-          printf '::add-mask::%s\n' "$GITHUB_TOKEN"
 
           # Determine status
           if [[ "${{ steps.coordinator.outcome }}" == "success" ]]; then

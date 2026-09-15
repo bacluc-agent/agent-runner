@@ -5,8 +5,6 @@ set -Eeuo pipefail
 RUNNER_TEMP="${RUNNER_TEMP:-/tmp}"
 mkdir -p "$RUNNER_TEMP"
 
-printf '::add-mask::%s\n' "${GITHUB_TOKEN:-}"
-
 # Map changed .github/ paths to workflow file names
 map_file_to_workflow_file() {
   local file="$1"
@@ -75,7 +73,7 @@ if [[ -n "$changed_files" ]]; then
     fi
     printf 'Triggering workflow %s (%s)\n' "$workflow_name" "$workflow_file"
     if [[ "$workflow_file" == "opencode.yml" ]]; then
-      url=$(gh workflow run opencode.yml --repo "${GITHUB_REPOSITORY}" --ref "${GITHUB_REF_NAME:-main}" --field prompt="Test .github workflow trigger for issue #201" 2>&1 | grep -oE 'https://github.com/[^/]+/[^/]+/actions/runs/[0-9]+' | head -1 || true)
+      url=$(gh workflow run opencode.yml --repo "${GITHUB_REPOSITORY}" --ref "${GITHUB_REF_NAME:-main}" --field prompt="Test .github workflow trigger for issue #201" --field skip_workflow_trigger=true 2>&1 | grep -oE 'https://github.com/[^/]+/[^/]+/actions/runs/[0-9]+' | head -1 || true)
     else
       url=$(gh workflow run "$workflow_file" --repo "${GITHUB_REPOSITORY}" --ref "${GITHUB_REF_NAME:-main}" 2>&1 | grep -oE 'https://github.com/[^/]+/[^/]+/actions/runs/[0-9]+' | head -1 || true)
     fi
