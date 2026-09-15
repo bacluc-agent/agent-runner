@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import urllib.request
+from urllib.parse import urlsplit
 from datetime import datetime, timezone
 
 AVAILABLE_TTL_HOURS = 24
@@ -17,6 +18,7 @@ FREE_PATTERNS = [r"(?:-|:)free$", r"big-pickle"]
 PROVIDER_WHITELISTS: dict[str, list[str]] = {
     "openrouter": [r"(?:-|:)free$", r"big-pickle"],
     "opencode": [r"(?:-|:)free$", r"big-pickle", r"glm", r"gpt-5\.6-luna", r"qwen", r"kimi"],
+    "openai": [r"^gpt-5\.6-luna$", r"^gpt-5\.3-codex-spark$"],
 }
 PROVIDERS = (
     ("opencode-go-openai", "OPENCODE_GO_API_KEY"),
@@ -156,16 +158,54 @@ def provider_probeable(model_id: str, provider_config: dict, env: dict) -> bool:
     """True if the model's provider can be probed. Built-in/unknown providers pass;
     configured providers need an absolute baseURL and an apiKey (resolved value or {env:NAME})."""
     provider = model_id.split("/", 1)[0] if "/" in model_id else ""
-    if not provider or provider not in provider_config:
+    if not provider:
+        return True
+    if provider == "openai":
+        info = provider_config.get(provider)
+        if not info or not valid_base_url(info.get("baseURL")):
+            return False
+        auth_content = env.get("OPENCODE_AUTH_CONTENT")
+        if not auth_content:
+            try:
+                with open(os.path.expanduser("~/.local/share/opencode/auth.json")) as auth_file:
+                    auth_content = auth_file.read()
+            except OSError:
+                return False
+        return valid_openai_oauth(auth_content)
+    if provider not in provider_config:
         return True
     info = provider_config[provider]
     base_url = info.get("baseURL")
-    if not base_url or not base_url.startswith(("http://", "https://")):
+    if not valid_base_url(base_url):
         return False
     api_key = info.get("apiKey")
-    if isinstance(api_key, str) and api_key.startswith("{env:"):
+    if isinstance(api_key, str) and api_key.startswith("{env:") and api_key.endswith("}"):
         return bool(env.get(api_key[5:-1]))
     return bool(api_key)
+
+
+def valid_base_url(base_url: object) -> bool:
+    if not isinstance(base_url, str):
+        return False
+    parsed = urlsplit(base_url)
+    return parsed.scheme in ("http", "https") and bool(parsed.netloc and parsed.hostname)
+
+
+def valid_openai_oauth(auth_content: str) -> bool:
+    try:
+        credentials = json.loads(auth_content).get("openai", {})
+    except (json.JSONDecodeError, AttributeError, TypeError):
+        return False
+    expires = credentials.get("expires")
+    return (
+        credentials.get("type") == "oauth"
+        and isinstance(credentials.get("access"), str)
+        and bool(credentials["access"].strip())
+        and isinstance(credentials.get("refresh"), str)
+        and bool(credentials["refresh"].strip())
+        and isinstance(expires, (int, float))
+        and not isinstance(expires, bool)
+    )
 
 
 def models_endpoint_for(base_url: str) -> str:
