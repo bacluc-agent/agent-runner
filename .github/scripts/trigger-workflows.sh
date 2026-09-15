@@ -36,8 +36,12 @@ if git rev-parse --verify HEAD >/dev/null 2>&1; then
   done
   if [[ -n "$base_ref" ]]; then
     changed_files=$(git diff --name-only "$base_ref" HEAD 2>/dev/null | grep '^\.github/' || true)
-  elif git rev-parse --verify HEAD~1 >/dev/null 2>&1; then
-    changed_files=$(git diff --name-only HEAD~1 HEAD 2>/dev/null | grep '^\.github/' || true)
+  fi
+  if [[ -z "$base_ref" ]]; then
+    if git rev-parse --verify HEAD~1 >/dev/null 2>&1; then
+      base_ref="HEAD~1"
+      changed_files=$(git diff --name-only "$base_ref" HEAD 2>/dev/null | grep '^\.github/' || true)
+    fi
   fi
 fi
 
@@ -49,49 +53,47 @@ if [[ -z "$changed_files" ]]; then
   changed_files=$(git ls-files --others --exclude-standard 2>/dev/null | grep '^\.github/' || true)
 fi
 
-# Trigger each unique mapped workflow once and capture its run URL
 run_urls=""
 if [[ -n "$changed_files" ]]; then
   printf 'Changed .github/ files detected:\n%s\n' "$changed_files"
-  workflow_files=$(printf '%s\n' "$changed_files" | while IFS= read -r file; do
+  # Map changed files to workflow files, dedupe so each workflow triggers once
+  workflow_files=""
+  while IFS= read -r file; do
     [[ -n "$file" ]] || continue
-    map_file_to_workflow_file "$file"
-  done | sort -u)
+    workflow_file=$(map_file_to_workflow_file "$file")
+    if [[ -z "$workflow_file" ]]; then printf 'Skipping %s (no workflow_dispatch)\n' "$file"; continue; fi
+    workflow_files="${workflow_files}${workflow_file}"$'\n'
+  done <<< "$changed_files"
+  workflow_files=$(printf '%s\n' "$workflow_files" | sed '/^$/d' | sort -u)
+
   while IFS= read -r workflow_file; do
     [[ -n "$workflow_file" ]] || continue
+    workflow_name="${workflow_file%.yml}"
     if [[ ! -f ".github/workflows/$workflow_file" ]]; then
       printf 'Workflow file %s not found, skipping\n' "$workflow_file"
       continue
     fi
-    workflow_name="${workflow_file%.yml}"
     printf 'Triggering workflow %s (%s)\n' "$workflow_name" "$workflow_file"
     if [[ "$workflow_file" == "opencode.yml" ]]; then
-      gh workflow run opencode.yml --repo "${GITHUB_REPOSITORY}" --ref "${GITHUB_REF_NAME:-main}" --field prompt="Test .github workflow trigger for issue #201" || true
+      url=$(gh workflow run opencode.yml --repo "${GITHUB_REPOSITORY}" --ref "${GITHUB_REF_NAME:-main}" --field prompt="Test .github workflow trigger for issue #201" 2>&1 | grep -oE 'https://github.com/[^/]+/[^/]+/actions/runs/[0-9]+' | head -1 || true)
     else
-      gh workflow run "$workflow_file" --repo "${GITHUB_REPOSITORY}" --ref "${GITHUB_REF_NAME:-main}" || true
+      url=$(gh workflow run "$workflow_file" --repo "${GITHUB_REPOSITORY}" --ref "${GITHUB_REF_NAME:-main}" 2>&1 | grep -oE 'https://github.com/[^/]+/[^/]+/actions/runs/[0-9]+' | head -1 || true)
     fi
-    # gh workflow run prints nothing on success, so poll for the run URL
-    url=""
-    for _ in $(seq 1 6); do
-      sleep 5
-      run_json=$(gh run list --workflow="$workflow_file" --branch="${GITHUB_REF_NAME:-main}" --json databaseId,url --limit 1 2>/dev/null || true)
-      database_id=$(printf '%s' "$run_json" | jq -r '.[0].databaseId // empty' 2>/dev/null || true)
-      if [[ -n "$database_id" && "$database_id" != "${GITHUB_RUN_ID:-}" ]]; then
-        url="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${database_id}"
-        break
-      fi
-    done
+    if [[ -z "$url" ]]; then
+      url=$(gh run list --workflow="$workflow_file" --repo "${GITHUB_REPOSITORY}" --branch "${GITHUB_REF_NAME:-main}" --limit 1 --json url -q '.[0].url' 2>/dev/null || true)
+    fi
     if [[ -n "$url" ]]; then
       printf 'Workflow %s triggered: %s\n' "$workflow_name" "$url"
       run_urls="${run_urls}${workflow_name}: ${url}"$'\n'
-    else
-      printf 'Workflow %s triggered but run URL not found yet\n' "$workflow_name"
     fi
   done <<< "$workflow_files"
 fi
 
 # Output URLs for downstream steps
+RUNNER_TEMP="${RUNNER_TEMP:-/tmp}"
 if [[ -n "$run_urls" ]]; then
-  printf 'Triggered workflow URLs:\n%s' "$run_urls"
-  printf '%s' "$run_urls" > "$RUNNER_TEMP"/workflow-run-urls.txt
+  printf 'Triggered workflow URLs:\n%s\n' "$run_urls"
+  # Write to a file that can be read by other steps
+  tmp_dir="${RUNNER_TEMP:-/tmp}"
+  printf '%s' "$run_urls" > "$tmp_dir"/workflow-run-urls.txt
 fi
