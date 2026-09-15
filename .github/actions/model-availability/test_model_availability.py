@@ -673,6 +673,10 @@ class TestCandidatePriority:
     def test_opencode_paid(self):
         assert model_availability.candidate_priority("opencode/paid-model") == 4
 
+    def test_openai_models(self):
+        assert model_availability.candidate_priority("openai/gpt-5.6-luna") == 4
+        assert model_availability.candidate_priority("openai/gpt-5.6-sol") == 4
+
     def test_go_openai_providers(self):
         assert model_availability.candidate_priority("opencode-go-openai/glm-5.3") == 5
         assert model_availability.candidate_priority("opencode-go-openai-2/glm-5.3") == 5
