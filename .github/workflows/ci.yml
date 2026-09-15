@@ -19,5 +19,8 @@ jobs:
       - name: Install uv
         run: pip install --quiet uv
 
+      - name: Verify classify module (no MODULE_TYPELESS_PACKAGE_JSON)
+        run: ./scripts/verify-classify-module.sh
+
       - name: Run completion check
         run: ./scripts/completion-check
