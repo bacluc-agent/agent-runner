@@ -1,4 +1,0 @@
-opencode: https://github.com/bacluc-agent/agent-runner/actions/runs/35000143583
-opencode: https://github.com/bacluc-agent/agent-runner/actions/runs/35000661714 (issue-201 trigger test)
-opencode: https://github.com/bacluc-agent/agent-runner/actions/runs/35000667076 (issue-201 trigger test)
-opencode: https://github.com/bacluc-agent/agent-runner/actions/runs/35000672147 (issue-201 trigger test)
