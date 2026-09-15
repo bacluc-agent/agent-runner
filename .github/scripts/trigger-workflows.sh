@@ -11,7 +11,7 @@ printf '::add-mask::%s\n' "${GITHUB_TOKEN:-}"
 map_file_to_workflow_file() {
   local file="$1"
   case "$file" in
-    .github/workflows/ci.yml) echo "" ;;  # no workflow_dispatch trigger
+    .github/workflows/ci.yml) echo "" ;;  # skipped per PR claim
     .github/workflows/hourly-issue.yml) echo "hourly-issue.yml" ;;
     .github/workflows/opencode.yml) echo "opencode.yml" ;;
     .github/workflows/refine-issues.yml) echo "refine-issues.yml" ;;
