@@ -20,8 +20,6 @@ runs:
       run: |
         set -Eeuo pipefail
 
-        printf '::add-mask::%s\n' "${OPENCODE_GO_API_KEY:-}"
-        printf '::add-mask::%s\n' "${OPENCODE_GO_2_API_KEY:-}"
         source_dir="$RUNNER_TEMP/provision-machines"
         config_dir="$RUNNER_TEMP/opencode-config"
         mapfile -t tags < <(git ls-remote --tags "$SOURCE_REPOSITORY" \

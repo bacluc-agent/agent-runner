@@ -9,6 +9,22 @@ on:
         description: Optional override for the selection instruction tail (the candidate list is always prepended)
         required: false
         type: string
+      skip_workflow_trigger:
+        description: Skip the .github workflow-trigger step (set by the trigger mechanism itself to prevent re-trigger cascades)
+        required: false
+        type: boolean
+        default: false
+  workflow_call:
+    inputs:
+      selection_prompt:
+        description: Optional override for the selection instruction tail (the candidate list is always prepended)
+        required: false
+        type: string
+      skip_workflow_trigger:
+        description: Skip the .github workflow-trigger step (set by the trigger mechanism itself to prevent re-trigger cascades)
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   actions: write
@@ -67,9 +83,6 @@ jobs:
           set -Eeuo pipefail
           rm -f "$RUNNER_TEMP/opencode-fatal.json"
 
-          printf '::add-mask::%s\n' "$OPENCODE_GO_API_KEY"
-          printf '::add-mask::%s\n' "$OPENCODE_GO_2_API_KEY"
-          [[ -n "${OPENCODE_AUTH_CONTENT:-}" ]] && printf '::add-mask::%s\n' "$OPENCODE_AUTH_CONTENT"
           if [[ -n "${OPENCODE_AUTH_CONTENT:-}" ]]; then
             mkdir -p ~/.local/share/opencode
             printf '%s' "$OPENCODE_AUTH_CONTENT" > ~/.local/share/opencode/auth.json
@@ -253,4 +266,5 @@ jobs:
     uses: ./.github/workflows/opencode.yml
     with:
       prompt: ${{ needs.select.outputs.prompt }}
+      skip_workflow_trigger: ${{ inputs.skip_workflow_trigger }}
     secrets: inherit

@@ -21,6 +21,7 @@ map_file_to_workflow_file() {
     .github/workflows/review-fixes.yml) echo "review-fixes.yml" ;;
     .github/actions/*) echo "opencode.yml" ;;  # actions used by opencode workflow
     .github/AGENTS.md|.github/*.md) echo "opencode.yml" ;;
+    AGENTS.md) echo "opencode.yml" ;;
     *) echo "opencode.yml" ;;
   esac
 }
@@ -36,22 +37,22 @@ if git rev-parse --verify HEAD >/dev/null 2>&1; then
     fi
   done
   if [[ -n "$base_ref" ]]; then
-    changed_files=$(git diff --name-only "$base_ref"...HEAD 2>/dev/null | grep '^\.github/' || true)
+    changed_files=$(git diff --name-only "$base_ref"...HEAD 2>/dev/null | grep -E '^(\.github/|AGENTS\.md)' || true)
   fi
   if [[ -z "$base_ref" ]]; then
     if git rev-parse --verify HEAD~1 >/dev/null 2>&1; then
       base_ref="HEAD~1"
-      changed_files=$(git diff --name-only "$base_ref"...HEAD 2>/dev/null | grep '^\.github/' || true)
+      changed_files=$(git diff --name-only "$base_ref"...HEAD 2>/dev/null | grep -E '^(\.github/|AGENTS\.md)' || true)
     fi
   fi
 fi
 
 # Also check unstaged/staged changes
 if [[ -z "$changed_files" ]]; then
-  changed_files=$(git diff --name-only --cached 2>/dev/null | grep '^\.github/' || true)
+  changed_files=$(git diff --name-only --cached 2>/dev/null | grep -E '^(\.github/|AGENTS\.md)' || true)
 fi
 if [[ -z "$changed_files" ]]; then
-  changed_files=$(git ls-files --others --exclude-standard 2>/dev/null | grep '^\.github/' || true)
+  changed_files=$(git ls-files --others --exclude-standard 2>/dev/null | grep -E '^(\.github/|AGENTS\.md)' || true)
 fi
 
 run_urls=""
@@ -78,7 +79,7 @@ if [[ -n "$changed_files" ]]; then
     if [[ "$workflow_file" == "opencode.yml" ]]; then
       url=$(gh workflow run opencode.yml --repo "${GITHUB_REPOSITORY}" --ref "$BRANCH" --field prompt="$prompt" --field skip_workflow_trigger=true 2>&1 | grep -oE 'https://github.com/[^/]+/[^/]+/actions/runs/[0-9]+' | head -1 || true)
     else
-      url=$(gh workflow run "$workflow_file" --repo "${GITHUB_REPOSITORY}" --ref "$BRANCH" 2>&1 | grep -oE 'https://github.com/[^/]+/[^/]+/actions/runs/[0-9]+' | head -1 || true)
+      url=$(gh workflow run "$workflow_file" --repo "${GITHUB_REPOSITORY}" --ref "$BRANCH" --field skip_workflow_trigger=true 2>&1 | grep -oE 'https://github.com/[^/]+/[^/]+/actions/runs/[0-9]+' | head -1 || true)
     fi
     if [[ -z "$url" ]]; then
       for _ in 1 2 3; do

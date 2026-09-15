@@ -65,6 +65,11 @@ on:
         required: false
         type: number
         default: 120
+      skip_workflow_trigger:
+        description: Skip the .github workflow-trigger step (set by the trigger mechanism itself to prevent re-trigger cascades)
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   actions: write
@@ -138,9 +143,6 @@ jobs:
           requested="${MODEL_TEXT:-}"
           if [[ -z "$requested" && "${MODEL_CHOICE:-auto}" != auto ]]; then requested="$MODEL_CHOICE"; fi
 
-          printf '::add-mask::%s\n' "$OPENCODE_GO_API_KEY"
-          printf '::add-mask::%s\n' "$OPENCODE_GO_2_API_KEY"
-          [[ -n "${OPENCODE_AUTH_CONTENT:-}" ]] && printf '::add-mask::%s\n' "$OPENCODE_AUTH_CONTENT"
           if [[ -n "${OPENCODE_AUTH_CONTENT:-}" ]]; then
             mkdir -p ~/.local/share/opencode
             printf '%s' "$OPENCODE_AUTH_CONTENT" > ~/.local/share/opencode/auth.json
@@ -492,7 +494,7 @@ jobs:
           fi
 
       - name: Trigger .github workflow tests
-        if: always() && steps.push-work.outputs.branch_name != '' && github.event_name == 'workflow_dispatch' && github.event.inputs.skip_workflow_trigger != 'true'
+        if: always() && steps.push-work.outputs.branch_name != '' && inputs.skip_workflow_trigger != 'true'
         id: trigger-workflows
         shell: bash
         env:
@@ -517,6 +519,8 @@ jobs:
         env:
           ISSUE_NUMBER: ${{ steps.target-issue.outputs.issue_number }}
           GITHUB_TOKEN: ${{ secrets.BACLUC_AGENT_GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          WORKFLOW_URLS: ${{ steps.trigger-workflows.outputs.workflow_urls }}
         run: |
           set -Eeuo pipefail
 
@@ -546,8 +550,16 @@ jobs:
           if [[ -n "${{ steps.push-work.outputs.pushed_repos }}" ]]; then
             BODY="${BODY}"$'\n\nPushed repositories:\n'"${{ steps.push-work.outputs.pushed_repos }}"
           fi
-          if [[ -n "${{ steps.trigger-workflows.outputs.workflow_urls }}" ]]; then
-            BODY="${BODY}"$'\n\nTriggered workflow runs (changed .github/ paths):\n'"${{ steps.trigger-workflows.outputs.workflow_urls }}"
+          if [[ -n "$WORKFLOW_URLS" ]]; then
+            BODY="${BODY}"$'\n\nTriggered workflow runs (changed .github/ paths):\n'"${WORKFLOW_URLS}"
           fi
 
           gh issue comment "$ISSUE_NUMBER" -R "$ISSUE_REPOSITORY" --body "$BODY"
+
+          if [[ -n "$PR_URL" && -n "$WORKFLOW_URLS" ]]; then
+            pr_body=$(gh pr view "$PR_URL" -R "$GITHUB_REPOSITORY" --json body --jq '.body' 2>/dev/null || echo "")
+            if ! printf '%s' "$pr_body" | grep -Fq "Triggered workflow runs" 2>/dev/null; then
+              new_body=$(printf '%s\n\nTriggered workflow runs (changed .github/ paths):\n%s' "$pr_body" "$WORKFLOW_URLS")
+              printf '%s' "$new_body" | gh pr edit "$PR_URL" -R "$GITHUB_REPOSITORY" --body-file - 2>/dev/null || gh pr edit "$PR_URL" -R "$GITHUB_REPOSITORY" --body "$new_body" 2>/dev/null || true
+            fi
+          fi

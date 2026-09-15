@@ -15,6 +15,28 @@ on:
         description: Optional OpenCode model override (e.g. opencode-go-openai/glm-5.2)
         required: false
         type: string
+      skip_workflow_trigger:
+        description: Skip the .github workflow-trigger step (set by the trigger mechanism itself to prevent re-trigger cascades)
+        required: false
+        type: boolean
+        default: false
+  workflow_call:
+    inputs:
+      prompt:
+        description: >-
+          Optional override prompt for all PRs (leave empty for
+          auto-generation).
+        required: false
+        type: string
+      model:
+        description: Optional OpenCode model override (e.g. opencode-go-openai/glm-5.2)
+        required: false
+        type: string
+      skip_workflow_trigger:
+        description: Skip the .github workflow-trigger step (set by the trigger mechanism itself to prevent re-trigger cascades)
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   actions: write
@@ -142,4 +164,5 @@ jobs:
     with:
       prompt: ${{ fromJson(needs.find-prs.outputs.pr_metadata)[matrix.pr].prompt }}
       model: ${{ inputs.model }}
+      skip_workflow_trigger: ${{ inputs.skip_workflow_trigger }}
     secrets: inherit
