@@ -4,20 +4,20 @@ set -Eeuo pipefail
 
 printf '::add-mask::%s\n' "${GITHUB_TOKEN:-}"
 
-# Map changed .github/ paths to workflow files
-map_file_to_workflow() {
+# Map changed .github/ paths to workflow file names
+map_file_to_workflow_file() {
   local file="$1"
   case "$file" in
-    .github/workflows/ci.yml) echo "ci" ;;
-    .github/workflows/hourly-issue.yml) echo "hourly-issue" ;;
-    .github/workflows/opencode.yml) echo "opencode" ;;
-    .github/workflows/refine-issues.yml) echo "refine-issues" ;;
-    .github/workflows/refresh-chatgpt-auth.yml) echo "refresh-chatgpt-auth" ;;
-    .github/workflows/renew-interaction-limits.yml) echo "renew-interaction-limits" ;;
-    .github/workflows/review-fixes.yml) echo "review-fixes" ;;
-    .github/actions/*) echo "opencode" ;;  # actions used by opencode workflow
-    .github/AGENTS.md|.github/*.md) echo "opencode" ;;
-    *) echo "opencode" ;;
+    .github/workflows/ci.yml) echo "ci.yml" ;;
+    .github/workflows/hourly-issue.yml) echo "hourly-issue.yml" ;;
+    .github/workflows/opencode.yml) echo "opencode.yml" ;;
+    .github/workflows/refine-issues.yml) echo "refine-issues.yml" ;;
+    .github/workflows/refresh-chatgpt-auth.yml) echo "refresh-chatgpt-auth.yml" ;;
+    .github/workflows/renew-interaction-limits.yml) echo "renew-interaction-limits.yml" ;;
+    .github/workflows/review-fixes.yml) echo "review-fixes.yml" ;;
+    .github/actions/*) echo "opencode.yml" ;;  # actions used by opencode workflow
+    .github/AGENTS.md|.github/*.md) echo "opencode.yml" ;;
+    *) echo "opencode.yml" ;;
   esac
 }
 
@@ -49,29 +49,30 @@ if [[ -n "$changed_files" ]]; then
   printf 'Changed .github/ files detected:\n%s\n' "$changed_files"
   while IFS= read -r file; do
     [[ -n "$file" ]] || continue
-    workflow=$(map_file_to_workflow "$file")
-    printf 'Triggering workflow %s for changed file %s\n' "$workflow" "$file"
+    workflow_file=$(map_file_to_workflow_file "$file")
+    workflow_name="${workflow_file%.yml}"
+    printf 'Triggering workflow %s (%s) for changed file %s\n' "$workflow_name" "$workflow_file" "$file"
     # Trigger workflow_dispatch and capture URL
-    if [[ "$workflow" == "opencode" ]]; then
+    if [[ "$workflow_file" == "opencode.yml" ]]; then
       url=$(gh workflow run opencode.yml --repo "${GITHUB_REPOSITORY}" --ref "${GITHUB_REF_NAME:-main}" --field prompt="Test .github workflow trigger for issue #201" 2>/dev/null | grep -oE 'https://github.com/[^/]+/[^/]+/actions/runs/[0-9]+' || true)
     else
-      url=$(gh workflow run "$workflow" --repo "${GITHUB_REPOSITORY}" --ref "${GITHUB_REF_NAME:-main}" 2>/dev/null | grep -oE 'https://github.com/[^/]+/[^/]+/actions/runs/[0-9]+' || true)
+      url=$(gh workflow run "$workflow_file" --repo "${GITHUB_REPOSITORY}" --ref "${GITHUB_REF_NAME:-main}" 2>/dev/null | grep -oE 'https://github.com/[^/]+/[^/]+/actions/runs/[0-9]+' || true)
     fi
     if [[ -n "$url" ]]; then
-      printf 'Workflow %s triggered: %s\n' "$workflow" "$url"
-      run_urls="${run_urls}${workflow}: ${url}\n"
+      printf 'Workflow %s triggered: %s\n' "$workflow_name" "$url"
+      run_urls="${run_urls}${workflow_name}: ${url}\n"
     else
       # Try API approach
-      if [[ "$workflow" == "opencode" ]]; then
+      if [[ "$workflow_file" == "opencode.yml" ]]; then
         api_url=$(gh api repos/"${GITHUB_REPOSITORY}"/actions/workflows/opencode.yml/dispatches \
           -X POST -F ref="${GITHUB_REF_NAME:-main}" -F inputs='{"prompt":"Test .github workflow trigger for issue #201"}' 2>/dev/null | jq -r '.html_url // empty' || true)
       else
-        api_url=$(gh api repos/"${GITHUB_REPOSITORY}"/actions/workflows/"${workflow}".yml/dispatches \
+        api_url=$(gh api repos/"${GITHUB_REPOSITORY}"/actions/workflows/"${workflow_file}"/dispatches \
           -X POST -F ref="${GITHUB_REF_NAME:-main}" 2>/dev/null | jq -r '.html_url // empty' || true)
       fi
       if [[ -n "$api_url" ]]; then
-        printf 'Workflow %s triggered (API): %s\n' "$workflow" "$api_url"
-        run_urls="${run_urls}${workflow}: ${api_url}\n"
+        printf 'Workflow %s triggered (API): %s\n' "$workflow_name" "$api_url"
+        run_urls="${run_urls}${workflow_name}: ${api_url}\n"
       fi
     fi
   done <<< "$changed_files"
