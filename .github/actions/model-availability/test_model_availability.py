@@ -216,6 +216,30 @@ class TestDiscoverModels:
         assert "openrouter" not in provider_models
         assert "opencode-go-openai" in provider_models
 
+    def test_skips_provider_with_non_string_baseurl(self, monkeypatch):
+        config = {
+            "provider": {
+                "openrouter": {
+                    "options": {
+                        "baseURL": ["https://openrouter.ai/api/v1"],
+                        "apiKey": "{env:OPENROUTER_API_KEY}",
+                    }
+                }
+            }
+        }
+
+        def fake_run_non_string(args, *a, **kw):
+            if args == ["opencode", "models"]:
+                return types.SimpleNamespace(stdout="opencode/a-free\n")
+            if args == ["opencode", "debug", "config"]:
+                return types.SimpleNamespace(stdout=json.dumps(config))
+            raise AssertionError(f"unexpected args: {args}")
+
+        monkeypatch.setattr(model_availability.subprocess, "run", fake_run_non_string)
+        free_models, provider_models = model_availability.discover_models()
+        assert free_models == ["opencode/a-free"]
+        assert provider_models == {}
+
     def test_skips_whitelisted_models_from_unprobeable_providers(self, monkeypatch):
         class FakeResponse:
             def __enter__(self):
