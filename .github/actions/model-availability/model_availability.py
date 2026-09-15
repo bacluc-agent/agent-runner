@@ -102,7 +102,7 @@ def parse_whitelisted_models(opencode_models_output: str, patterns: list[str]) -
         if not line:
             continue
         provider, _, model_id = line.partition("/")
-        provider_patterns = PROVIDER_WHITELISTS.get("openai", [r".*"]) if provider == "openai" else (patterns or [r".*"])
+        provider_patterns = PROVIDER_WHITELISTS.get(provider, [r".*"])
         if not is_whitelisted(model_id or provider, provider_patterns):
             continue
         (free if is_whitelisted(model_id or provider, FREE_PATTERNS) else rest).append(line)
