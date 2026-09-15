@@ -236,9 +236,16 @@ def main() -> int:
             print(f"Child session ID extraction failed: {e}", file=sys.stderr)
             child_ids = []
 
+    session_ids_set = set()
+    if isinstance(sessions, list):
+        for s in sessions:
+            sid = s.get("id")
+            if sid:
+                session_ids_set.add(sid)
+
     # ponytail: include all spawned subagents, not just those in session list
     # (session list may miss recently spawned agents; upgrade to union if needed)
-    filtered_child_ids = child_ids
+    filtered_child_ids = [cid for cid in child_ids if cid in session_ids_set]
 
     token = secrets.token_hex(32)
     print(f"::stop-commands::{token}")

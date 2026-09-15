@@ -167,7 +167,10 @@ class TestMain:
 
     def test_renders_child_transcripts_fenced(self, monkeypatch, capsys):
         monkeypatch.setenv("COORDINATOR_SESSION_TITLE", "coordinator-run")
-        sessions = json.dumps([{"id": "ses_root", "title": "coordinator-run"}])
+        sessions = json.dumps([
+            {"id": "ses_root", "title": "coordinator-run"},
+            {"id": "ses_child1", "title": "subagent"},
+        ])
         root_export = {
             "info": {"agent": "coordinator"},
             "messages": [
@@ -320,3 +323,54 @@ class TestRegression189:
             content = f.read()
         assert len(content) > 0
         assert "messages" in content
+
+    def test_valid_session_does_not_report_false_no_subagents_or_export_failed(self, monkeypatch, capsys):
+        # Fails if script reports false "no subagents spawned" or "export failed" for valid session
+        monkeypatch.setenv("COORDINATOR_SESSION_TITLE", "coordinator-run")
+        sessions = json.dumps([
+            {"id": "ses_root", "title": "coordinator-run"},
+            {"id": "ses_child1", "title": "subagent"},
+        ])
+        root_export = {
+            "info": {"agent": "coordinator"},
+            "messages": [
+                {
+                    "parts": [
+                        {"type": "text", "text": "delegating"},
+                        {
+                            "type": "tool",
+                            "tool": "task",
+                            "state": {
+                                "status": "completed",
+                                "metadata": {"sessionId": "ses_child1"},
+                            },
+                        },
+                    ]
+                }
+            ],
+        }
+        child_export = {
+            "info": {"agent": "planner"},
+            "messages": [{"parts": [{"type": "text", "text": "done"}]}],
+        }
+        exports = {"ses_root": root_export, "ses_child1": child_export}
+
+        def fake_run_opencode(*args):
+            if args[0] == "session":
+                return sessions
+            return json.dumps(exports.get(args[1], {}))
+
+        def fake_run_opencode_to_file(*args, path: str):
+            with open(path, "w") as f:
+                f.write(fake_run_opencode(*args))
+
+        monkeypatch.setattr(dump_subagent_transcripts, "run_opencode", fake_run_opencode)
+        monkeypatch.setattr(
+            dump_subagent_transcripts, "run_opencode_to_file", fake_run_opencode_to_file
+        )
+        assert dump_subagent_transcripts.main() == 0
+        out = capsys.readouterr().out
+        assert "(No subagents were spawned.)" not in out
+        assert "--- Coordinator transcript: export failed ---" not in out
+        assert "--- Subagent transcript: planner (ses_child1) ---" in out
+        assert "[planner] done" in out
