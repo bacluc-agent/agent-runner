@@ -411,6 +411,27 @@ jobs:
           fi
           gh issue edit "$CACHE_ISSUE" -R "$ISSUE_REPOSITORY" --body "$new_cache" || true
 
+      - name: Harness completion check
+        id: harness-check
+        if: always() && steps.coordinator.outcome == 'success'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          command_file="$RUNNER_TEMP/completion-check-command.txt"
+          python3 scripts/extract_completion_check_command.py "$command_file"
+          if [[ ! -s "$command_file" ]]; then
+            printf 'No completion-check-command declaration found in AGENTS.md; skipping harness check.\n'
+            exit 0
+          fi
+          printf 'Harness completion check command (from AGENTS.md):\n'
+          cat "$command_file"
+          printf '\nRunning harness completion check...\n'
+          if ! command -v uv >/dev/null 2>&1; then
+            printf 'uv not found; installing via pipx.\n'
+            pipx install uv
+          fi
+          timeout 10m bash -c "$(cat "$command_file")"
+
       - name: Dump debug output
         if: always()
         shell: bash
@@ -500,8 +521,10 @@ jobs:
           printf '::add-mask::%s\n' "$GITHUB_TOKEN"
 
           # Determine status
-          if [[ "${{ steps.coordinator.outcome }}" == "success" ]]; then
+          if [[ "${{ steps.coordinator.outcome }}" == "success" && "${{ steps.harness-check.outcome }}" == "success" ]]; then
             STATUS="✅ completed"
+          elif [[ "${{ steps.harness-check.outcome }}" == "failure" ]]; then
+            STATUS="❌ completion check failed"
           elif [[ -n "${{ steps.fatal-guard.outputs.fatal-reason || '' }}" ]]; then
             STATUS="❌ fatal error: ${{ steps.fatal-guard.outputs.fatal-reason }}"
           else
