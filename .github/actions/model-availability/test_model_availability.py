@@ -952,7 +952,7 @@ class TestOpencodeWhitelist:
 
 
 class TestMainProbeSummary:
-    def test_prints_probe_outcome_summary(self, monkeypatch, capsys):
+    def test_prints_fresh_cache_summary_without_probing(self, monkeypatch, capsys):
         monkeypatch.setattr(model_availability, "resolve_cache_issue", lambda: None)
         monkeypatch.setattr(
             model_availability, "discover_models", lambda: (["opencode/a-free"], {})
@@ -961,14 +961,48 @@ class TestMainProbeSummary:
             model_availability, "build_candidates", lambda *args: ["opencode/a-free"]
         )
         monkeypatch.setattr(
-            model_availability, "select_pending", lambda *args: (["opencode/a-free"], 0)
+            model_availability, "select_pending", lambda *args: ([], 0)
+        )
+        def fail_if_probed(*args):
+            raise AssertionError("fresh candidates must not be probed")
+
+        monkeypatch.setattr(model_availability, "probe_candidates", fail_if_probed)
+        monkeypatch.setattr(model_availability, "write_outputs", lambda *args: None)
+        assert model_availability.main() == 0
+        assert "probe results: 0 checked, 0 ok, 0 failed (1 candidates fresh)" in capsys.readouterr().out
+
+    def test_does_not_invoke_probe_for_empty_pending(self, monkeypatch):
+        monkeypatch.setattr(model_availability, "resolve_cache_issue", lambda: None)
+        monkeypatch.setattr(model_availability, "discover_models", lambda: ([], {}))
+        monkeypatch.setattr(model_availability, "build_candidates", lambda *args: [])
+        monkeypatch.setattr(model_availability, "select_pending", lambda *args: ([], 0))
+        calls = []
+        monkeypatch.setattr(model_availability, "probe_candidates", lambda *args: calls.append(args))
+        monkeypatch.setattr(model_availability, "write_outputs", lambda *args: None)
+        assert model_availability.main() == 0
+        assert calls == []
+
+    def test_prints_checked_probe_summary(self, monkeypatch, capsys):
+        monkeypatch.setattr(model_availability, "resolve_cache_issue", lambda: None)
+        monkeypatch.setattr(
+            model_availability, "discover_models", lambda: (["opencode/a-free", "opencode/b-free"], {})
         )
         monkeypatch.setattr(
-            model_availability, "probe_candidates", lambda *args: {"opencode/a-free": True}
+            model_availability, "build_candidates", lambda *args: ["opencode/a-free", "opencode/b-free"]
+        )
+        monkeypatch.setattr(
+            model_availability,
+            "select_pending",
+            lambda *args: (["opencode/a-free", "opencode/b-free"], 0),
+        )
+        monkeypatch.setattr(
+            model_availability,
+            "probe_candidates",
+            lambda *args: {"opencode/a-free": True, "opencode/b-free": False},
         )
         monkeypatch.setattr(model_availability, "write_outputs", lambda *args: None)
         assert model_availability.main() == 0
-        assert "probe results: 1 ok, 0 failed" in capsys.readouterr().out
+        assert "probe results: 2 checked, 1 ok, 1 failed" in capsys.readouterr().out
 
 
 class TestDiscoveryTimeout:
