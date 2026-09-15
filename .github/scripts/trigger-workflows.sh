@@ -113,5 +113,6 @@ fi
 if [[ -n "$run_urls" ]]; then
   printf 'Triggered workflow URLs:\n%s\n' "$run_urls"
   # Write to a file that can be read by other steps
-  printf '%s' "$run_urls" > "$RUNNER_TEMP"/workflow-run-urls.txt
+  tmp_dir="${RUNNER_TEMP:-/tmp}"
+  printf '%s' "$run_urls" > "$tmp_dir"/workflow-run-urls.txt
 fi
