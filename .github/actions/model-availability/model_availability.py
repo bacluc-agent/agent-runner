@@ -262,7 +262,11 @@ def discover_models() -> tuple[list[str], dict[str, list[str]]]:
         result.stdout, PROVIDER_WHITELISTS.get("opencode", [ r".*"])
     )
     provider_config = load_provider_config()
-    base_urls = {name: info["baseURL"] for name, info in provider_config.items() if info["baseURL"]}
+    base_urls = {
+        name: info["baseURL"]
+        for name, info in provider_config.items()
+        if valid_base_url(info["baseURL"])
+    }
     kept, dropped = [], []
     for model in whitelisted_models:
         (kept if provider_probeable(model, provider_config, os.environ) else dropped).append(model)
@@ -276,7 +280,7 @@ def discover_models() -> tuple[list[str], dict[str, list[str]]]:
     provider_models = {}
     for provider, key_env in PROVIDERS:
         base_url = base_urls.get(provider)
-        if not base_url or not base_url.startswith(("http://", "https://")):
+        if not valid_base_url(base_url):
             print(f"warning: no valid baseURL configured for {provider}", file=sys.stderr)
             continue
         api_key = os.environ.get(key_env)
