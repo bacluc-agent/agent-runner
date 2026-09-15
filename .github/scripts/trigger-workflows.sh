@@ -2,10 +2,11 @@
 # Trigger corresponding workflows when .github/ files change and capture URLs.
 set -Eeuo pipefail
 
+prompt="${1:-Test the .github workflow changes on this branch}"
+
 RUNNER_TEMP="${RUNNER_TEMP:-/tmp}"
 mkdir -p "$RUNNER_TEMP"
 BRANCH="${BRANCH:-${GITHUB_REF_NAME:-main}}"
-TRIGGER_PROMPT="${TRIGGER_PROMPT:-Test .github workflow trigger for issue #201}"
 
 # Map changed .github/ paths to workflow file names
 map_file_to_workflow_file() {
@@ -35,12 +36,12 @@ if git rev-parse --verify HEAD >/dev/null 2>&1; then
     fi
   done
   if [[ -n "$base_ref" ]]; then
-    changed_files=$(git diff --name-only "$base_ref" HEAD 2>/dev/null | grep '^\.github/' || true)
+    changed_files=$(git diff --name-only "$base_ref"...HEAD 2>/dev/null | grep '^\.github/' || true)
   fi
   if [[ -z "$base_ref" ]]; then
     if git rev-parse --verify HEAD~1 >/dev/null 2>&1; then
       base_ref="HEAD~1"
-      changed_files=$(git diff --name-only "$base_ref" HEAD 2>/dev/null | grep '^\.github/' || true)
+      changed_files=$(git diff --name-only "$base_ref"...HEAD 2>/dev/null | grep '^\.github/' || true)
     fi
   fi
 fi
@@ -75,20 +76,12 @@ if [[ -n "$changed_files" ]]; then
     fi
     printf 'Triggering workflow %s (%s)\n' "$workflow_name" "$workflow_file"
     if [[ "$workflow_file" == "opencode.yml" ]]; then
-      url=$(gh workflow run opencode.yml --repo "${GITHUB_REPOSITORY}" --ref "$BRANCH" --field prompt="$TRIGGER_PROMPT" --field skip_workflow_trigger=true 2>&1 | grep -oE 'https://github.com/[^/]+/[^/]+/actions/runs/[0-9]+' | head -1 || true)
+      url=$(gh workflow run opencode.yml --repo "${GITHUB_REPOSITORY}" --ref "$BRANCH" --field prompt="$prompt" --field skip_workflow_trigger=true 2>&1 | grep -oE 'https://github.com/[^/]+/[^/]+/actions/runs/[0-9]+' | head -1 || true)
     else
       url=$(gh workflow run "$workflow_file" --repo "${GITHUB_REPOSITORY}" --ref "$BRANCH" 2>&1 | grep -oE 'https://github.com/[^/]+/[^/]+/actions/runs/[0-9]+' | head -1 || true)
     fi
     if [[ -z "$url" ]]; then
-      # ponytail: minimal 3x5s poll with GITHUB_RUN_ID exclusion; bump to 6x5s if API lag persists
-      for _ in 1 2 3; do
-        sleep 5
-        url=$(gh run list --workflow="$workflow_file" --repo "${GITHUB_REPOSITORY}" --branch "$BRANCH" --limit 1 --json databaseId,url 2>/dev/null | jq -r --argjson run_id "${GITHUB_RUN_ID:-0}" '[.[] | select(.databaseId != $run_id)] | .[0].url // empty' 2>/dev/null || true)
-        if [[ -z "$url" ]]; then
-          url=$(gh run list --workflow="$workflow_file" --repo "${GITHUB_REPOSITORY}" --branch "$BRANCH" --limit 1 --json url -q '.[0].url' 2>/dev/null || true)
-        fi
-        [[ -n "$url" ]] && break
-      done
+      url=$(gh run list --workflow="$workflow_file" --repo "${GITHUB_REPOSITORY}" --branch "$BRANCH" --limit 5 --json databaseId,url -q ".[] | select(.databaseId != ${GITHUB_RUN_ID:-0}) | .url" 2>/dev/null | head -1 || true)
     fi
     if [[ -n "$url" ]]; then
       printf 'Workflow %s triggered: %s\n' "$workflow_name" "$url"

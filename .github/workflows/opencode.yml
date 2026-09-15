@@ -499,10 +499,10 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.BACLUC_AGENT_GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           BRANCH: ${{ steps.push-work.outputs.branch_name }}
-          TRIGGER_PROMPT: Test .github workflow trigger for issue #201
+          PROMPT: ${{ inputs.prompt }}
         run: |
           set -Eeuo pipefail
-          bash .github/scripts/trigger-workflows.sh || true
+          bash .github/scripts/trigger-workflows.sh "$PROMPT" || true
           if [[ -f "${RUNNER_TEMP:-/tmp}/workflow-run-urls.txt" ]]; then
             {
               echo "workflow_urls<<EOF"
