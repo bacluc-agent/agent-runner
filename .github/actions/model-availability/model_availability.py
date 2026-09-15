@@ -18,7 +18,7 @@ FREE_PATTERNS = [r"(?:-|:)free$", r"big-pickle"]
 PROVIDER_WHITELISTS: dict[str, list[str]] = {
     "openrouter": [r"(?:-|:)free$", r"big-pickle"],
     "opencode": [r"(?:-|:)free$", r"big-pickle", r"glm", r"gpt-5\.6-luna", r"qwen", r"kimi"],
-    "openai": [r"^gpt-5\.6-luna$", r"^gpt-5\.3-codex-spark$"],
+    "openai": [r"^gpt-(?!5\.6-(sol|terra)).*$"],
 }
 PROVIDERS = (
     ("opencode-go-openai", "OPENCODE_GO_API_KEY"),
@@ -102,7 +102,7 @@ def parse_whitelisted_models(opencode_models_output: str, patterns: list[str]) -
         if not line:
             continue
         provider, _, model_id = line.partition("/")
-        provider_patterns = PROVIDER_WHITELISTS["openai"] if provider == "openai" else patterns
+        provider_patterns = PROVIDER_WHITELISTS.get("openai", [r".*"]) if provider == "openai" else (patterns or [r".*"])
         if not is_whitelisted(model_id or provider, provider_patterns):
             continue
         (free if is_whitelisted(model_id or provider, FREE_PATTERNS) else rest).append(line)
