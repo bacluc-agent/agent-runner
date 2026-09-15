@@ -11,7 +11,7 @@ printf '::add-mask::%s\n' "${GITHUB_TOKEN:-}"
 map_file_to_workflow_file() {
   local file="$1"
   case "$file" in
-    .github/workflows/ci.yml) echo "" ;;  # no workflow_dispatch trigger
+    .github/workflows/ci.yml) echo "ci.yml" ;;
     .github/workflows/hourly-issue.yml) echo "hourly-issue.yml" ;;
     .github/workflows/opencode.yml) echo "opencode.yml" ;;
     .github/workflows/refine-issues.yml) echo "refine-issues.yml" ;;
@@ -87,19 +87,19 @@ if [[ -n "$changed_files" ]]; then
     else
       # Try API approach
       if [[ "$workflow_file" == "opencode.yml" ]]; then
-        if command -v jq >/dev/null 2>&1; then
-          api_url=$(gh api repos/"${GITHUB_REPOSITORY}"/actions/workflows/opencode.yml/dispatches \
-            -X POST -F ref="${GITHUB_REF_NAME:-main}" -F inputs='{"prompt":"Test .github workflow trigger for issue #201"}' 2>/dev/null | jq -r '.html_url // empty' || true)
-        else
-          api_url=""
-        fi
+        api_response=$(gh api -i repos/"${GITHUB_REPOSITORY}"/actions/workflows/opencode.yml/dispatches \
+          -X POST -F ref="${GITHUB_REF_NAME:-main}" -F inputs='{"prompt":"Test .github workflow trigger for issue #201"}' 2>/dev/null || true)
       else
-        if command -v jq >/dev/null 2>&1; then
-          api_url=$(gh api repos/"${GITHUB_REPOSITORY}"/actions/workflows/"${workflow_file}"/dispatches \
-            -X POST -F ref="${GITHUB_REF_NAME:-main}" 2>/dev/null | jq -r '.html_url // empty' || true)
-        else
-          api_url=""
-        fi
+        api_response=$(gh api -i repos/"${GITHUB_REPOSITORY}"/actions/workflows/"${workflow_file}"/dispatches \
+          -X POST -F ref="${GITHUB_REF_NAME:-main}" 2>/dev/null || true)
+      fi
+      # Handle 204 (empty body) as success; parse html_url from body if present
+      api_status=$(printf '%s\n' "$api_response" | head -n1 | grep -oE 'HTTP/[0-9.]+ [0-9]+' | awk '{print $2}' || true)
+      api_body=$(printf '%s\n' "$api_response" | tail -n +2 || true)
+      if [[ "$api_status" == "204" ]]; then
+        api_url="https://github.com/${GITHUB_REPOSITORY}/actions/runs"
+      else
+        api_url=$(printf '%s\n' "$api_body" | jq -r '.html_url // empty' || true)
       fi
       if [[ -n "$api_url" ]]; then
         printf 'Workflow %s triggered (API): %s\n' "$workflow_name" "$api_url"
