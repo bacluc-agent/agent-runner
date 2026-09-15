@@ -66,8 +66,12 @@ def refresh_tokens(refresh_token: str) -> dict:
         data=body,
         headers={"Content-Type": "application/x-www-form-urlencoded", "User-Agent": "opencode/refresh"},
     )
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        return json.load(resp)
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return json.load(resp)
+    except urllib.error.HTTPError as e:
+        error_body = e.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"HTTP {e.code}: {error_body}") from e
 
 
 def main() -> int:
@@ -80,21 +84,42 @@ def main() -> int:
         print("No refresh token in current credential", file=sys.stderr)
         return 1
 
-    try:
-        tokens = refresh_tokens(refresh)
-    except Exception as e:
-        print(f"Token refresh failed: {e}", file=sys.stderr)
+    last_error = None
+    for attempt in range(2):
+        try:
+            tokens = refresh_tokens(refresh)
+            break
+        except Exception as e:
+            last_error = e
+            if attempt == 0:
+                print(f"Token refresh attempt {attempt + 1} failed: {e}; retrying...", file=sys.stderr)
+            else:
+                print(f"Token refresh attempt {attempt + 1} failed: {e}", file=sys.stderr)
+    else:
+        print(f"Token refresh failed after retries: {last_error}", file=sys.stderr)
         return 1
 
     access = tokens.get("access_token", "")
     new_refresh = tokens.get("refresh_token", "")
-    expires_in = tokens.get("expires_in") or 3600
-    if not access or not new_refresh:
-        print("Token refresh returned no access/refresh token", file=sys.stderr)
+    # If OpenAI does not rotate the refresh token, keep the existing one
+    # so the credential remains valid for future refreshes.
+    refresh_token_to_use = new_refresh if new_refresh else refresh
+    expires_in = tokens.get("expires_in")
+    if expires_in is None:
+        expires_in = 3600
+    try:
+        expires_in = int(expires_in)
+    except (ValueError, TypeError):
+        expires_in = 3600
+    if not access:
+        print("Token refresh returned no access token", file=sys.stderr)
+        return 1
+    if not refresh_token_to_use:
+        print("Token refresh returned no refresh token and none was preserved", file=sys.stderr)
         return 1
 
     try:
-        auth = build_auth_json(access, new_refresh, int(time.time() * 1000) + int(expires_in) * 1000)
+        auth = build_auth_json(access, refresh_token_to_use, int(time.time() * 1000) + int(expires_in) * 1000)
     except ValueError as e:
         print(str(e), file=sys.stderr)
         return 1
