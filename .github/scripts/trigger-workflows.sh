@@ -67,9 +67,12 @@ if [[ -n "$changed_files" ]]; then
     fi
     printf 'Triggering workflow %s (%s) for changed file %s\n' "$workflow_name" "$workflow_file" "$file"
     if [[ "$workflow_file" == "opencode.yml" ]]; then
-      url=$(gh workflow run opencode.yml --repo "${GITHUB_REPOSITORY}" --ref "${GITHUB_REF_NAME:-main}" --field prompt="Test .github workflow trigger for issue #201" 2>&1 | grep -oE 'https://github.com/[^/]+/[^/]+/actions/runs/[0-9]+' || true)
+      url=$(gh workflow run opencode.yml --repo "${GITHUB_REPOSITORY}" --ref "${GITHUB_REF_NAME:-main}" --field prompt="Test .github workflow trigger for issue #201" 2>&1 | grep -oE 'https://github.com/[^/]+/[^/]+/actions/runs/[0-9]+' | head -1 || true)
     else
-      url=$(gh workflow run "$workflow_file" --repo "${GITHUB_REPOSITORY}" --ref "${GITHUB_REF_NAME:-main}" 2>&1 | grep -oE 'https://github.com/[^/]+/[^/]+/actions/runs/[0-9]+' || true)
+      url=$(gh workflow run "$workflow_file" --repo "${GITHUB_REPOSITORY}" --ref "${GITHUB_REF_NAME:-main}" 2>&1 | grep -oE 'https://github.com/[^/]+/[^/]+/actions/runs/[0-9]+' | head -1 || true)
+    fi
+    if [[ -z "$url" ]]; then
+      url=$(gh run list --workflow="$workflow_file" --repo "${GITHUB_REPOSITORY}" --branch "${GITHUB_REF_NAME:-main}" --limit 1 --json url -q '.[0].url' 2>/dev/null || true)
     fi
     if [[ -n "$url" ]]; then
       printf 'Workflow %s triggered: %s\n' "$workflow_name" "$url"
