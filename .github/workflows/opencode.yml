@@ -500,9 +500,9 @@ jobs:
           set -Eeuo pipefail
           printf '::add-mask::%s\n' "$GITHUB_TOKEN"
           bash .github/scripts/trigger-workflows.sh || true
-          if [[ -f "$RUNNER_TEMP/workflow-run-urls.txt" ]]; then
+          if [[ -f "${RUNNER_TEMP:-/tmp}/workflow-run-urls.txt" ]]; then
             echo "workflow_urls<<EOF" >> "$GITHUB_OUTPUT"
-            cat "$RUNNER_TEMP/workflow-run-urls.txt" >> "$GITHUB_OUTPUT"
+            cat "${RUNNER_TEMP:-/tmp}/workflow-run-urls.txt" >> "$GITHUB_OUTPUT"
             echo "EOF"
           fi
 
