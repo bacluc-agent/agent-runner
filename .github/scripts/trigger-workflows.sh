@@ -4,6 +4,8 @@ set -Eeuo pipefail
 
 RUNNER_TEMP="${RUNNER_TEMP:-/tmp}"
 mkdir -p "$RUNNER_TEMP"
+BRANCH="${BRANCH:-${GITHUB_REF_NAME:-main}}"
+TRIGGER_PROMPT="${TRIGGER_PROMPT:-Test .github workflow trigger for issue #201}"
 
 # Map changed .github/ paths to workflow file names
 map_file_to_workflow_file() {
@@ -73,12 +75,20 @@ if [[ -n "$changed_files" ]]; then
     fi
     printf 'Triggering workflow %s (%s)\n' "$workflow_name" "$workflow_file"
     if [[ "$workflow_file" == "opencode.yml" ]]; then
-      url=$(gh workflow run opencode.yml --repo "${GITHUB_REPOSITORY}" --ref "${GITHUB_REF_NAME:-main}" --field prompt="Test .github workflow trigger for issue #201" --field skip_workflow_trigger=true 2>&1 | grep -oE 'https://github.com/[^/]+/[^/]+/actions/runs/[0-9]+' | head -1 || true)
+      url=$(gh workflow run opencode.yml --repo "${GITHUB_REPOSITORY}" --ref "$BRANCH" --field prompt="$TRIGGER_PROMPT" --field skip_workflow_trigger=true 2>&1 | grep -oE 'https://github.com/[^/]+/[^/]+/actions/runs/[0-9]+' | head -1 || true)
     else
-      url=$(gh workflow run "$workflow_file" --repo "${GITHUB_REPOSITORY}" --ref "${GITHUB_REF_NAME:-main}" 2>&1 | grep -oE 'https://github.com/[^/]+/[^/]+/actions/runs/[0-9]+' | head -1 || true)
+      url=$(gh workflow run "$workflow_file" --repo "${GITHUB_REPOSITORY}" --ref "$BRANCH" 2>&1 | grep -oE 'https://github.com/[^/]+/[^/]+/actions/runs/[0-9]+' | head -1 || true)
     fi
     if [[ -z "$url" ]]; then
-      url=$(gh run list --workflow="$workflow_file" --repo "${GITHUB_REPOSITORY}" --branch "${GITHUB_REF_NAME:-main}" --limit 1 --json url -q '.[0].url' 2>/dev/null || true)
+      # ponytail: minimal 3x5s poll with GITHUB_RUN_ID exclusion; bump to 6x5s if API lag persists
+      for _ in 1 2 3; do
+        sleep 5
+        url=$(gh run list --workflow="$workflow_file" --repo "${GITHUB_REPOSITORY}" --branch "$BRANCH" --limit 1 --json databaseId,url 2>/dev/null | jq -r --argjson run_id "${GITHUB_RUN_ID:-0}" '[.[] | select(.databaseId != $run_id)] | .[0].url // empty' 2>/dev/null || true)
+        if [[ -z "$url" ]]; then
+          url=$(gh run list --workflow="$workflow_file" --repo "${GITHUB_REPOSITORY}" --branch "$BRANCH" --limit 1 --json url -q '.[0].url' 2>/dev/null || true)
+        fi
+        [[ -n "$url" ]] && break
+      done
     fi
     if [[ -n "$url" ]]; then
       printf 'Workflow %s triggered: %s\n' "$workflow_name" "$url"

@@ -498,6 +498,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.BACLUC_AGENT_GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
+          BRANCH: ${{ steps.push-work.outputs.branch_name }}
+          TRIGGER_PROMPT: Test .github workflow trigger for issue #201
         run: |
           set -Eeuo pipefail
           bash .github/scripts/trigger-workflows.sh || true
