@@ -101,10 +101,11 @@ def parse_whitelisted_models(opencode_models_output: str, patterns: list[str]) -
         line = line.strip()
         if not line:
             continue
-        model_id = line.split("/", 1)[-1]
-        if not is_whitelisted(model_id, patterns):
+        provider, _, model_id = line.partition("/")
+        provider_patterns = PROVIDER_WHITELISTS["openai"] if provider == "openai" else patterns
+        if not is_whitelisted(model_id or provider, provider_patterns):
             continue
-        (free if is_whitelisted(model_id, FREE_PATTERNS) else rest).append(line)
+        (free if is_whitelisted(model_id or provider, FREE_PATTERNS) else rest).append(line)
     return sorted(set(free)) + sorted(set(rest))
 
 
@@ -187,14 +188,19 @@ def provider_probeable(model_id: str, provider_config: dict, env: dict) -> bool:
 def valid_base_url(base_url: object) -> bool:
     if not isinstance(base_url, str):
         return False
-    parsed = urlsplit(base_url)
-    return parsed.scheme in ("http", "https") and bool(parsed.netloc and parsed.hostname)
+    try:
+        parsed = urlsplit(base_url)
+        return parsed.scheme in ("http", "https") and bool(parsed.netloc and parsed.hostname)
+    except ValueError:
+        return False
 
 
 def valid_openai_oauth(auth_content: str) -> bool:
     try:
         credentials = json.loads(auth_content).get("openai", {})
     except (json.JSONDecodeError, AttributeError, TypeError):
+        return False
+    if not isinstance(credentials, dict):
         return False
     expires = credentials.get("expires")
     return (
