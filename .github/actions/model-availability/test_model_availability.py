@@ -232,7 +232,8 @@ class TestDiscoverModels:
             if args == ["opencode", "models"]:
                 return types.SimpleNamespace(stdout="opencode/a-free\n")
             if args == ["opencode", "debug", "config"]:
-                return types.SimpleNamespace(stdout=json.dumps(config))
+                kw["stdout"].write(json.dumps(config))
+                return types.SimpleNamespace(stdout="")
             raise AssertionError(f"unexpected args: {args}")
 
         monkeypatch.setattr(model_availability.subprocess, "run", fake_run_non_string)
@@ -349,11 +350,11 @@ class TestProviderProbeable:
         ],
     )
     def test_malformed_discovered_provider_config_is_ignored(self, monkeypatch, provider_config):
-        monkeypatch.setattr(
-            model_availability.subprocess,
-            "run",
-            lambda *args, **kwargs: types.SimpleNamespace(stdout=json.dumps(provider_config)),
-        )
+        def fake_run(*args, **kwargs):
+            kwargs["stdout"].write(json.dumps(provider_config))
+            return types.SimpleNamespace(stdout="")
+
+        monkeypatch.setattr(model_availability.subprocess, "run", fake_run)
         assert model_availability.load_provider_config() == {}
 
     def test_resolved_key(self):
