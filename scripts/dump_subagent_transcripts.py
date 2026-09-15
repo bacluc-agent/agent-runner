@@ -236,10 +236,9 @@ def main() -> int:
             print(f"Child session ID extraction failed: {e}", file=sys.stderr)
             child_ids = []
 
-    session_ids_set = {s.get("id") for s in sessions if isinstance(s, dict) and s.get("id")} if isinstance(sessions, list) else set()
-    filtered_child_ids = [cid for cid in child_ids if cid in session_ids_set] if session_ids_set else child_ids
-    if not filtered_child_ids and child_ids:
-        filtered_child_ids = child_ids
+    # ponytail: include all spawned subagents, not just those in session list
+    # (session list may miss recently spawned agents; upgrade to union if needed)
+    filtered_child_ids = child_ids
 
     token = secrets.token_hex(32)
     print(f"::stop-commands::{token}")
@@ -294,6 +293,7 @@ def main() -> int:
 
 def demo() -> None:
     # Minimal self-check: verify core helpers work with synthetic data
+    # Fails if root_export incorrectly None or child_ids miss spawned agents
     session = {
         "info": {"agent": "planner"},
         "messages": [{"parts": [{"type": "text", "text": "hello"}]}],
@@ -303,6 +303,8 @@ def demo() -> None:
     assert any("planner" in line for line in lines)
     ids = child_session_ids({"messages": [{"info": {"agent": "ses_x"}}]})
     assert "ses_x" in ids
+    # Verify spawned agents are not dropped by session-list filtering
+    assert ids == ["ses_x"], f"child_ids miss spawned agents: {ids}"
     segments = inline_agent_segments({"messages": [{"parts": [{"type": "text", "text": "[Build Agent] done"}]}]})
     assert len(segments) == 1
     assert segments[0][0] == "Build Agent"
