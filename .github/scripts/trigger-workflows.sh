@@ -110,6 +110,7 @@ if [[ -n "$changed_files" ]]; then
 fi
 
 # Output URLs for downstream steps
+RUNNER_TEMP="${RUNNER_TEMP:-/tmp}"
 if [[ -n "$run_urls" ]]; then
   printf 'Triggered workflow URLs:\n%s\n' "$run_urls"
   # Write to a file that can be read by other steps
