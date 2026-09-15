@@ -492,7 +492,7 @@ jobs:
           fi
 
       - name: Trigger .github workflow tests
-        if: always() && steps.push-work.outputs.branch_name != '' && github.event.inputs.skip_workflow_trigger != 'true'
+        if: always() && steps.push-work.outputs.branch_name != '' && github.event_name == 'workflow_dispatch' && github.event.inputs.skip_workflow_trigger != 'true'
         id: trigger-workflows
         shell: bash
         env:

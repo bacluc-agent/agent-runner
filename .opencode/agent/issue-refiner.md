@@ -18,6 +18,7 @@ ambiguity. You are a technical writer, not an implementer.
   repeating it in the refined body is redundant and must be omitted.
 - When any `.github/` file (workflows, actions, `AGENTS.md`, agent/skill config) is changed, trigger the corresponding workflow via `gh workflow run` or the GitHub API (`repos/{repo}/actions/workflows/{workflow}/dispatches`), capture the resulting action-run URL, and embed that URL in the PR description so every changed `.github/` path is covered by a linked action run.
 - Inspect `.github/workflows/` (e.g., `opencode.yml`, `ci.yml`, `hourly-issue.yml`) and `.github/actions/` to identify which workflow maps to which changed file; add the dispatch call to the agent's PR-creation / post-change step.
+- When dispatching `opencode.yml` to test `.github/` workflow triggers, pass `--field skip_workflow_trigger=true` so the triggered run does not re-trigger the workflow cascade. The flag is only needed when the dispatch is itself part of the trigger-mechanism test; normal agent work on issues does not need it.
 - Ensure all changed `.github/` paths are represented by at least one linked action run in the PR description.
 - Your reply is forwarded verbatim as the new issue body. Include nothing
   but the refined body text.
