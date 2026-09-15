@@ -59,6 +59,7 @@ def refresh_tokens(refresh_token: str) -> dict:
         "grant_type": "refresh_token",
         "refresh_token": refresh_token,
         "client_id": CLIENT_ID,
+        "scope": "openid profile email offline_access",
     }).encode()
     req = urllib.request.Request(
         f"{ISSUER}{TOKEN_PATH}",
@@ -104,5 +105,18 @@ def main() -> int:
     return 0
 
 
+def _self_check() -> None:
+    # Minimal self-check: verify refresh request includes scope so tokens
+    # are not truncated to ~5 min lifetime.
+    body = urllib.parse.urlencode({
+        "grant_type": "refresh_token",
+        "refresh_token": "test",
+        "client_id": CLIENT_ID,
+        "scope": "openid profile email offline_access",
+    })
+    assert "scope=openid+profile+email+offline_access" in body, "scope missing from refresh body"
+
+
 if __name__ == "__main__":
+    _self_check()
     raise SystemExit(main())
