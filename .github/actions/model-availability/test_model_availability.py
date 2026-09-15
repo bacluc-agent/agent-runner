@@ -340,6 +340,51 @@ class TestProviderProbeable:
         config = {"openrouter": {"baseURL": "/chat/completions", "apiKey": "sk-or-xxx"}}
         assert not model_availability.provider_probeable("openrouter/foo:free", config, {})
 
+    @pytest.mark.parametrize("base_url", ["https://", "ftp://api.example.com/v1", "/v1"])
+    def test_openai_requires_absolute_http_baseurl(self, base_url):
+        config = {"openai": {"baseURL": base_url}}
+        auth = {
+            "openai": {
+                "type": "oauth",
+                "access": "access-token",
+                "refresh": "refresh-token",
+                "expires": 123,
+            }
+        }
+        assert not model_availability.provider_probeable(
+            "openai/gpt-5.6-luna", config, {"OPENCODE_AUTH_CONTENT": json.dumps(auth)}
+        )
+
+    @pytest.mark.parametrize(
+        "auth",
+        [
+            {},
+            {"openai": {"type": "api", "access": "a", "refresh": "r", "expires": 1}},
+            {"openai": {"type": "oauth", "access": "", "refresh": "r", "expires": 1}},
+            {"openai": {"type": "oauth", "access": "a", "refresh": "", "expires": 1}},
+            {"openai": {"type": "oauth", "access": "a", "refresh": "r", "expires": "1"}},
+        ],
+    )
+    def test_openai_requires_valid_oauth_credentials(self, auth):
+        config = {"openai": {"baseURL": "https://api.openai.com/v1"}}
+        assert not model_availability.provider_probeable(
+            "openai/gpt-5.6-luna", config, {"OPENCODE_AUTH_CONTENT": json.dumps(auth)}
+        )
+
+    def test_openai_accepts_valid_oauth_credentials(self):
+        config = {"openai": {"baseURL": "https://api.openai.com/v1"}}
+        auth = {
+            "openai": {
+                "type": "oauth",
+                "access": "access-token",
+                "refresh": "refresh-token",
+                "expires": 123,
+            }
+        }
+        assert model_availability.provider_probeable(
+            "openai/gpt-5.6-luna", config, {"OPENCODE_AUTH_CONTENT": json.dumps(auth)}
+        )
+
 class TestParseWhitelistedModels:
     def test_extracts_free_models(self):
         output = (
@@ -969,6 +1014,22 @@ class TestOpencodeWhitelist:
         for model in ["opencode/a-free", "opencode/big-pickle", "opencode/qwen3.8-flash"]:
             assert model_availability.is_whitelisted(model, patterns)
         assert not model_availability.is_whitelisted("opencode/some-paid-model", patterns)
+
+    def test_openai_whitelist_matches_only_exact_supported_models(self):
+        patterns = model_availability.PROVIDER_WHITELISTS["openai"]
+        assert model_availability.is_whitelisted("gpt-5.6-luna", patterns)
+        assert model_availability.is_whitelisted("gpt-5.3-codex-spark", patterns)
+        assert not model_availability.is_whitelisted("gpt-5.6-luna-preview", patterns)
+        assert not model_availability.is_whitelisted("gpt-5.3-codex-spark-plus", patterns)
+
+
+class TestModelAvailabilityAction:
+    def test_materializes_auth_before_python_without_printing_secret(self):
+        action = Path(__file__).with_name("action.yml").read_text()
+        assert "umask 077" in action
+        assert "printf '%s' \"$OPENCODE_AUTH_CONTENT\" > ~/.local/share/opencode/auth.json" in action
+        assert action.index("auth.json") < action.index("python3")
+        assert "printf '%s\\n' \"$OPENCODE_AUTH_CONTENT\"" not in action
 
 
 class TestMainProbeSummary:
