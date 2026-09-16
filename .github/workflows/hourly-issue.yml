@@ -12,6 +12,7 @@ on:
   push:
     paths:
       - ".github/workflows/hourly-issue.yml"
+      - ".github/workflows/opencode.yml"
       - ".github/actions/**"
       - ".opencode/**"
 

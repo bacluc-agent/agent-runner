@@ -18,6 +18,7 @@ on:
   push:
     paths:
       - ".github/workflows/review-fixes.yml"
+      - ".github/workflows/opencode.yml"
       - ".github/actions/**"
       - ".opencode/**"
 

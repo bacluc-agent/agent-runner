@@ -18,15 +18,7 @@ AUTOMATIC CI (`ci.yml` in `bacluc-agent/agent-runner`, which runs `./scripts/com
 
 ## Testing .github changes
 
-When you change files under `.github/`, `.opencode/`, or `AGENTS.md`:
-
-1. **Decide** which workflow(s) exercise the changed code path — do NOT blanket-trigger all workflows.
-2. **Trigger** each via `gh workflow run <name> --ref <branch>`.
-3. **Poll** `gh run list` for the run URL.
-4. **Include** those URLs in your PR description.
-
-Push-triggered runs (via `paths:` filters) provide automatic coverage; the
-manual step above targets specific workflows the agent identifies as relevant.
+When you change files under `.github/`, `.opencode/`, or `AGENTS.md`, trigger only the workflow(s) that exercise the changed code path — never all of them — via `gh workflow run <name> --ref <branch>`, poll `gh run list` for the run URL, and link it in the PR description; push-triggered runs (via `paths:` filters) provide automatic coverage for the workflows whose files you touched.
 
 /completion-check-command
 
