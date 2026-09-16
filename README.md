@@ -107,23 +107,25 @@ idea (issue in agent-todo)
 
 Set these in Settings → Secrets and variables → Actions → Variables:
 
-| Variable                         | Description                                                    | Default             |
-| -------------------------------- | -------------------------------------------------------------- | ------------------- |
-| `ISSUE_REPOSITORY`               | Repository for issue tracking and cache (format: `owner/repo`) | `github.repository` |
-| `MODEL_AVAILABILITY_CACHE_ISSUE` | Issue number used as the model-availability cache              | auto-detected       |
+| Variable                         | Description                                                                                                                                | Default             |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------- |
+| `ISSUE_REPOSITORY`               | Repository for issue tracking and cache (format: `owner/repo`)                                                                             | `github.repository` |
+| `MODEL_AVAILABILITY_CACHE_ISSUE` | Issue number used as the model-availability cache                                                                                          | auto-detected       |
+| `FORK_INVITE_USER`               | GitHub user invited with `push` on every new fork (exposed to the `github-fork-invite` skill as `GITHUB_FORK_INVITE_USER`; empty disables) | unset (skill no-op) |
 
 ## Secrets
 
 Secrets are stored in Settings → Secrets and variables → Actions → Secrets.
 Never print their values.
 
-| Group                           | Secret                                                                     | Used for                                              |
-| ------------------------------- | -------------------------------------------------------------------------- | ----------------------------------------------------- |
-| GitHub access                   | `BACLUC_AGENT_GITHUB_TOKEN`                                                | All issue, PR, and workflow operations                |
-| AI providers                    | `OPENCODE_GO_API_KEY`, `OPENCODE_GO_2_API_KEY`, `OPENROUTER_API_KEY`       | API keys for the AI model providers                   |
-| OpenAI login                    | `OPENCODE_AUTH_JSON`                                                       | The OpenAI OAuth credential (refreshed automatically) |
-| OpenAI login (ChatGPT fallback) | `CHATGPT_EMAIL`, `CHATGPT_PASSWORD`, `CHATGPT_2FA_KEY`, `CHATGPT_TOTP_KEY` | Browser login fallback with a ChatGPT account         |
-| OpenAI login (OpenAI fallback)  | `OPENAI_USERNAME`, `OPENAI_PASSWORD`, `OPENAI_2FA_KEY`                     | Browser login fallback with an OpenAI account         |
+| Group                           | Secret                                                                     | Used for                                                                       |
+| ------------------------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| GitHub access                   | `BACLUC_AGENT_GITHUB_TOKEN`                                                | All issue, PR, and workflow operations                                         |
+| GitHub access                   | `FORK_INVITE_USER`                                                         | Fallback for the `FORK_INVITE_USER` variable (variable wins when both are set) |
+| AI providers                    | `OPENCODE_GO_API_KEY`, `OPENCODE_GO_2_API_KEY`, `OPENROUTER_API_KEY`       | API keys for the AI model providers                                            |
+| OpenAI login                    | `OPENCODE_AUTH_JSON`                                                       | The OpenAI OAuth credential (refreshed automatically)                          |
+| OpenAI login (ChatGPT fallback) | `CHATGPT_EMAIL`, `CHATGPT_PASSWORD`, `CHATGPT_2FA_KEY`, `CHATGPT_TOTP_KEY` | Browser login fallback with a ChatGPT account                                  |
+| OpenAI login (OpenAI fallback)  | `OPENAI_USERNAME`, `OPENAI_PASSWORD`, `OPENAI_2FA_KEY`                     | Browser login fallback with an OpenAI account                                  |
 
 ## Completion check
 
