@@ -169,18 +169,6 @@ def provider_probeable(model_id: str, provider_config: dict, env: dict) -> bool:
     provider = model_id.split("/", 1)[0] if "/" in model_id else ""
     if not provider:
         return True
-    if provider == "openai":
-        info = provider_config.get(provider)
-        if not isinstance(info, dict) or not valid_base_url(info.get("baseURL")):
-            return False
-        auth_content = env.get("OPENCODE_AUTH_CONTENT")
-        if not auth_content:
-            try:
-                with open(os.path.expanduser("~/.local/share/opencode/auth.json")) as auth_file:
-                    auth_content = auth_file.read()
-            except OSError:
-                return False
-        return valid_openai_oauth(auth_content)
     if provider not in provider_config:
         return True
     info = provider_config[provider]
@@ -203,25 +191,6 @@ def valid_base_url(base_url: object) -> bool:
         return parsed.scheme in ("http", "https") and bool(parsed.netloc and parsed.hostname)
     except ValueError:
         return False
-
-
-def valid_openai_oauth(auth_content: str) -> bool:
-    try:
-        credentials = json.loads(auth_content).get("openai", {})
-    except (json.JSONDecodeError, AttributeError, TypeError):
-        return False
-    if not isinstance(credentials, dict):
-        return False
-    expires = credentials.get("expires")
-    return (
-        credentials.get("type") == "oauth"
-        and isinstance(credentials.get("access"), str)
-        and bool(credentials["access"].strip())
-        and isinstance(credentials.get("refresh"), str)
-        and bool(credentials["refresh"].strip())
-        and isinstance(expires, (int, float))
-        and not isinstance(expires, bool)
-    )
 
 
 def models_endpoint_for(base_url: str) -> str:
