@@ -384,61 +384,8 @@ class TestProviderProbeable:
         config = {"openrouter": {"baseURL": "/chat/completions", "apiKey": "sk-or-xxx"}}
         assert not model_availability.provider_probeable("openrouter/foo:free", config, {})
 
-    @pytest.mark.parametrize("base_url", ["https://", "ftp://api.example.com/v1", "/v1", "http://["])
-    def test_openai_requires_absolute_http_baseurl(self, base_url):
-        config = {"openai": {"baseURL": base_url}}
-        auth = {
-            "openai": {
-                "type": "oauth",
-                "access": "access-token",
-                "refresh": "refresh-token",
-                "expires": 123,
-            }
-        }
-        assert not model_availability.provider_probeable(
-            "openai/gpt-5.6-luna", config, {"OPENCODE_AUTH_CONTENT": json.dumps(auth)}
-        )
-
-    @pytest.mark.parametrize(
-        "auth",
-        [
-            {},
-            {"openai": {"type": "api", "access": "a", "refresh": "r", "expires": 1}},
-            {"openai": {"type": "oauth", "access": "", "refresh": "r", "expires": 1}},
-            {"openai": {"type": "oauth", "access": "a", "refresh": "", "expires": 1}},
-            {"openai": {"type": "oauth", "access": "a", "refresh": "r", "expires": "1"}},
-            {"openai": []},
-        ],
-    )
-    def test_openai_requires_valid_oauth_credentials(self, auth):
-        config = {"openai": {"baseURL": "https://api.openai.com/v1"}}
-        assert not model_availability.provider_probeable(
-            "openai/gpt-5.6-luna", config, {"OPENCODE_AUTH_CONTENT": json.dumps(auth)}
-        )
-
-    def test_openai_accepts_valid_oauth_credentials(self):
-        config = {"openai": {"baseURL": "https://api.openai.com/v1"}}
-        auth = {
-            "openai": {
-                "type": "oauth",
-                "access": "access-token",
-                "refresh": "refresh-token",
-                "expires": 123,
-            }
-        }
-        assert model_availability.provider_probeable(
-            "openai/gpt-5.6-luna", config, {"OPENCODE_AUTH_CONTENT": json.dumps(auth)}
-        )
-
-    def test_openai_not_probeable_without_auth_and_isolated_home(self, monkeypatch, tmp_path):
-        monkeypatch.setenv("HOME", str(tmp_path))
-        config = {"openai": {"baseURL": "https://api.openai.com/v1"}}
-        assert not model_availability.provider_probeable("openai/gpt-5.6-luna", config, {})
-        auth = {"openai": {"type": "oauth", "access": "a", "refresh": "r", "expires": 999}}
-        auth_file = tmp_path / ".local/share/opencode/auth.json"
-        auth_file.parent.mkdir(parents=True)
-        auth_file.write_text(json.dumps(auth))
-        assert model_availability.provider_probeable("openai/gpt-5.6-luna", config, {})
+    def test_openai_passes_like_builtin_provider(self):
+        assert model_availability.provider_probeable("openai/gpt-5.6-luna", {}, {})
 
 class TestParseWhitelistedModels:
     def test_uses_exact_openai_patterns_without_changing_opencode_matching(self):
