@@ -1,8 +1,9 @@
 name: Set up OpenCode
 description: >-
-  Installs the OpenCode CLI and prepares the shared OpenCode configuration
-  from the provision-machines repository. Relies on the job-level
-  GITHUB_TOKEN set by the caller.
+  Installs the OpenCode CLI, prepares the shared OpenCode configuration
+  from the provision-machines repository, and materializes
+  OPENCODE_AUTH_CONTENT into ~/.local/share/opencode/auth.json when set.
+  Relies on the job-level GITHUB_TOKEN set by the caller.
 runs:
   using: composite
   steps:
@@ -74,3 +75,24 @@ runs:
         mkdir -p "$HOME/.config"
         rm -rf "$HOME/.config/opencode"
         cp -a "$config_dir" "$HOME/.config/opencode"
+
+    - name: Materialize OpenCode auth
+      shell: bash
+      run: |
+        set -Eeuo pipefail
+        umask 077
+        if [[ -n "${OPENCODE_AUTH_CONTENT:-}" ]]; then
+          printf '::add-mask::%s\n' "$OPENCODE_AUTH_CONTENT"
+          while IFS= read -r line; do
+            printf '::add-mask::%s\n' "$line"
+          done <<< "$OPENCODE_AUTH_CONTENT"
+          mkdir -p ~/.local/share/opencode
+          printf '%s' "$OPENCODE_AUTH_CONTENT" > ~/.local/share/opencode/auth.json
+          if ! jq -e '.openai.type == "oauth" and .openai.access != "" and .openai.refresh != "" and (.openai.expires | type == "number")' ~/.local/share/opencode/auth.json >/dev/null 2>&1; then
+            echo "::warning::OPENCODE_AUTH_CONTENT is not valid opencode auth JSON (expected {openai:{type:oauth,access,refresh,expires:number}}); removing auth.json and continuing without it" >&2
+            rm -f ~/.local/share/opencode/auth.json
+          elif command -v opencode >/dev/null 2>&1 && ! opencode --help >/dev/null 2>&1; then
+            echo "::warning::opencode config check failed with provided auth.json; removing auth.json and continuing" >&2
+            rm -f ~/.local/share/opencode/auth.json
+          fi
+        fi

@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import urllib.request
+from urllib.parse import urlsplit
 from datetime import datetime, timezone
 
 AVAILABLE_TTL_HOURS = 24
@@ -17,6 +18,7 @@ FREE_PATTERNS = [r"(?:-|:)free$", r"big-pickle"]
 PROVIDER_WHITELISTS: dict[str, list[str]] = {
     "openrouter": [r"(?:-|:)free$", r"big-pickle"],
     "opencode": [r"(?:-|:)free$", r"big-pickle", r"glm", r"gpt-5\.6-luna", r"qwen", r"kimi"],
+    "openai": [r".*"],
 }
 PROVIDERS = (
     ("opencode-go-openai", "OPENCODE_GO_API_KEY"),
@@ -92,17 +94,18 @@ def is_whitelisted(model_id: str, patterns: list[str]) -> bool:
     return any(re.search(pattern, model_id, re.IGNORECASE) for pattern in patterns)
 
 
-def parse_whitelisted_models(opencode_models_output: str, patterns: list[str]) -> list[str]:
+def parse_whitelisted_models(opencode_models_output: str) -> list[str]:
     free = []
     rest = []
     for line in opencode_models_output.splitlines():
         line = line.strip()
         if not line:
             continue
-        model_id = line.split("/", 1)[-1]
-        if not is_whitelisted(model_id, patterns):
+        provider, _, model_id = line.partition("/")
+        provider_patterns = PROVIDER_WHITELISTS.get(provider, [r".*"])
+        if not is_whitelisted(model_id or provider, provider_patterns):
             continue
-        (free if is_whitelisted(model_id, FREE_PATTERNS) else rest).append(line)
+        (free if is_whitelisted(model_id or provider, FREE_PATTERNS) else rest).append(line)
     return sorted(set(free)) + sorted(set(rest))
 
 
@@ -136,9 +139,16 @@ def load_provider_config() -> dict[str, dict[str, str | None]]:
                 os.unlink(tmp_path)
             except OSError:
                 pass
+    providers = config.get("provider", {}) if isinstance(config, dict) else {}
+    if not isinstance(providers, dict):
+        return {}
     result = {}
-    for name, provider in config.get("provider", {}).items():
+    for name, provider in providers.items():
+        if not isinstance(provider, dict):
+            continue
         options = provider.get("options", {})
+        if not isinstance(options, dict):
+            continue
         result[name] = {"baseURL": options.get("baseURL"), "apiKey": options.get("apiKey")}
     return result
 
@@ -156,16 +166,61 @@ def provider_probeable(model_id: str, provider_config: dict, env: dict) -> bool:
     """True if the model's provider can be probed. Built-in/unknown providers pass;
     configured providers need an absolute baseURL and an apiKey (resolved value or {env:NAME})."""
     provider = model_id.split("/", 1)[0] if "/" in model_id else ""
-    if not provider or provider not in provider_config:
+    if not provider:
+        return True
+    if provider == "openai":
+        info = provider_config.get(provider)
+        if not isinstance(info, dict) or not valid_base_url(info.get("baseURL")):
+            return False
+        auth_content = env.get("OPENCODE_AUTH_CONTENT")
+        if not auth_content:
+            try:
+                with open(os.path.expanduser("~/.local/share/opencode/auth.json")) as auth_file:
+                    auth_content = auth_file.read()
+            except OSError:
+                return False
+        return valid_openai_oauth(auth_content)
+    if provider not in provider_config:
         return True
     info = provider_config[provider]
+    if not isinstance(info, dict):
+        return False
     base_url = info.get("baseURL")
-    if not base_url or not base_url.startswith(("http://", "https://")):
+    if not valid_base_url(base_url):
         return False
     api_key = info.get("apiKey")
-    if isinstance(api_key, str) and api_key.startswith("{env:"):
+    if isinstance(api_key, str) and api_key.startswith("{env:") and api_key.endswith("}"):
         return bool(env.get(api_key[5:-1]))
     return bool(api_key)
+
+
+def valid_base_url(base_url: object) -> bool:
+    if not isinstance(base_url, str):
+        return False
+    try:
+        parsed = urlsplit(base_url)
+        return parsed.scheme in ("http", "https") and bool(parsed.netloc and parsed.hostname)
+    except ValueError:
+        return False
+
+
+def valid_openai_oauth(auth_content: str) -> bool:
+    try:
+        credentials = json.loads(auth_content).get("openai", {})
+    except (json.JSONDecodeError, AttributeError, TypeError):
+        return False
+    if not isinstance(credentials, dict):
+        return False
+    expires = credentials.get("expires")
+    return (
+        credentials.get("type") == "oauth"
+        and isinstance(credentials.get("access"), str)
+        and bool(credentials["access"].strip())
+        and isinstance(credentials.get("refresh"), str)
+        and bool(credentials["refresh"].strip())
+        and isinstance(expires, (int, float))
+        and not isinstance(expires, bool)
+    )
 
 
 def models_endpoint_for(base_url: str) -> str:
@@ -203,11 +258,13 @@ def discover_models() -> tuple[list[str], dict[str, list[str]]]:
             handle.write(getattr(result, "stderr", ""))
     except OSError:
         pass
-    whitelisted_models = parse_whitelisted_models(
-        result.stdout, PROVIDER_WHITELISTS.get("opencode", [ r".*"])
-    )
+    whitelisted_models = parse_whitelisted_models(result.stdout)
     provider_config = load_provider_config()
-    base_urls = {name: info["baseURL"] for name, info in provider_config.items() if info["baseURL"]}
+    base_urls = {
+        name: info["baseURL"]
+        for name, info in provider_config.items()
+        if valid_base_url(info["baseURL"])
+    }
     kept, dropped = [], []
     for model in whitelisted_models:
         (kept if provider_probeable(model, provider_config, os.environ) else dropped).append(model)
@@ -221,7 +278,7 @@ def discover_models() -> tuple[list[str], dict[str, list[str]]]:
     provider_models = {}
     for provider, key_env in PROVIDERS:
         base_url = base_urls.get(provider)
-        if not base_url or not base_url.startswith(("http://", "https://")):
+        if not valid_base_url(base_url):
             print(f"warning: no valid baseURL configured for {provider}", file=sys.stderr)
             continue
         api_key = os.environ.get(key_env)
@@ -229,7 +286,7 @@ def discover_models() -> tuple[list[str], dict[str, list[str]]]:
             print(f"warning: no API key configured for {provider}", file=sys.stderr)
             continue
         model_ids = fetch_model_ids(models_endpoint_for(base_url), api_key=api_key)
-        patterns = PROVIDER_WHITELISTS.get(provider, [ r".*"])
+        patterns = PROVIDER_WHITELISTS.get(provider, [r".*"])
         if patterns:
             model_ids = [m for m in model_ids if is_whitelisted(m, patterns)]
         provider_models[provider] = model_ids
@@ -270,6 +327,8 @@ def candidate_priority(candidate: str) -> int:
     free = is_whitelisted(model, FREE_PATTERNS)
     if provider == "opencode":
         return 2 if free else 4
+    if provider == "openai":
+        return 4
     if provider == "openrouter":
         return 3 if free else 7
     if provider in ("opencode-go-openai", "opencode-go-openai-2"):

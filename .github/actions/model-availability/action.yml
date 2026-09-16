@@ -30,6 +30,7 @@ runs:
       shell: bash
       run: |
         set -Eeuo pipefail
+        umask 077
         printf '::add-mask::%s\n' "${OPENCODE_GO_API_KEY:-}"
         printf '::add-mask::%s\n' "${OPENCODE_GO_2_API_KEY:-}"
         printf '::add-mask::%s\n' "${OPENROUTER_API_KEY:-}"
