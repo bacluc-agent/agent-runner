@@ -1116,12 +1116,19 @@ class TestOpencodeWhitelist:
 
 
 class TestModelAvailabilityAction:
-    def test_materializes_auth_before_python_without_printing_secret(self):
+    def test_auth_materialized_by_setup_opencode_not_here(self):
+        root = Path(__file__).parents[3]
+        setup = (root / ".github/actions/setup-opencode/action.yml").read_text()
+        assert "umask 077" in setup
+        assert (
+            "printf '%s' \"$OPENCODE_AUTH_CONTENT\" > ~/.local/share/opencode/auth.json"
+            in setup
+        )
+        assert "printf '%s\\n' \"$OPENCODE_AUTH_CONTENT\"" not in setup
         action = Path(__file__).with_name("action.yml").read_text()
-        assert "umask 077" in action
-        assert "printf '%s' \"$OPENCODE_AUTH_CONTENT\" > ~/.local/share/opencode/auth.json" in action
-        assert action.index("auth.json") < action.index("python3")
-        assert "printf '%s\\n' \"$OPENCODE_AUTH_CONTENT\"" not in action
+        assert "OPENCODE_AUTH_CONTENT" not in action
+        assert "auth.json" not in action
+        assert "python3" in action
 
 
 class TestMainProbeSummary:
