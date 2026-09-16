@@ -15,6 +15,18 @@ Features don't need that.
 ALL PULL REQUESTS DESCRIPTIONS MUST LINK TO ACTION RUNS THAT SHOW THAT THE CHANGE WORKS.
 ALL CHANGED CODE PATHS HAVE TO BE COVERED BY THE LINKED ACTION RUNS.
 
+## Testing .github changes
+
+When you change files under `.github/`, `.opencode/`, or `AGENTS.md`:
+
+1. **Decide** which workflow(s) exercise the changed code path — do NOT blanket-trigger all workflows.
+2. **Trigger** each via `gh workflow run <name> --ref <branch>`.
+3. **Poll** `gh run list` for the run URL.
+4. **Include** those URLs in your PR description.
+
+Push-triggered runs (via `paths:` filters) provide automatic coverage; the
+manual step above targets specific workflows the agent identifies as relevant.
+
 /completion-check-command
 
 ```bash

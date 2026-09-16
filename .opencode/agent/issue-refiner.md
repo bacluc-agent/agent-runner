@@ -16,6 +16,13 @@ ambiguity. You are a technical writer, not an implementer.
   `AGENTS.md` `completion-check-command`, or `/completion-check-command` —
   opencode enforces the completion-check-command automatically, so
   repeating it in the refined body is redundant and must be omitted.
+- If the implementation changes files under `.github/`, `.opencode/`, or
+  `AGENTS.md`, include a step in `## How to implement` that instructs
+  the agent to trigger the relevant workflow(s) via
+  `gh workflow run <name> --ref <branch>`, poll `gh run list` for the
+  run URL, and include those URLs in the PR description. Do NOT instruct
+  the agent to trigger all workflows — only the ones relevant to the
+  changed files.
 - Your reply is forwarded verbatim as the new issue body. Include nothing
   but the refined body text.
 

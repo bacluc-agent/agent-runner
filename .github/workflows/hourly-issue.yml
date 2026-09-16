@@ -9,6 +9,11 @@ on:
         description: Optional override for the selection instruction tail (the candidate list is always prepended)
         required: false
         type: string
+  push:
+    paths:
+      - ".github/workflows/hourly-issue.yml"
+      - ".github/actions/**"
+      - ".opencode/**"
 
 permissions:
   actions: write
