@@ -34,11 +34,4 @@ runs:
         printf '::add-mask::%s\n' "${OPENCODE_GO_API_KEY:-}"
         printf '::add-mask::%s\n' "${OPENCODE_GO_2_API_KEY:-}"
         printf '::add-mask::%s\n' "${OPENROUTER_API_KEY:-}"
-        if [[ -n "${OPENCODE_AUTH_CONTENT:-}" ]]; then
-          while IFS= read -r line; do
-            printf '::add-mask::%s\n' "$line"
-          done <<< "$OPENCODE_AUTH_CONTENT"
-          mkdir -p ~/.local/share/opencode
-          printf '%s' "$OPENCODE_AUTH_CONTENT" > ~/.local/share/opencode/auth.json
-        fi
         python3 "${{ github.action_path }}/model_availability.py"
