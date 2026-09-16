@@ -460,10 +460,6 @@ class TestParseWhitelistedModels:
             "openai/gpt-5.3-codex-sparky",
             "openai/gpt-5.6-luna",
             "openai/gpt-5.6-luna-preview",
-            "openai/gpt-5.6-sol",
-            "openai/gpt-5.6-sol-fast",
-            "openai/gpt-5.6-terra",
-            "openai/gpt-5.6-terra-fast",
             "opencode/gpt-5.6-luna-preview",
         ]
 
@@ -675,7 +671,7 @@ class TestCandidatePriority:
 
     def test_openai_models(self):
         assert model_availability.candidate_priority("openai/gpt-5.6-luna") == 4
-        assert model_availability.candidate_priority("openai/gpt-5.6-sol") == 4
+        assert model_availability.candidate_priority("openai/gpt-5.4") == 4
 
     def test_go_openai_providers(self):
         assert model_availability.candidate_priority("opencode-go-openai/glm-5.3") == 5
@@ -688,10 +684,7 @@ class TestCandidatePriority:
         assert model_availability.candidate_priority("opencode-go-openai/gpt-5.6-luna") == 2
         assert model_availability.candidate_priority("opencode-go-openai-2/gpt-4o") == 2
 
-    def test_openai_provider_gpt_priority(self):
-        assert model_availability.candidate_priority("openai/gpt-5.6-luna") == 6
-        assert model_availability.candidate_priority("openai/gpt-4") == 6
-        assert model_availability.candidate_priority("openai/GPT-4") == 6
+    def test_openrouter_gpt_priority(self):
         assert model_availability.candidate_priority("openrouter/openai/gpt-4o") == 6
 
     def test_go_openai_non_gpt_priority(self):
@@ -699,7 +692,7 @@ class TestCandidatePriority:
         assert model_availability.candidate_priority("opencode-go-openai-2/glm-5.3") == 5
 
     def test_openai_non_gpt_priority(self):
-        assert model_availability.candidate_priority("openai/other-model") == 7
+        assert model_availability.candidate_priority("openai/other-model") == 4
 
     def test_go_anthropic_providers(self):
         assert model_availability.candidate_priority("opencode-go-anthropic/glm-5.3") == 6
@@ -1095,7 +1088,7 @@ class TestOpencodeWhitelist:
             assert model_availability.is_whitelisted(model, patterns)
         assert not model_availability.is_whitelisted("opencode/some-paid-model", patterns)
 
-    def test_openai_whitelist_allows_all_openai_models(self):
+    def test_openai_whitelist_prohibits_only_sol_and_terra(self):
         patterns = model_availability.PROVIDER_WHITELISTS["openai"]
         for model in [
             "gpt-5.3-codex-spark",
@@ -1107,12 +1100,19 @@ class TestOpencodeWhitelist:
             "gpt-5.5-fast",
             "gpt-5.6-luna",
             "gpt-5.6-luna-fast",
-            "gpt-5.6-sol",
-            "gpt-5.6-sol-fast",
-            "gpt-5.6-terra",
-            "gpt-5.6-terra-fast",
+            "gpt-5.6-luna-preview",
+            "gpt-4o",
         ]:
             assert model_availability.is_whitelisted(model, patterns)
+        for model in [
+            "gpt-5.6-sol",
+            "gpt-5.6-sol-fast",
+            "gpt-5.6-sol-preview",
+            "gpt-5.6-terra",
+            "gpt-5.6-terra-fast",
+            "gpt-5.6-terra-preview",
+        ]:
+            assert not model_availability.is_whitelisted(model, patterns)
 
 
 class TestModelAvailabilityAction:

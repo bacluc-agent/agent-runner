@@ -18,7 +18,8 @@ FREE_PATTERNS = [r"(?:-|:)free$", r"big-pickle"]
 PROVIDER_WHITELISTS: dict[str, list[str]] = {
     "openrouter": [r"(?:-|:)free$", r"big-pickle"],
     "opencode": [r"(?:-|:)free$", r"big-pickle", r"glm", r"gpt-5\.6-luna", r"qwen", r"kimi"],
-    "openai": [r".*"],
+    # gpt-5.6-sol/terra excluded: too expensive; widen past gpt- if openai ships non-gpt names
+    "openai": [r"^gpt-(?!5\.6-(sol|terra)).*$"],
 }
 PROVIDERS = (
     ("opencode-go-openai", "OPENCODE_GO_API_KEY"),
@@ -320,8 +321,6 @@ def is_cache_fresh(entry, now: datetime) -> bool:
 def candidate_priority(candidate: str) -> int:
     """Lower = probed first. Workflow-critical models beat everything else."""
     provider, _, model = candidate.partition("/")
-    if re.search(r"gpt", model, re.IGNORECASE):
-        return 2 if provider in ("opencode-go-openai", "opencode-go-openai-2") else 6
     if model == "big-pickle" or candidate == "big-pickle":
         return 0
     if candidate in ("opencode-go-openai/qwen3.8-flash", "opencode-go-openai-2/qwen3.8-flash"):
@@ -331,6 +330,8 @@ def candidate_priority(candidate: str) -> int:
         return 2 if free else 4
     if provider == "openai":
         return 4
+    if re.search(r"gpt", model, re.IGNORECASE):
+        return 2 if provider in ("opencode-go-openai", "opencode-go-openai-2") else 6
     if provider == "openrouter":
         return 3 if free else 7
     if provider in ("opencode-go-openai", "opencode-go-openai-2"):
