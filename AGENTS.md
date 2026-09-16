@@ -2,6 +2,11 @@
 
 This repo allows to run agents in github actions. The issues to implement are in a todo repository.
 
+## Referencing issues and PR
+
+ALWAYS REFERENCE ISSUES, PR AND ACTION RUNS WITH THEIR ABSOLUTE PATH.
+We work with multiple repos, so single issue numbers are ambiguous.
+
 ## Testing
 
 ALL PULL REQUEST DESCRIPTIONS HAVE TO CONTAIN LINKS TO ACTION RUNS WITH THE PROBLEMS THEY FIX IF THEY FIX A BUG.
