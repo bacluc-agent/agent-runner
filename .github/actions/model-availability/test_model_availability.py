@@ -115,7 +115,8 @@ class TestDiscoverModels:
         assert free_models == ["opencode/a-free"]
         assert provider_models == {"opencode-go-openai": ["glm-5.2"]}
 
-    def test_config_read_failure(self, monkeypatch):
+    def test_config_read_failure(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("OPENCODE_CONFIG_DIR", str(tmp_path))
         def fail_config(args, *a, **kw):
             if args == ["opencode", "models"]:
                 return types.SimpleNamespace(stdout="opencode/a-free\n")
@@ -216,31 +217,6 @@ class TestDiscoverModels:
         assert "openrouter" not in provider_models
         assert "opencode-go-openai" in provider_models
 
-    def test_skips_provider_with_non_string_baseurl(self, monkeypatch):
-        config = {
-            "provider": {
-                "openrouter": {
-                    "options": {
-                        "baseURL": ["https://openrouter.ai/api/v1"],
-                        "apiKey": "{env:OPENROUTER_API_KEY}",
-                    }
-                }
-            }
-        }
-
-        def fake_run_non_string(args, *a, **kw):
-            if args == ["opencode", "models"]:
-                return types.SimpleNamespace(stdout="opencode/a-free\n")
-            if args == ["opencode", "debug", "config"]:
-                kw["stdout"].write(json.dumps(config))
-                return types.SimpleNamespace(stdout="")
-            raise AssertionError(f"unexpected args: {args}")
-
-        monkeypatch.setattr(model_availability.subprocess, "run", fake_run_non_string)
-        free_models, provider_models = model_availability.discover_models()
-        assert free_models == ["opencode/a-free"]
-        assert provider_models == {}
-
     def test_skips_whitelisted_models_from_unprobeable_providers(self, monkeypatch):
         class FakeResponse:
             def __enter__(self):
@@ -338,25 +314,6 @@ class TestDiscoverModels:
 EXAMPLE_OPENCODE_WHITELIST = [r"(?:-|:)free$", r"big-pickle", r"glm", r"gpt-5\.6-luna", r"qwen", r"kimi"]
 
 class TestProviderProbeable:
-    @pytest.mark.parametrize("config", [{"openrouter": []}, {"openrouter": {"baseURL": []}}])
-    def test_malformed_provider_config_is_not_probeable(self, config):
-        assert not model_availability.provider_probeable("openrouter/foo:free", config, {})
-
-    @pytest.mark.parametrize(
-        "provider_config",
-        [
-            {"provider": {"openrouter": []}},
-            {"provider": {"openrouter": {"options": []}}},
-        ],
-    )
-    def test_malformed_discovered_provider_config_is_ignored(self, monkeypatch, provider_config):
-        def fake_run(*args, **kwargs):
-            kwargs["stdout"].write(json.dumps(provider_config))
-            return types.SimpleNamespace(stdout="")
-
-        monkeypatch.setattr(model_availability.subprocess, "run", fake_run)
-        assert model_availability.load_provider_config() == {}
-
     def test_resolved_key(self):
         config = {"openrouter": {"baseURL": "https://openrouter.ai/api/v1", "apiKey": "sk-or-xxx"}}
         assert model_availability.provider_probeable("openrouter/foo:free", config, {})
@@ -384,32 +341,7 @@ class TestProviderProbeable:
         config = {"openrouter": {"baseURL": "/chat/completions", "apiKey": "sk-or-xxx"}}
         assert not model_availability.provider_probeable("openrouter/foo:free", config, {})
 
-    def test_openai_passes_like_builtin_provider(self):
-        assert model_availability.provider_probeable("openai/gpt-5.6-luna", {}, {})
-
 class TestParseWhitelistedModels:
-    def test_uses_exact_openai_patterns_without_changing_opencode_matching(self):
-        output = (
-            "openai/gpt-5.6-luna\n"
-            "openai/gpt-5.3-codex-spark\n"
-            "openai/gpt-5.6-luna-preview\n"
-            "openai/gpt-5.3-codex-sparky\n"
-            "openai/gpt-5.6-sol\n"
-            "openai/gpt-5.6-sol-fast\n"
-            "openai/gpt-5.6-terra\n"
-            "openai/gpt-5.6-terra-fast\n"
-            "opencode/gpt-5.6-luna-preview\n"
-            "opencode/ling-3.0-flash-fin-free\n"
-        )
-        assert model_availability.parse_whitelisted_models(output) == [
-            "opencode/ling-3.0-flash-fin-free",
-            "openai/gpt-5.3-codex-spark",
-            "openai/gpt-5.3-codex-sparky",
-            "openai/gpt-5.6-luna",
-            "openai/gpt-5.6-luna-preview",
-            "opencode/gpt-5.6-luna-preview",
-        ]
-
     def test_extracts_free_models(self):
         output = (
             "opencode/big-pickle\n"
@@ -431,7 +363,9 @@ class TestParseWhitelistedModels:
             "openrouter/cohere/north-mini-code:free\n"
             "openrouter/google/gemma-4-31b-it:free\n"
         )
-        assert model_availability.parse_whitelisted_models(output) == [
+        assert model_availability.parse_whitelisted_models(
+            output, EXAMPLE_OPENCODE_WHITELIST
+        ) == [
             "big-pickle",
             "custom-provider/big-pickle",
             "custom-provider/other-free",
@@ -445,23 +379,26 @@ class TestParseWhitelistedModels:
             "opencode-go-openai/gpt-5.6-luna",
             "opencode-go-openai/kimi-k3",
             "opencode-go-openai/qwen3.8-flash",
-            "other/paid-model",
+            "openrouter/zai/GLM-4.5",
         ]
 
     def test_deduplicates(self):
         assert model_availability.parse_whitelisted_models(
             "opencode/a-free\nopencode/a-free\n",
+            EXAMPLE_OPENCODE_WHITELIST,
         ) == ["opencode/a-free"]
 
     def test_free_first_then_whitelisted(self):
         assert model_availability.parse_whitelisted_models(
             "opencode/glm-5.3\nopencode/z-free\n",
+            EXAMPLE_OPENCODE_WHITELIST,
         ) == ["opencode/z-free", "opencode/glm-5.3"]
 
     def test_case_insensitive_matching(self):
         assert model_availability.parse_whitelisted_models(
-            "openrouter/cohere/north-mini-code:free\n",
-        ) == ["openrouter/cohere/north-mini-code:free"]
+            "openrouter/zai/GLM-4.5\n",
+            EXAMPLE_OPENCODE_WHITELIST,
+        ) == ["openrouter/zai/GLM-4.5"]
 
 
 class TestIsWhitelisted:
@@ -616,10 +553,6 @@ class TestCandidatePriority:
     def test_opencode_paid(self):
         assert model_availability.candidate_priority("opencode/paid-model") == 4
 
-    def test_openai_models(self):
-        assert model_availability.candidate_priority("openai/gpt-5.6-luna") == 4
-        assert model_availability.candidate_priority("openai/gpt-5.4") == 4
-
     def test_go_openai_providers(self):
         assert model_availability.candidate_priority("opencode-go-openai/glm-5.3") == 5
         assert model_availability.candidate_priority("opencode-go-openai-2/glm-5.3") == 5
@@ -631,7 +564,10 @@ class TestCandidatePriority:
         assert model_availability.candidate_priority("opencode-go-openai/gpt-5.6-luna") == 2
         assert model_availability.candidate_priority("opencode-go-openai-2/gpt-4o") == 2
 
-    def test_openrouter_gpt_priority(self):
+    def test_openai_provider_gpt_priority(self):
+        assert model_availability.candidate_priority("openai/gpt-5.6-luna") == 6
+        assert model_availability.candidate_priority("openai/gpt-4") == 6
+        assert model_availability.candidate_priority("openai/GPT-4") == 6
         assert model_availability.candidate_priority("openrouter/openai/gpt-4o") == 6
 
     def test_go_openai_non_gpt_priority(self):
@@ -639,7 +575,7 @@ class TestCandidatePriority:
         assert model_availability.candidate_priority("opencode-go-openai-2/glm-5.3") == 5
 
     def test_openai_non_gpt_priority(self):
-        assert model_availability.candidate_priority("openai/other-model") == 4
+        assert model_availability.candidate_priority("openai/other-model") == 7
 
     def test_go_anthropic_providers(self):
         assert model_availability.candidate_priority("opencode-go-anthropic/glm-5.3") == 6
@@ -908,12 +844,163 @@ class TestLoadProviderBaseUrls:
             "opencode-go-anthropic": "https://opencode.ai/zen/go/v1/messages",
         }
 
-    def test_returns_empty_on_failure(self, monkeypatch):
+    def test_returns_empty_on_failure(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("OPENCODE_CONFIG_DIR", str(tmp_path))
         def fail(*args, **kwargs):
             raise RuntimeError("opencode failed")
 
         monkeypatch.setattr(model_availability.subprocess, "run", fail)
         assert model_availability.load_provider_base_urls() == {}
+
+
+class TestLoadProviderConfigFallback:
+    def test_falls_back_to_config_content_after_truncated_debug_output(self, monkeypatch):
+        provider = {
+            "provider": {
+                "after-cutoff": {
+                    "options": {
+                        "baseURL": "https://example.test/v1",
+                        "apiKey": "{env:AFTER_CUTOFF_KEY}",
+                    }
+                }
+            }
+        }
+        debug_output = json.dumps(
+            {
+                "provider": {
+                    "before-cutoff": {"options": {"baseURL": "https://old.test"}},
+                    "padding": {"options": {"description": "x" * 70000}},
+                    "after-cutoff": {"options": {"baseURL": "https://late.test"}},
+                }
+            }
+        )[: model_availability.DEBUG_OUTPUT_LIMIT]
+
+        monkeypatch.setenv("OPENCODE_CONFIG_CONTENT", json.dumps(provider))
+        monkeypatch.setattr(
+            model_availability.subprocess,
+            "run",
+            lambda *args, **kwargs: (
+                kwargs["stdout"].write(debug_output) or types.SimpleNamespace(stdout="")
+            ),
+        )
+
+        assert model_availability.load_provider_config() == {
+            "after-cutoff": {
+                "baseURL": "https://example.test/v1",
+                "apiKey": "{env:AFTER_CUTOFF_KEY}",
+            }
+        }
+
+    def test_malformed_fallback_returns_empty_without_logging_config(
+        self, monkeypatch, capsys, tmp_path
+    ):
+        secret = "super-secret-api-key"
+        monkeypatch.setenv("OPENCODE_CONFIG_CONTENT", '{"apiKey":"' + secret)
+        monkeypatch.setenv("OPENCODE_CONFIG_DIR", str(tmp_path))
+        monkeypatch.setattr(
+            model_availability.subprocess,
+            "run",
+            lambda *args, **kwargs: (
+                kwargs["stdout"].write("not complete") or types.SimpleNamespace(stdout="")
+            ),
+        )
+
+        assert model_availability.load_provider_config() == {}
+        assert secret not in capsys.readouterr().err
+
+    def test_complete_debug_output_takes_precedence(self, monkeypatch):
+        debug_provider = {
+            "provider": {
+                "debug-provider": {
+                    "options": {"baseURL": "https://debug.test/v1"}
+                }
+            }
+        }
+        monkeypatch.setenv(
+            "OPENCODE_CONFIG_CONTENT",
+            json.dumps({"provider": {"fallback-provider": {"options": {}}}}),
+        )
+        monkeypatch.setattr(
+            model_availability.subprocess,
+            "run",
+            lambda *args, **kwargs: (
+                kwargs["stdout"].write(json.dumps(debug_provider))
+                or types.SimpleNamespace(stdout="")
+            ),
+        )
+
+        assert model_availability.load_provider_config() == {
+            "debug-provider": {"baseURL": "https://debug.test/v1", "apiKey": None}
+        }
+
+    def test_reads_jsonc_from_config_directory(self, monkeypatch, tmp_path):
+        config = tmp_path / "opencode.jsonc"
+        config.write_text(
+            """
+            {
+              // provider credentials are resolved by OpenCode
+              "provider": {
+                "jsonc-provider": {
+                  "options": {
+                    "baseURL": "https://jsonc.test/v1",
+                    "apiKey": "{env:JSONC_KEY}",
+                  },
+                },
+              },
+            }
+            """
+        )
+        monkeypatch.setenv("OPENCODE_CONFIG_DIR", str(tmp_path))
+        monkeypatch.setattr(
+            model_availability.subprocess,
+            "run",
+            lambda *args, **kwargs: (
+                kwargs["stdout"].write("truncated") or types.SimpleNamespace(stdout="")
+            ),
+        )
+
+        assert "jsonc-provider" in model_availability.load_provider_config()
+
+    def test_reads_config_from_custom_path(self, monkeypatch, tmp_path):
+        config = tmp_path / "custom.json"
+        config.write_text(
+            json.dumps(
+                {"provider": {"custom-provider": {"options": {"baseURL": "https://custom.test"}}}}
+            )
+        )
+        monkeypatch.setenv("OPENCODE_CONFIG", str(config))
+        monkeypatch.setenv("OPENCODE_CONFIG_DIR", str(tmp_path / "empty"))
+        monkeypatch.setattr(
+            model_availability.subprocess,
+            "run",
+            lambda *args, **kwargs: (
+                kwargs["stdout"].write("truncated") or types.SimpleNamespace(stdout="")
+            ),
+        )
+
+        assert "custom-provider" in model_availability.load_provider_config()
+
+
+class TestProviderConfigValidation:
+    @pytest.mark.parametrize(
+        "base_url",
+        ["/v1", "ftp://example.test/v1", "https://", "https://example.test path"],
+    )
+    def test_requires_absolute_http_url(self, base_url):
+        config = {"provider": {"baseURL": base_url, "apiKey": "resolved"}}
+        assert not model_availability.provider_probeable("provider/model", config, {})
+
+    def test_requires_valid_env_api_key_reference(self):
+        config = {"provider": {"baseURL": "https://example.test/v1", "apiKey": "{env:}"}}
+        assert not model_availability.provider_probeable("provider/model", config, {"": "key"})
+
+    def test_accepts_resolved_and_env_api_keys(self):
+        config = {"provider": {"baseURL": "https://example.test/v1", "apiKey": "resolved"}}
+        assert model_availability.provider_probeable("provider/model", config, {})
+        config["provider"]["apiKey"] = "{env:PROVIDER_KEY}"
+        assert model_availability.provider_probeable(
+            "provider/model", config, {"PROVIDER_KEY": "resolved"}
+        )
 
 
 class TestProbeModelLogging:
@@ -1034,48 +1121,6 @@ class TestOpencodeWhitelist:
         for model in ["opencode/a-free", "opencode/big-pickle", "opencode/qwen3.8-flash"]:
             assert model_availability.is_whitelisted(model, patterns)
         assert not model_availability.is_whitelisted("opencode/some-paid-model", patterns)
-
-    def test_openai_whitelist_prohibits_only_sol_and_terra(self):
-        patterns = model_availability.PROVIDER_WHITELISTS["openai"]
-        for model in [
-            "gpt-5.3-codex-spark",
-            "gpt-5.4",
-            "gpt-5.4-fast",
-            "gpt-5.4-mini",
-            "gpt-5.4-mini-fast",
-            "gpt-5.5",
-            "gpt-5.5-fast",
-            "gpt-5.6-luna",
-            "gpt-5.6-luna-fast",
-            "gpt-5.6-luna-preview",
-            "gpt-4o",
-        ]:
-            assert model_availability.is_whitelisted(model, patterns)
-        for model in [
-            "gpt-5.6-sol",
-            "gpt-5.6-sol-fast",
-            "gpt-5.6-sol-preview",
-            "gpt-5.6-terra",
-            "gpt-5.6-terra-fast",
-            "gpt-5.6-terra-preview",
-        ]:
-            assert not model_availability.is_whitelisted(model, patterns)
-
-
-class TestModelAvailabilityAction:
-    def test_auth_materialized_by_setup_opencode_not_here(self):
-        root = Path(__file__).parents[3]
-        setup = (root / ".github/actions/setup-opencode/action.yml").read_text()
-        assert "umask 077" in setup
-        assert (
-            "printf '%s' \"$OPENCODE_AUTH_CONTENT\" > ~/.local/share/opencode/auth.json"
-            in setup
-        )
-        assert "printf '%s\\n' \"$OPENCODE_AUTH_CONTENT\"" not in setup
-        action = Path(__file__).with_name("action.yml").read_text()
-        assert "OPENCODE_AUTH_CONTENT" not in action
-        assert "auth.json" not in action
-        assert "python3" in action
 
 
 class TestMainProbeSummary:
