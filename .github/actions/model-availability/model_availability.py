@@ -14,7 +14,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 AVAILABLE_TTL_HOURS = 24
-FAILED_TTL_HOURS = 24
+FAILED_TTL_HOURS = 2
 FREE_PATTERNS = [r"(?:-|:)free$", r"big-pickle"]
 PROVIDER_WHITELISTS: dict[str, list[str]] = {
     "openrouter": [r"(?:-|:)free$", r"big-pickle"],
@@ -129,16 +129,29 @@ def load_provider_config() -> dict[str, dict[str, str | None]]:
 
 
 def _read_debug_config() -> dict | None:
+    tmp_path = None
     try:
-        output = subprocess.run(
-            ["opencode", "debug", "config"], check=True, capture_output=True, text=True, timeout=60
-        ).stdout
+        # `opencode debug config` truncates stdout at 65536 bytes when stdout is a
+        # pipe (opencode bug); redirect to a file so the full config is captured.
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False) as tmp:
+            tmp_path = tmp.name
+            subprocess.run(
+                ["opencode", "debug", "config"], check=True, stdout=tmp, text=True, timeout=60
+            )
+        with open(tmp_path, encoding="utf-8") as fh:
+            output = fh.read()
         if len(output.encode("utf-8")) >= GITHUB_ISSUE_BODY_LIMIT:
             return None
         config = json.loads(output)
         return config if _usable_config(config) else None
     except Exception:
         return None
+    finally:
+        if tmp_path is not None:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
 
 
 def _usable_config(config: object) -> bool:

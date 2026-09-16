@@ -30,7 +30,8 @@ def fake_run(args, *a, **kw):
     if args == ["opencode", "models"]:
         return types.SimpleNamespace(stdout="opencode/a-free\n")
     if args == ["opencode", "debug", "config"]:
-        return types.SimpleNamespace(stdout=json.dumps(CONFIG))
+        kw["stdout"].write(json.dumps(CONFIG))
+        return types.SimpleNamespace(stdout="")
     raise AssertionError(f"unexpected args: {args}")
 
 
@@ -102,7 +103,8 @@ class TestDiscoverModels:
             if args == ["opencode", "models"]:
                 return types.SimpleNamespace(stdout="opencode/a-free\n")
             if args == ["opencode", "debug", "config"]:
-                return types.SimpleNamespace(stdout=json.dumps(config))
+                kw["stdout"].write(json.dumps(config))
+                return types.SimpleNamespace(stdout="")
             raise AssertionError(f"unexpected args: {args}")
 
         monkeypatch.setattr(
@@ -203,7 +205,8 @@ class TestDiscoverModels:
             if args == ["opencode", "models"]:
                 return types.SimpleNamespace(stdout="opencode/a-free\n")
             if args == ["opencode", "debug", "config"]:
-                return types.SimpleNamespace(stdout=json.dumps(config))
+                kw["stdout"].write(json.dumps(config))
+                return types.SimpleNamespace(stdout="")
             raise AssertionError(f"unexpected args: {args}")
 
         monkeypatch.setattr(
@@ -253,7 +256,8 @@ class TestDiscoverModels:
             if args == ["opencode", "models"]:
                 return types.SimpleNamespace(stdout=models_output)
             if args == ["opencode", "debug", "config"]:
-                return types.SimpleNamespace(stdout=json.dumps(config))
+                kw["stdout"].write(json.dumps(config))
+                return types.SimpleNamespace(stdout="")
             raise AssertionError(f"unexpected args: {args}")
 
         monkeypatch.setattr(
@@ -294,7 +298,8 @@ class TestDiscoverModels:
             if args == ["opencode", "models"]:
                 return types.SimpleNamespace(stdout=models_output)
             if args == ["opencode", "debug", "config"]:
-                return types.SimpleNamespace(stdout=json.dumps(config))
+                kw["stdout"].write(json.dumps(config))
+                return types.SimpleNamespace(stdout="")
             raise AssertionError(f"unexpected args: {args}")
 
         monkeypatch.setattr(
@@ -809,11 +814,11 @@ class TestLoadProviderBaseUrls:
                 "no-base-url": {"options": {}},
             }
         }
-        monkeypatch.setattr(
-            model_availability.subprocess,
-            "run",
-            lambda *args, **kwargs: types.SimpleNamespace(stdout=json.dumps(config)),
-        )
+        def fake_run(*args, **kwargs):
+            kwargs["stdout"].write(json.dumps(config))
+            return types.SimpleNamespace(stdout="")
+
+        monkeypatch.setattr(model_availability.subprocess, "run", fake_run)
         assert model_availability.load_provider_base_urls() == {
             "opencode-go-openai": "https://opencode.ai/zen/go/v1",
             "opencode-go-anthropic": "https://opencode.ai/zen/go/v1/messages",
@@ -854,7 +859,9 @@ class TestLoadProviderConfigFallback:
         monkeypatch.setattr(
             model_availability.subprocess,
             "run",
-            lambda *args, **kwargs: types.SimpleNamespace(stdout=debug_output),
+            lambda *args, **kwargs: (
+                kwargs["stdout"].write(debug_output) or types.SimpleNamespace(stdout="")
+            ),
         )
 
         assert model_availability.load_provider_config() == {
@@ -873,7 +880,9 @@ class TestLoadProviderConfigFallback:
         monkeypatch.setattr(
             model_availability.subprocess,
             "run",
-            lambda *args, **kwargs: types.SimpleNamespace(stdout="not complete"),
+            lambda *args, **kwargs: (
+                kwargs["stdout"].write("not complete") or types.SimpleNamespace(stdout="")
+            ),
         )
 
         assert model_availability.load_provider_config() == {}
@@ -894,7 +903,10 @@ class TestLoadProviderConfigFallback:
         monkeypatch.setattr(
             model_availability.subprocess,
             "run",
-            lambda *args, **kwargs: types.SimpleNamespace(stdout=json.dumps(debug_provider)),
+            lambda *args, **kwargs: (
+                kwargs["stdout"].write(json.dumps(debug_provider))
+                or types.SimpleNamespace(stdout="")
+            ),
         )
 
         assert model_availability.load_provider_config() == {
@@ -922,7 +934,9 @@ class TestLoadProviderConfigFallback:
         monkeypatch.setattr(
             model_availability.subprocess,
             "run",
-            lambda *args, **kwargs: types.SimpleNamespace(stdout="truncated"),
+            lambda *args, **kwargs: (
+                kwargs["stdout"].write("truncated") or types.SimpleNamespace(stdout="")
+            ),
         )
 
         assert "jsonc-provider" in model_availability.load_provider_config()
@@ -939,7 +953,9 @@ class TestLoadProviderConfigFallback:
         monkeypatch.setattr(
             model_availability.subprocess,
             "run",
-            lambda *args, **kwargs: types.SimpleNamespace(stdout="truncated"),
+            lambda *args, **kwargs: (
+                kwargs["stdout"].write("truncated") or types.SimpleNamespace(stdout="")
+            ),
         )
 
         assert "custom-provider" in model_availability.load_provider_config()
@@ -1021,7 +1037,8 @@ class TestDiscoverModelsLogging:
             if args == ["opencode", "models"]:
                 return types.SimpleNamespace(stdout=FakeResult.stdout, stderr=FakeResult.stderr)
             if args == ["opencode", "debug", "config"]:
-                return types.SimpleNamespace(stdout=json.dumps(CONFIG))
+                kw["stdout"].write(json.dumps(CONFIG))
+                return types.SimpleNamespace(stdout="")
             raise AssertionError(f"unexpected args: {args}")
 
         monkeypatch.setattr(model_availability.subprocess, "run", fake_run_logging)

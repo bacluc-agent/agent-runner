@@ -148,7 +148,14 @@ class TestMain:
                 return sessions
             return json.dumps(root_export)
 
+        def fake_run_opencode_to_file(*args, path: str):
+            with open(path, "w") as f:
+                f.write(fake_run_opencode(*args))
+
         monkeypatch.setattr(dump_subagent_transcripts, "run_opencode", fake_run_opencode)
+        monkeypatch.setattr(
+            dump_subagent_transcripts, "run_opencode_to_file", fake_run_opencode_to_file
+        )
         assert dump_subagent_transcripts.main() == 0
         out_lines = capsys.readouterr().out.splitlines()
         assert re.fullmatch(r"::stop-commands::[0-9a-f]{64}", out_lines[0])
@@ -219,7 +226,14 @@ class TestMain:
                 return sessions
             return json.dumps(exports[args[1]])
 
+        def fake_run_opencode_to_file(*args, path: str):
+            with open(path, "w") as f:
+                f.write(fake_run_opencode(*args))
+
         monkeypatch.setattr(dump_subagent_transcripts, "run_opencode", fake_run_opencode)
+        monkeypatch.setattr(
+            dump_subagent_transcripts, "run_opencode_to_file", fake_run_opencode_to_file
+        )
         assert dump_subagent_transcripts.main() == 0
         out = capsys.readouterr().out
         out_lines = out.splitlines()
@@ -248,7 +262,13 @@ class TestMain:
                 return sessions
             raise subprocess.CalledProcessError(1, args)
 
+        def fake_run_opencode_to_file(*args, path: str):
+            raise subprocess.CalledProcessError(1, args)
+
         monkeypatch.setattr(dump_subagent_transcripts, "run_opencode", fake_run_opencode)
+        monkeypatch.setattr(
+            dump_subagent_transcripts, "run_opencode_to_file", fake_run_opencode_to_file
+        )
         assert dump_subagent_transcripts.main() == 0
         out_lines = capsys.readouterr().out.splitlines()
         assert re.fullmatch(r"::stop-commands::[0-9a-f]{64}", out_lines[0])
@@ -282,3 +302,69 @@ class TestRunOpencode:
         monkeypatch.setattr(dump_subagent_transcripts.subprocess, "run", fake_run)
         with pytest.raises(subprocess.CalledProcessError):
             dump_subagent_transcripts.run_opencode("session", "list")
+
+
+class TestRegression189:
+    def test_run_opencode_to_file_writes_non_empty_output(self, monkeypatch, tmp_path):
+        # Regression check for PR #17 / issue #189: run_opencode_to_file must write output
+        def fake_run(command, **kwargs):
+            out_path = kwargs.get("stdout")
+            if out_path is not None:
+                out_path.write('{"messages": [{"parts": [{"type":"text","text":"ok"}]}]}')
+            return SimpleNamespace(stdout="")
+
+        monkeypatch.setattr(dump_subagent_transcripts.subprocess, "run", fake_run)
+        path = str(tmp_path / "mock.json")
+        dump_subagent_transcripts.run_opencode_to_file("export", "ses_mock", path=path)
+        with open(path) as f:
+            content = f.read()
+        assert len(content) > 0
+        assert "messages" in content
+
+    def test_valid_session_does_not_report_false_no_subagents_or_export_failed(self, monkeypatch, capsys):
+        # Fails if script reports false "no subagents spawned" or "export failed" for valid session
+        monkeypatch.setenv("COORDINATOR_SESSION_TITLE", "coordinator-run")
+        sessions = json.dumps([{"id": "ses_root", "title": "coordinator-run"}])
+        root_export = {
+            "info": {"agent": "coordinator"},
+            "messages": [
+                {
+                    "parts": [
+                        {"type": "text", "text": "delegating"},
+                        {
+                            "type": "tool",
+                            "tool": "task",
+                            "state": {
+                                "status": "completed",
+                                "metadata": {"sessionId": "ses_child1"},
+                            },
+                        },
+                    ]
+                }
+            ],
+        }
+        child_export = {
+            "info": {"agent": "planner"},
+            "messages": [{"parts": [{"type": "text", "text": "done"}]}],
+        }
+        exports = {"ses_root": root_export, "ses_child1": child_export}
+
+        def fake_run_opencode(*args):
+            if args[0] == "session":
+                return sessions
+            return json.dumps(exports.get(args[1], {}))
+
+        def fake_run_opencode_to_file(*args, path: str):
+            with open(path, "w") as f:
+                f.write(fake_run_opencode(*args))
+
+        monkeypatch.setattr(dump_subagent_transcripts, "run_opencode", fake_run_opencode)
+        monkeypatch.setattr(
+            dump_subagent_transcripts, "run_opencode_to_file", fake_run_opencode_to_file
+        )
+        assert dump_subagent_transcripts.main() == 0
+        out = capsys.readouterr().out
+        assert "(No subagents were spawned.)" not in out
+        assert "--- Coordinator transcript: export failed ---" not in out
+        assert "--- Subagent transcript: planner (ses_child1) ---" in out
+        assert "[planner] done" in out
