@@ -15,6 +15,11 @@ on:
         description: Optional OpenCode model override (e.g. opencode-go-openai/glm-5.2)
         required: false
         type: string
+  push:
+    paths:
+      - ".github/workflows/review-fixes.yml"
+      - ".github/actions/**"
+      - ".opencode/**"
 
 permissions:
   actions: write
