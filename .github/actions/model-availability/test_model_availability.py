@@ -115,7 +115,8 @@ class TestDiscoverModels:
         assert free_models == ["opencode/a-free"]
         assert provider_models == {"opencode-go-openai": ["glm-5.2"]}
 
-    def test_config_read_failure(self, monkeypatch):
+    def test_config_read_failure(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("OPENCODE_CONFIG_DIR", str(tmp_path))
         def fail_config(args, *a, **kw):
             if args == ["opencode", "models"]:
                 return types.SimpleNamespace(stdout="opencode/a-free\n")
@@ -823,12 +824,163 @@ class TestLoadProviderBaseUrls:
             "opencode-go-anthropic": "https://opencode.ai/zen/go/v1/messages",
         }
 
-    def test_returns_empty_on_failure(self, monkeypatch):
+    def test_returns_empty_on_failure(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("OPENCODE_CONFIG_DIR", str(tmp_path))
         def fail(*args, **kwargs):
             raise RuntimeError("opencode failed")
 
         monkeypatch.setattr(model_availability.subprocess, "run", fail)
         assert model_availability.load_provider_base_urls() == {}
+
+
+class TestLoadProviderConfigFallback:
+    def test_falls_back_to_config_content_after_truncated_debug_output(self, monkeypatch):
+        provider = {
+            "provider": {
+                "after-cutoff": {
+                    "options": {
+                        "baseURL": "https://example.test/v1",
+                        "apiKey": "{env:AFTER_CUTOFF_KEY}",
+                    }
+                }
+            }
+        }
+        debug_output = json.dumps(
+            {
+                "provider": {
+                    "before-cutoff": {"options": {"baseURL": "https://old.test"}},
+                    "padding": {"options": {"description": "x" * 70000}},
+                    "after-cutoff": {"options": {"baseURL": "https://late.test"}},
+                }
+            }
+        )[: model_availability.GITHUB_ISSUE_BODY_LIMIT]
+
+        monkeypatch.setenv("OPENCODE_CONFIG_CONTENT", json.dumps(provider))
+        monkeypatch.setattr(
+            model_availability.subprocess,
+            "run",
+            lambda *args, **kwargs: (
+                kwargs["stdout"].write(debug_output) or types.SimpleNamespace(stdout="")
+            ),
+        )
+
+        assert model_availability.load_provider_config() == {
+            "after-cutoff": {
+                "baseURL": "https://example.test/v1",
+                "apiKey": "{env:AFTER_CUTOFF_KEY}",
+            }
+        }
+
+    def test_malformed_fallback_returns_empty_without_logging_config(
+        self, monkeypatch, capsys, tmp_path
+    ):
+        secret = "super-secret-api-key"
+        monkeypatch.setenv("OPENCODE_CONFIG_CONTENT", '{"apiKey":"' + secret)
+        monkeypatch.setenv("OPENCODE_CONFIG_DIR", str(tmp_path))
+        monkeypatch.setattr(
+            model_availability.subprocess,
+            "run",
+            lambda *args, **kwargs: (
+                kwargs["stdout"].write("not complete") or types.SimpleNamespace(stdout="")
+            ),
+        )
+
+        assert model_availability.load_provider_config() == {}
+        assert secret not in capsys.readouterr().err
+
+    def test_complete_debug_output_takes_precedence(self, monkeypatch):
+        debug_provider = {
+            "provider": {
+                "debug-provider": {
+                    "options": {"baseURL": "https://debug.test/v1"}
+                }
+            }
+        }
+        monkeypatch.setenv(
+            "OPENCODE_CONFIG_CONTENT",
+            json.dumps({"provider": {"fallback-provider": {"options": {}}}}),
+        )
+        monkeypatch.setattr(
+            model_availability.subprocess,
+            "run",
+            lambda *args, **kwargs: (
+                kwargs["stdout"].write(json.dumps(debug_provider))
+                or types.SimpleNamespace(stdout="")
+            ),
+        )
+
+        assert model_availability.load_provider_config() == {
+            "debug-provider": {"baseURL": "https://debug.test/v1", "apiKey": None}
+        }
+
+    def test_reads_jsonc_from_config_directory(self, monkeypatch, tmp_path):
+        config = tmp_path / "opencode.jsonc"
+        config.write_text(
+            """
+            {
+              // provider credentials are resolved by OpenCode
+              "provider": {
+                "jsonc-provider": {
+                  "options": {
+                    "baseURL": "https://jsonc.test/v1",
+                    "apiKey": "{env:JSONC_KEY}",
+                  },
+                },
+              },
+            }
+            """
+        )
+        monkeypatch.setenv("OPENCODE_CONFIG_DIR", str(tmp_path))
+        monkeypatch.setattr(
+            model_availability.subprocess,
+            "run",
+            lambda *args, **kwargs: (
+                kwargs["stdout"].write("truncated") or types.SimpleNamespace(stdout="")
+            ),
+        )
+
+        assert "jsonc-provider" in model_availability.load_provider_config()
+
+    def test_reads_config_from_custom_path(self, monkeypatch, tmp_path):
+        config = tmp_path / "custom.json"
+        config.write_text(
+            json.dumps(
+                {"provider": {"custom-provider": {"options": {"baseURL": "https://custom.test"}}}}
+            )
+        )
+        monkeypatch.setenv("OPENCODE_CONFIG", str(config))
+        monkeypatch.setenv("OPENCODE_CONFIG_DIR", str(tmp_path / "empty"))
+        monkeypatch.setattr(
+            model_availability.subprocess,
+            "run",
+            lambda *args, **kwargs: (
+                kwargs["stdout"].write("truncated") or types.SimpleNamespace(stdout="")
+            ),
+        )
+
+        assert "custom-provider" in model_availability.load_provider_config()
+
+
+class TestProviderConfigValidation:
+    @pytest.mark.parametrize(
+        "base_url",
+        ["/v1", "ftp://example.test/v1", "https://", "https://example.test path"],
+    )
+    def test_requires_absolute_http_url(self, base_url):
+        config = {"provider": {"baseURL": base_url, "apiKey": "resolved"}}
+        assert not model_availability.provider_probeable("provider/model", config, {})
+
+    def test_requires_valid_env_api_key_reference(self):
+        config = {"provider": {"baseURL": "https://example.test/v1", "apiKey": "{env:}"}}
+        assert not model_availability.provider_probeable("provider/model", config, {"": "key"})
+
+    def test_accepts_resolved_and_env_api_keys(self):
+        config = {"provider": {"baseURL": "https://example.test/v1", "apiKey": "resolved"}}
+        assert model_availability.provider_probeable("provider/model", config, {})
+        config["provider"]["apiKey"] = "{env:PROVIDER_KEY}"
+        assert model_availability.provider_probeable(
+            "provider/model", config, {"PROVIDER_KEY": "resolved"}
+        )
 
 
 class TestProbeModelLogging:
