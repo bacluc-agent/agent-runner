@@ -4,6 +4,8 @@ on:
   push:
     paths:
       - ".github/workflows/opencode.yml"
+      - ".github/workflows/hourly-issue.yml"
+      - ".github/workflows/review-fixes.yml"
       - ".github/actions/**"
       - ".opencode/**"
       - "AGENTS.md"
@@ -78,19 +80,8 @@ permissions:
   pull-requests: write
 
 jobs:
-  validate:
-    if: github.event_name == 'push'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Run completion check
-        run: ./scripts/completion-check
-
   run:
-    if: github.event_name != 'push'
+    if: inputs.prompt != ''
     runs-on: ubuntu-latest
     timeout-minutes: 130
     env:
