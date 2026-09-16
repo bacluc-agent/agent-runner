@@ -7,6 +7,7 @@
 ## Summary
 
 Replace the custom `.github/scripts/trigger-workflows.sh` approach with:
+
 1. Native `on: push: paths:` triggers on each workflow
 2. Agent-decided workflow selection via `gh workflow run` (in AGENTS.md + issue-refiner.md)
 3. Cascade guard: opencode.yml's push-triggered run only validates, never runs the agent
@@ -25,10 +26,10 @@ name: CI
 on:
   push:
     paths:
-      - '.github/workflows/ci.yml'
-      - '.github/actions/**'
-      - 'scripts/**'
-      - 'AGENTS.md'
+      - ".github/workflows/ci.yml"
+      - ".github/actions/**"
+      - "scripts/**"
+      - "AGENTS.md"
   pull_request:
 
 permissions:
@@ -59,11 +60,11 @@ jobs:
 on:
   push:
     paths:
-      - '.github/workflows/opencode.yml'
-      - '.github/actions/**'
-      - '.opencode/**'
-      - 'AGENTS.md'
-      - 'README.md'
+      - ".github/workflows/opencode.yml"
+      - ".github/actions/**"
+      - ".opencode/**"
+      - "AGENTS.md"
+      - "README.md"
   workflow_dispatch:
     inputs:
       prompt:
@@ -149,6 +150,7 @@ jobs:
 ```
 
 **Key changes to `run` job:**
+
 - Add `if: github.event_name != 'push'` at line 74 (job level, before `runs-on`)
 - Everything else in `run` job stays identical
 
@@ -168,9 +170,9 @@ on:
         type: string
   push:
     paths:
-      - '.github/workflows/hourly-issue.yml'
-      - '.github/actions/**'
-      - '.opencode/**'
+      - ".github/workflows/hourly-issue.yml"
+      - ".github/actions/**"
+      - ".opencode/**"
 ```
 
 **Jobs:** unchanged.
@@ -186,9 +188,9 @@ on:
   workflow_dispatch:
   push:
     paths:
-      - '.github/workflows/refine-issues.yml'
-      - '.github/actions/**'
-      - '.opencode/**'
+      - ".github/workflows/refine-issues.yml"
+      - ".github/actions/**"
+      - ".opencode/**"
 ```
 
 **Jobs:** unchanged.
@@ -215,9 +217,9 @@ on:
         type: string
   push:
     paths:
-      - '.github/workflows/review-fixes.yml'
-      - '.github/actions/**'
-      - '.opencode/**'
+      - ".github/workflows/review-fixes.yml"
+      - ".github/actions/**"
+      - ".opencode/**"
 ```
 
 **Jobs:** unchanged.
@@ -229,7 +231,6 @@ on:
 Insert after the existing `## Testing` section (after line 16), before `## Renovate`:
 
 ```markdown
-
 ## Testing .github changes
 
 When you change files under `.github/`, `.opencode/`, or `AGENTS.md`:
@@ -260,6 +261,7 @@ Insert as a new bullet point after the existing "Do NOT include any step to run 
 ```
 
 This instruction is validator-safe:
+
 - No `BEGIN_PROMPT` / `END_PROMPT` / `SELECTED_ISSUE:` markers
 - No "ignore previous instructions" phrasing
 - No API key patterns
@@ -285,34 +287,41 @@ This instruction is validator-safe:
 **Where does the `validate` job go?** Before the `run` job (first job in the `jobs:` block). It has no dependency on other jobs.
 
 **What permissions/steps does it need?**
+
 - Permissions: inherits the workflow-level permissions (broad: `actions: write`, `contents: write`, etc.). The `validate` job only uses `contents: read` implicitly via `actions/checkout`. Having broader permissions is acceptable — the job doesn't use them.
 - Steps: checkout + `./scripts/completion-check`. The script handles Docker (prettier, actionlint), node (plugin tests), and pytest (with uv/pip fallback). Ubuntu-latest has node and python3 pre-installed.
 
 **What is the minimal `if:` gate for the `run` job?**
+
 - `if: github.event_name != 'push'` at the job level (line 74, before `runs-on`).
 - This prevents the `run` job from executing on push events entirely.
 
 **Does the `run` job reference `inputs.*` that would be empty on push?**
+
 - Yes: `inputs.prompt` (lines 96, 124, 306, 333), `inputs.model` (lines 97, 125), `inputs.model_choice` (line 98), `inputs.timeout_minutes` (lines 99, 335).
 - On push, all `inputs.*` resolve to empty strings.
 - The gate `if: github.event_name != 'push'` prevents the job from running on push, so empty inputs are never evaluated. **Safe.**
 
 **Does the workflow-level `permissions` block apply to the validate job?**
+
 - Yes, workflow-level permissions apply to all jobs. The `validate` job inherits the broad permissions but only needs `contents: read`. This is acceptable — the job doesn't escalate privileges.
 
 ### C. Dispatch workflows: inputs.* safety on push
 
 **hourly-issue.yml:**
+
 - `inputs.selection_prompt` used at line 63: `SELECTION_PROMPT: ${{ inputs.selection_prompt }}`
 - On push, `SELECTION_PROMPT` is empty.
 - Step handles it: `tail_instruction="${SELECTION_PROMPT:-$default_tail}"` (line 147). Falls back to `scripts/issue-selection-tail.txt`. **Safe.**
 - The `run` job uses `${{ needs.select.outputs.prompt }}` (not inputs). **Safe.**
 
 **refine-issues.yml:**
+
 - `workflow_dispatch:` has NO inputs defined (line 6).
 - The `refine` job does not reference `inputs.*` anywhere. **Safe.**
 
 **review-fixes.yml:**
+
 - `inputs.prompt` used at line 51: `OVERRIDE_PROMPT: ${{ inputs.prompt }}`
   - On push, `OVERRIDE_PROMPT` is empty.
   - Step handles it: `if [[ -n "${OVERRIDE_PROMPT:-}" ]]; then ... else ... fi` (line 103). Falls back to auto-generated prompt. **Safe.**
@@ -339,12 +348,14 @@ This instruction is validator-safe:
    - **No risk.** Refinement only modifies issue bodies, not code files.
 
 **Does the task's cascade-guard scope (opencode.yml only) cover it?**
+
 - The task's cascade guard prevents the most dangerous cascade: push → opencode.yml → agent → push → opencode.yml → agent → ...
 - The residual risk from hourly-issue/review-fixes is acknowledged and accepted. The agents dispatched by these workflows work on specific issues/PRs, not on `.github/` changes. The probability of an infinite loop is negligible.
 
 ### E. Verification strategy
 
 **Automatic coverage (push triggers):**
+
 - Pushing the implementation branch triggers all 5 workflows (paths match `.github/actions/**` etc.).
 - ci.yml: runs completion-check (cheap).
 - opencode.yml: runs validate job only (cheap).
@@ -353,11 +364,13 @@ This instruction is validator-safe:
 - review-fixes.yml: runs find-prs + dispatch (expensive if PRs exist).
 
 **Manual coverage (agent-decided triggers):**
+
 - The agent should trigger specific workflows via `gh workflow run` to verify the changed code paths.
 - For the initial implementation push, the automatic push triggers already cover all 5 workflows.
 - The agent should include the push-triggered run URLs in the PR description.
 
 **Cheapest verification covering every changed path:**
+
 - ci.yml: push-triggered run covers `scripts/**`, `.github/actions/**`, `AGENTS.md`, `.github/workflows/ci.yml`. **Cheap.**
 - opencode.yml: push-triggered validate run covers `.github/workflows/opencode.yml`, `.github/actions/**`, `.opencode/**`, `AGENTS.md`, `README.md`. **Cheap.**
 - hourly-issue.yml: push-triggered run covers `.github/workflows/hourly-issue.yml`, `.github/actions/**`, `.opencode/**`. **Expensive** (dispatches real agent).
@@ -371,6 +384,7 @@ However, per AGENTS.md: "ALL CHANGED CODE PATHS HAVE TO BE BE COVERED BY THE LIN
 ### F. Prettier/actionlint compatibility
 
 **Prettier:**
+
 - 2-space indent (consistent with existing files).
 - YAML style matches existing workflow files.
 - No trailing whitespace, no mixed indent.
@@ -378,6 +392,7 @@ However, per AGENTS.md: "ALL CHANGED CODE PATHS HAVE TO BE BE COVERED BY THE LIN
 - **Compatible.**
 
 **Actionlint:**
+
 - `if:` expressions: `github.event_name == 'push'` and `github.event_name != 'push'` are valid GitHub Actions expressions.
 - `paths:` filters: valid syntax, actionlint supports them.
 - `push:` with `paths:` alongside other triggers: valid, actionlint handles multi-trigger `on:` blocks.
