@@ -4,6 +4,11 @@ on:
   schedule:
     - cron: "7 * * * *"
   workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/refine-issues.yml"
+      - ".github/actions/**"
+      - ".opencode/**"
 
 permissions:
   contents: read
