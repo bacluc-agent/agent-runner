@@ -219,9 +219,13 @@ Contrast — old code (main): hourly run 34665106771 took **29 min 38 s** in the
 +PROBE_BUDGET = 30
 ```
 
-The PR description links the GitHub Actions runs that prove the change works — this is the convention required by `AGENTS.md` in this repository.
+The PR description links the GitHub Actions runs that prove the change works — this is the convention required by `AGENTS.md` in this repository. The change reduced the model-availability check from ~16–25 min to under 5 min (and often under 1 min) by fixing cache persistence, adding a probe budget, and including OpenRouter free models in selection.
 
-### Example 2: in a remote repository
+### Example 2: in a remote repository (same agent setup, different repo)
+
+This example shows the same agent setup working in a different repository.
+It was not solved by the agent running in this repository; it uses the same
+kind of agent setup in `ecamp/ecamp3`.
 
 Issue [ecamp/ecamp3#3762](https://github.com/ecamp/ecamp3/issues/3762)
 → pull request [ecamp/ecamp3#10736](https://github.com/ecamp/ecamp3/pull/10736).
@@ -284,14 +288,19 @@ own field clear-icon uses for the same reason.
 
 ## FAQ
 
-- **Why two repositories?** The issues (the "what") are separated from the
+- **Why two repositories?** The main reason is security: you can't restrict
+  what other people can post in your issues (you can set an interaction limit,
+  but that is not enough). The issues (the "what") are separated from the
   machinery (the "how") so the todo repository stays readable and the runner
   can be reused.
 - **Where does the AI configuration live?** In `bacluc/provision-machines`;
   the `setup-opencode` action installs it from the latest release tag.
-- **How do I add an idea?** Open an issue in `bacluc-agent/agent-todo`. The
-  refiner will turn it into a precise task.
+- **How do I add an idea?** You don't — only `@BacLuc` does for this repository.
+  You are free to fork this repository and point it to another issue repo.
+  Open an issue in `bacluc-agent/agent-todo`. The refiner will turn it into a
+  precise task.
 - **How do I know what the agent is doing?** The agent comments on the issue:
   run started, run result, branch, and pull request link.
-- **Who merges the pull request?** A human. The agent implements and opens
-  the PR; a person reviews and merges.
+- **Who merges the pull request?** Mostly a human. In this repo, the agent
+  already merged things by himself. The agent implements and opens the PR;
+  a person reviews and merges.
