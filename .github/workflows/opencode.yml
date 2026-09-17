@@ -316,6 +316,7 @@ jobs:
       - name: Post run-start comment
         if: steps.target-issue.outputs.issue_number != ''
         continue-on-error: true
+        id: run-start-comment
         shell: bash
         env:
           ISSUE_NUMBER: ${{ steps.target-issue.outputs.issue_number }}
@@ -323,8 +324,11 @@ jobs:
           MODEL: ${{ steps.select-model.outputs.model }}
         run: |
           printf '::add-mask::%s\n' "$GITHUB_TOKEN"
-          gh issue comment "$ISSUE_NUMBER" -R "$ISSUE_REPOSITORY" \
-            --body "Run started: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID — model: $MODEL"
+          comment_url=$(gh issue comment "$ISSUE_NUMBER" -R "$ISSUE_REPOSITORY" \
+            --body "Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID — model: $MODEL")
+          comment_id=$(printf '%s' "$comment_url" | grep -oE '[0-9]+$')
+          echo "comment_id=${comment_id}" >> "$GITHUB_OUTPUT"
+          echo "comment_url=${comment_url}" >> "$GITHUB_OUTPUT"
 
       - name: Run coordinator
         id: coordinator
@@ -483,6 +487,7 @@ jobs:
         env:
           ISSUE_NUMBER: ${{ steps.target-issue.outputs.issue_number }}
           GITHUB_TOKEN: ${{ secrets.BACLUC_AGENT_GITHUB_TOKEN }}
+          COMMENT_ID: ${{ steps.run-start-comment.outputs.comment_id }}
         run: |
           set -Eeuo pipefail
           printf '::add-mask::%s\n' "$GITHUB_TOKEN"
@@ -514,4 +519,10 @@ jobs:
             BODY="${BODY}"$'\n\nPushed repositories:\n'"${{ steps.push-work.outputs.pushed_repos }}"
           fi
 
-          gh issue comment "$ISSUE_NUMBER" -R "$ISSUE_REPOSITORY" --body "$BODY"
+          if [[ -n "${COMMENT_ID:-}" ]]; then
+            existing_body=$(gh api "repos/$ISSUE_REPOSITORY/issues/comments/$COMMENT_ID" --jq '.body' 2>/dev/null || echo '')
+            full_body="${existing_body}"$'\n\n'"${BODY}"
+            gh api -X PATCH "repos/$ISSUE_REPOSITORY/issues/comments/$COMMENT_ID" -f body="$full_body"
+          else
+            gh issue comment "$ISSUE_NUMBER" -R "$ISSUE_REPOSITORY" --body "$BODY"
+          fi
