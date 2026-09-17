@@ -189,7 +189,7 @@ def provider_probeable(model_id: str, provider_config: dict, env: dict) -> bool:
     if not provider:
         return True
     if provider == "openai":
-        if env.get("OPENCODE_AUTH_CONTENT"):
+        if env.get("OPENCODE_AUTH_CONTENT", "").strip():
             return True
         try:
             with open(os.path.expanduser("~/.local/share/opencode/auth.json")) as auth_file:
