@@ -81,6 +81,7 @@ permissions:
 
 jobs:
   run:
+    # Push trigger validates workflow syntax/paths only — skip agent when no prompt (push has no inputs.prompt); dispatch/call always supply prompt.
     if: inputs.prompt != ''
     runs-on: ubuntu-latest
     timeout-minutes: 130
