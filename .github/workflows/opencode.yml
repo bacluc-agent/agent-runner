@@ -326,6 +326,43 @@ jobs:
           gh issue comment "$ISSUE_NUMBER" -R "$ISSUE_REPOSITORY" \
             --body "Run started: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID — model: $MODEL"
 
+      - name: Export evidence URLs
+        id: evidence-urls
+        continue-on-error: true
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.BACLUC_AGENT_GITHUB_TOKEN }}
+        run: |
+          set -Eeuo pipefail
+          RUN_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          JOB_ID=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs" --jq '.jobs[0].id // .jobs[0].databaseId // empty' 2>/dev/null || true)
+          if [[ -z "$JOB_ID" || "$JOB_ID" == "null" ]]; then
+            echo "::warning::Could not resolve JOB_ID for evidence URLs"
+            JOB_ID=""
+            COORDINATOR_STEP="0"
+          else
+            COORDINATOR_STEP=$(gh api "repos/$GITHUB_REPOSITORY/actions/jobs/$JOB_ID" --jq '.steps[] | select(.name=="Run coordinator") | .number // empty' 2>/dev/null || true)
+            if [[ -z "$COORDINATOR_STEP" || "$COORDINATOR_STEP" == "null" ]]; then
+              COORDINATOR_STEP="0"
+            fi
+          fi
+          if [[ -n "$JOB_ID" ]]; then
+            EVIDENCE_URL="$RUN_URL/job/$JOB_ID#step:$COORDINATOR_STEP"
+          else
+            EVIDENCE_URL="$RUN_URL"
+          fi
+          {
+            echo "RUN_URL=$RUN_URL"
+            echo "JOB_ID=$JOB_ID"
+            echo "COORDINATOR_STEP=$COORDINATOR_STEP"
+            echo "EVIDENCE_URL=$EVIDENCE_URL"
+          } >> "$GITHUB_ENV"
+          if [[ -n "$JOB_ID" ]]; then
+            printf 'Evidence URLs: RUN_URL=%s JOB_ID=%s COORDINATOR_STEP=%s EVIDENCE_URL=%s\n' "$RUN_URL" "$JOB_ID" "$COORDINATOR_STEP" "$EVIDENCE_URL"
+          else
+            printf 'Evidence URLs fallback: %s\n' "$RUN_URL"
+          fi
+
       - name: Run coordinator
         id: coordinator
         shell: bash
