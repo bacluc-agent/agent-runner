@@ -522,7 +522,7 @@ jobs:
           if [[ -n "${COMMENT_ID:-}" ]]; then
             existing_body=$(gh api "repos/$ISSUE_REPOSITORY/issues/comments/$COMMENT_ID" --jq '.body' 2>/dev/null || echo '')
             full_body="${existing_body}"$'\n\n'"${BODY}"
-            gh api -X PATCH "repos/$ISSUE_REPOSITORY/issues/comments/$COMMENT_ID" -f body="$full_body"
+            gh api -X PATCH "repos/$ISSUE_REPOSITORY/issues/comments/$COMMENT_ID" -f body="$full_body" || gh issue comment "$ISSUE_NUMBER" -R "$ISSUE_REPOSITORY" --body "$BODY"
           else
             gh issue comment "$ISSUE_NUMBER" -R "$ISSUE_REPOSITORY" --body "$BODY"
           fi
