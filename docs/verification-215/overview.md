@@ -1,0 +1,1 @@
+The one-comment-per-agent progress tracking pattern keeps each agent run anchored to a single GitHub issue comment that starts with the action run link and model, then accumulates branch, verification, and completion milestones in place.

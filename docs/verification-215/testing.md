@@ -1,0 +1,1 @@
+End-to-end verification checks the action and issue run to confirm each agent created only one progress comment, milestone text changed through in-place updates, and no extra comments appeared unless a human replied.

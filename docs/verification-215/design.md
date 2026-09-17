@@ -1,0 +1,1 @@
+Coordinator and subagent instructions implement the pattern by posting the first comment and capturing its ID, PATCHing that same comment for milestones, creating a new tracked comment only after a human response, and repeating the rule in delegation prompts.
