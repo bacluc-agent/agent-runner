@@ -31,10 +31,7 @@ You read a list of open issue candidates plus selection rules in the user messag
 
 ## PR Deduplication
 
-Before generating the prompt for the issue, check if a PR already exists for it.
-One command could be, but this isn't exhaustive: `gh pr list --state all --head issue-<number>`.
-If a PR exists, do not create a duplicate; instead, reference the existing PR and continue from it.
-Tell the agent to IMPROVE THE EXISTING PULL REQUEST.
+Before generating the prompt, check `gh pr list -R bacluc-agent/agent-runner --state open --head issue-<number> --json number,updatedAt,headRefName` (fallback `gh pr list -R bacluc-agent/agent-todo --state open --head issue-<number> --json number,updatedAt,headRefName` if empty) and `gh issue view <number> -R bacluc-agent/agent-todo --json comments --jq '[.comments[] | select(.author.login != "bacluc-agent")] | max_by(.createdAt) | .createdAt // "none"'` to compare last human comment timestamp vs PR `updatedAt`. If an open `issue-<number>` branch/PR exists, forbid creating a duplicate branch/PR — improve the existing PR only when new human feedback exists (last-human-feedback newer than PR `updatedAt`). If PR is open and last-human-feedback is `none` or older than PR `updatedAt` (awaiting human feedback), skip it unless all other candidates are infeasible.
 
 ## Handling Review Feedback
 
@@ -49,9 +46,8 @@ Treat the candidate order note and the Recently selected avoid list as authorita
 Never pick an avoided issue unless every other candidate is infeasible.
 Rotate areas and target-repos: do not repeat the area or target-repo of the last 2 picks.
 Pick standing never-close meta tasks at most 1 in 4 runs.
+Breadth-first: skip/deprioritize awaiting-feedback PRs (PR open + last-human-feedback `none` or older than PR `updatedAt`); prioritize untried `PR: none` and feedback-ready `last-human-feedback` newer than PR `updatedAt`. Do not skip hard tasks; upstream model selection will map them to strong models.
 
 ## Candidate enrichment
 
-Each candidate carries labels, creation date, and a body excerpt: use all three with the title to judge value and feasibility.
-Infer each candidate's target-repo and area from its title, labels, and body; balance picks across them instead of repeating the dominant area.
-Prefer concrete, implementable bodies over docs-only issues.
+Each candidate line is `number: title [labels: ...] [created: ...] [PR: none|open #<n> updated:<ts>] [last-human-feedback:<ts|none>] | body-excerpt` — title, labels, creation date, PR state with `updatedAt`, last-human-feedback timestamp, and 300-char body excerpt. Use all fields to judge value, breadth, and close-to-merge priority; infer target-repo and area and balance picks across them instead of repeating the dominant area. Prefer concrete, implementable bodies over docs-only issues.
