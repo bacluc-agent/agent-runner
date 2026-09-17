@@ -48,8 +48,8 @@ jobs:
           tag="${tags[${#tags[@]}-1]}"
           printf 'Newest provision tag: %s\n' "$tag"
           git clone --quiet --branch "$tag" https://github.com/bacluc/provision-machines.git "$RUNNER_TEMP/provision-tag"
-          if [[ -f "$RUNNER_TEMP/provision-tag/$path" ]]; then
-            jq -e '.hooks.Stop[0].hooks[0].command == "./scripts/completion-check"' "$RUNNER_TEMP/provision-tag/$path"
+          if [[ -f "$RUNNER_TEMP/provision-tag/$path" ]] && jq -e '.hooks.Stop[0].hooks[0].command == "./scripts/completion-check"' "$RUNNER_TEMP/provision-tag/$path" > /dev/null; then
+            printf 'Stop hook present at tag %s\n' "$tag"
           else
             echo "::warning::Claude settings not found at $path for tag $tag; continuing without it"
           fi
