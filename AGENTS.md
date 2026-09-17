@@ -9,15 +9,7 @@ We work with multiple repos, so single issue numbers are ambiguous.
 
 ## Testing
 
-ALL PULL REQUEST DESCRIPTIONS HAVE TO CONTAIN LINKS TO ACTION RUNS WITH THE PROBLEMS THEY FIX IF THEY FIX A BUG.
-Features don't need that.
-
-ALL PULL REQUESTS DESCRIPTIONS MUST LINK TO ACTION RUNS THAT SHOW THAT THE CHANGE WORKS.
-ALL CHANGED CODE PATHS HAVE TO BE COVERED BY THE LINKED ACTION RUNS.
-
-## Testing .github changes
-
-When you change files under `.github/`, `.opencode/`, or `AGENTS.md`, trigger only the workflow(s) that exercise the changed code path — never all of them — via `gh workflow run <name> --ref <branch>`, poll `gh run list` for the run URL, and link it in the PR description; push-triggered runs (via `paths:` filters) provide automatic coverage for the workflows whose files you touched.
+ALL PULL REQUEST DESCRIPTIONS HAVE TO CONTAIN LINKS TO ACTION RUNS WITH THE PROBLEMS THEY FIX IF THEY FIX A BUG. Features don't need that. ALL PULL REQUEST DESCRIPTIONS MUST LINK TO ACTION RUNS THAT SHOW THAT THE CHANGE WORKS. ALL CHANGED CODE PATHS HAVE TO BE COVERED BY THE LINKED ACTION RUNS. When you change files under `.github/`, `.opencode/`, or `AGENTS.md`, trigger only the workflow(s) that exercise the changed code path — never all of them — via `gh workflow run <name> --ref <branch>`, poll `gh run list` for the run URL, and link it in the PR description; push-triggered runs (via `paths:` filters) provide automatic coverage for the workflows whose files you touched.
 
 /completion-check-command
 
