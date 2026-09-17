@@ -81,6 +81,7 @@ permissions:
 
 jobs:
   run:
+    if: inputs.prompt != ''
     runs-on: ubuntu-latest
     timeout-minutes: 130
     env:
