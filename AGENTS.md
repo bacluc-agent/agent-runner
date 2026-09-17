@@ -16,8 +16,6 @@ ALL PULL REQUEST DESCRIPTIONS MUST LINK TO ADDITIONAL-TEST ACTION RUNS WITH ABSO
 
 AUTOMATIC CI (`ci.yml` in `bacluc-agent/agent-runner`, which runs `./scripts/completion-check`) TRIGGERS ON EVERY PUSH/PR AND ITS RESULT IS VISIBLE IN COMMIT STATUS — IT MUST NOT BE LINKED AS EVIDENCE AND MUST NOT BE CLAIMED AS OWN TESTING. NEVER CLAIM "CI RAN" OR "CI PASSED" AS OWN WORK.
 
-## Testing .github changes
-
 When you change files under `.github/`, `.opencode/`, or `AGENTS.md`, trigger only the workflow(s) that exercise the changed code path — never all of them — via `gh workflow run <name> --ref <branch>`, poll `gh run list` for the run URL, and link it in the PR description; push-triggered runs (via `paths:` filters) provide automatic coverage for the workflows whose files you touched.
 
 /completion-check-command
