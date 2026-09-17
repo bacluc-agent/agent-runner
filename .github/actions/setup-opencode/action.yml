@@ -17,6 +17,7 @@ runs:
         SOURCE_REPOSITORY: https://github.com/bacluc/provision-machines.git
         CONFIG_PATH: deploys/development_tools/ai_agent_devcontainer/files/opencode
         SKILLS_PATH: deploys/development_tools/ai_agent_devcontainer/files/claude/skills
+        CLAUDE_SETTINGS_PATH: deploys/development_tools/ai_agent_devcontainer/files/claude/settings.json
       run: |
         set -Eeuo pipefail
 
@@ -74,6 +75,13 @@ runs:
         mkdir -p "$HOME/.config"
         rm -rf "$HOME/.config/opencode"
         cp -a "$config_dir" "$HOME/.config/opencode"
+
+        if [[ -f "$source_dir/$CLAUDE_SETTINGS_PATH" ]]; then
+          mkdir -p "$HOME/.claude"
+          cp "$source_dir/$CLAUDE_SETTINGS_PATH" "$HOME/.claude/settings.json"
+        else
+          echo "::warning::Claude settings not found at $CLAUDE_SETTINGS_PATH for tag $tag; continuing without it"
+        fi
 
     - name: Materialize OpenCode auth
       shell: bash

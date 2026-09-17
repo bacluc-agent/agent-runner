@@ -15,6 +15,8 @@ Features don't need that.
 ALL PULL REQUESTS DESCRIPTIONS MUST LINK TO ACTION RUNS THAT SHOW THAT THE CHANGE WORKS.
 ALL CHANGED CODE PATHS HAVE TO BE COVERED BY THE LINKED ACTION RUNS.
 
+The completion-check plugin reads the declaration below and runs it automatically when the session goes idle.
+
 /completion-check-command
 
 ```bash
