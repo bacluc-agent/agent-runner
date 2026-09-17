@@ -221,69 +221,93 @@ Contrast — old code (main): hourly run 34665106771 took **29 min 38 s** in the
 
 The PR description links the GitHub Actions runs that prove the change works — this is the convention required by `AGENTS.md` in this repository. The change reduced the model-availability check from ~16–25 min to under 5 min (and often under 1 min) by fixing cache persistence, adding a probe budget, and including OpenRouter free models in selection.
 
-### Example 2: in a remote repository (same agent setup, different repo)
+### Example 2: in a remote repository
 
-This example shows the same agent setup working in a different repository.
-It was not solved by the agent running in this repository; it uses the same
-kind of agent setup in `ecamp/ecamp3`.
+This example was solved by the agent running in this repository, working in
+the `ecamp/ecamp3` repository. The idea came from an ecamp3 issue, was tracked
+in `bacluc-agent/agent-todo`, and the pull request was merged into ecamp3.
 
-Issue [ecamp/ecamp3#3762](https://github.com/ecamp/ecamp3/issues/3762)
-→ pull request [ecamp/ecamp3#10736](https://github.com/ecamp/ecamp3/pull/10736).
-ecamp3 is a camp management web app for Swiss youth organizations; this issue
-was implemented by the same kind of agent setup.
+Issue [bacluc-agent/agent-todo#152](https://github.com/bacluc-agent/agent-todo/issues/152)
+→ pull request [ecamp/ecamp3#10722](https://github.com/ecamp/ecamp3/pull/10722).
+ecamp3 is a camp management web app for Swiss youth organizations; the idea
+came from [ecamp/ecamp3#10046](https://github.com/ecamp/ecamp3/issues/10046).
 
-**The issue** (excerpt; the original contains a screen recording):
+**The issue** (excerpt):
 
 ```text
-[[video]](https://user-images.githubusercontent.com/7566995/231212245-....mp4)
-
-In .../frontend/src/components/form/api/ApiSelect.vue#L39
-which is based on .../frontend/src/components/form/base/ESelect.vue#L36
-
-the retry should not just retry the action, but allow to change the value selected for the next retry.
-
-Attention: there are tests for the ESelect and for the ApiSelect Component,
-and they are components used at multiple places.
-The other places should not break.
+## Goal
+In the camp admin checklist UI, guests and outsiders must be read-only: the
+checklist rename button, item drag-and-drop, and item edit controls must be
+hidden/disabled for non-contributors, while members and managers retain full
+editing.
 ```
 
 **The pull request description** (excerpt):
 
 ```text
-Fixes #3762
+Fixes #10046
 
 ## Problem
-`ApiWrapperAppend` (the save/retry/cancel/reload buttons shown inline on `ApiSelect`,
-`ApiDatePicker`, `ApiTimePicker`, `ApiColorPicker`, etc.) is rendered inside the wrapped
-field's `append-inner` slot. Vuetify opens a select's/picker's menu on **`mousedown`** of
-the field, not on `click`. Since these buttons live inside that same field, an unstopped
-`mousedown` bubbled up and toggled the menu open in addition to performing the button's
-own action. Concretely: after a failed save on an `ApiSelect`, clicking the red "retry"
-button also popped open the option list instead of just resubmitting the value.
+In the camp admin, guests could still edit checklists: rename them, drag-drop
+items, and edit item content. The UI gated editability on `isOutsider` alone,
+but a guest has `isOutsider = false` (they have a role — just the wrong one).
+Only users with *no* role at all are outsiders.
 
 ## Fix
-Stop the `mousedown` from bubbling past `ApiWrapperAppend`, mirroring the pattern Vuetify's
-own field clear-icon uses for the same reason.
+In `frontend/src/components/checklist/ChecklistDetail.vue`, gate editability on
+a new `isReadOnly` computed (`isGuest || isOutsider`) instead of `isOutsider`:
 
-## Testing
-- Added `ApiWrapperAppend.spec.js`, covering the retry, cancel, and reload buttons ...
-  Verified these tests fail without the fix.
-- Full frontend suite (`npm run test:unit`) and `npm run lint` pass.
-- Manually reproduced and verified fixed in the browser via `/controls` ...
+- Rename pencil button: `!isOutsider` → `!isReadOnly`
+- `debouncedDisabled` (drives drag-drop and item editing via the `disabled`
+  prop on `SortableChecklist`/`SortableChecklistItem`): `isOutsider` → `isReadOnly`
+
+Using `isGuest || isOutsider` rather than `!isContributor` preserves editing in
+the global admin (`/admin/checklists`), where `camp` is null and all role flags
+are false.
+
+## Verification
+- `npm run lint:check` passes
+- `npm run test:unit` passes (1268 tests, 0 failures)
+- Verified `SortableChecklist.vue`/`SortableChecklistItem.vue` honor the
+  `disabled` prop (read-only rendering, hidden add/edit controls);
+  `ChecklistOverview.vue` already gates on `isContributor`
+
+Tracked in bacluc-agent/agent-todo#152.
 ```
 
-**The change** (excerpt, 2 files, +37/−4):
+**The change** (excerpt, 1 file, +5/−2):
 
 ```diff
---- a/frontend/src/components/form/api/ApiWrapperAppend.vue
-+++ b/frontend/src/components/form/api/ApiWrapperAppend.vue
-@@ -1,5 +1,5 @@
- <template>
--  <div class="d-flex">
-+  <div class="d-flex" @mousedown.stop @keydown.stop>
-     <!-- Success icon after saving -->
-     <div class="checkIconContainer">
-       <v-icon color="green" class="checkIcon" :checkIconAddon="checkIconAddon">
+--- a/frontend/src/components/checklist/ChecklistDetail.vue
++++ b/frontend/src/components/checklist/ChecklistDetail.vue
+@@ -10,7 +10,7 @@
+      <v-toolbar-title v-if="!editChecklistName" tag="h1" class="font-weight-bold ml-0">
+        {{ checklist.name }}
+        <v-btn
+-          v-if="!editChecklistName && !isOutsider"
++          v-if="!editChecklistName && !isReadOnly"
+          icon
+          class="ml-1 visible-on-hover"
+          width="24"
+@@ -116,6 +116,9 @@ export default {
+    items() {
+      return this.checklist.checklistItems().items.filter((item) => !item.parent)
+    },
++    isReadOnly() {
++      return this.isGuest || this.isOutsider
++    },
+  },
+  async mounted() {
+    await this.api
+@@ -127,7 +130,7 @@ export default {
+      .$loadItems()
+
+    await nextTick()
+-    this.debouncedDisabled = this.isOutsider
++    this.debouncedDisabled = this.isReadOnly
+  },
+  methods: {
+    checklistRoute,
 ```
 
 ## FAQ
