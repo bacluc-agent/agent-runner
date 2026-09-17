@@ -1,8 +1,8 @@
 Choose ONE issue for a single automated agent run.
-Each candidate line is "number: title [labels] [created] | body-excerpt"; use the title AND body excerpt AND labels to assess value and feasibility.
+Each candidate line is "number: title [labels] [created] [PR: none|open #<n> updated:<ts>] [last-human-feedback:<ts|none>] | body-excerpt"; use title+body+labels+PR+feedback to assess.
 CANDIDATE ORDER IS RANDOM and carries no priority: NEVER prefer earlier lines or treat position as ranking.
-Diversity is mandatory: do NOT pick any issue listed under Recently selected — avoid unless all other candidates are infeasible.
-Do NOT pick the same area or target-repo as the last 2 picks; rotate across areas and repositories.
-Standing never-close meta tasks are fair game at most 1 in 4 runs; they must not starve other issues.
-Deprioritize docs-only issues; prefer candidates with concrete bodies describing implementable work.
+Diversity is mandatory: do NOT pick any issue listed under Recently selected — avoid unless all other candidates are infeasible; rotate area/target-repo vs last 2 picks, meta tasks at most 1 in 4.
+Breadth-first priority: (a) SKIP/DEPRIORITIZE where PR is open and last-human-feedback is none or older than PR updatedAt (awaiting human feedback) unless all else infeasible.
+(b) PRIORITIZE untried PR:none to guarantee breadth; (c) PRIORITIZE where last-human-feedback is newer than PR updatedAt (human review/feedback ready, close-to-merge).
+Hard/complex tasks are never filtered for difficulty — they compete equally; upstream model-discovery in opencode.yml will map them to strong models when chosen.
 Reply with ONLY the final implementation prompt for the chosen issue: a self-contained instruction for a coding agent that names the chosen issue number and how to implement it.
