@@ -140,6 +140,13 @@ in Docker and exits non-zero if any check fails:
 `.github/workflows/ci.yml` runs the same script on every push to `main` and
 every pull request.
 
+The `/completion-check-command` declaration (see `AGENTS.md`) is read
+automatically by the `bacluc-opencode-completion-check-command` plugin; the
+agent does not need to invoke it manually. The plugin also supports an
+alternative source: `~/.claude/settings.json` with a `hooks.Stop` array
+(`{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"..."}]}]}}`);
+both sources work together.
+
 ## Examples: from idea to merged change
 
 The examples below are text excerpts rendered from the real issue, pull
