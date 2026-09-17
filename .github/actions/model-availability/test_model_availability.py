@@ -384,8 +384,33 @@ class TestProviderProbeable:
         config = {"openrouter": {"baseURL": "/chat/completions", "apiKey": "sk-or-xxx"}}
         assert not model_availability.provider_probeable("openrouter/foo:free", config, {})
 
-    def test_openai_passes_like_builtin_provider(self):
+    def test_openai_not_probeable_without_auth_and_isolated_home(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("HOME", str(tmp_path))
+        assert not model_availability.provider_probeable("openai/gpt-5.6-luna", {}, {})
+        assert not model_availability.provider_probeable(
+            "openai/gpt-5.6-luna", {"openai": {"baseURL": "https://api.openai.com/v1"}}, {}
+        )
+
+    def test_openai_probeable_with_env(self):
+        assert model_availability.provider_probeable(
+            "openai/gpt-5.6-luna", {}, {"OPENCODE_AUTH_CONTENT": '{"openai":{"type":"oauth","access":"a","refresh":"r","expires":123}}'}
+        )
+        assert model_availability.provider_probeable("openai/gpt-5.6-luna", {}, {"OPENCODE_AUTH_CONTENT": "non-empty"})
+
+    def test_openai_probeable_with_file(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("HOME", str(tmp_path))
+        auth = {"openai": {"type": "oauth", "access": "a", "refresh": "r", "expires": 999}}
+        auth_file = tmp_path / ".local/share/opencode/auth.json"
+        auth_file.parent.mkdir(parents=True)
+        auth_file.write_text(json.dumps(auth))
         assert model_availability.provider_probeable("openai/gpt-5.6-luna", {}, {})
+        assert model_availability.valid_openai_oauth(json.dumps(auth))
+        assert not model_availability.valid_openai_oauth(json.dumps({"openai": {"type": "api", "access": "a", "refresh": "r", "expires": 1}}))
+
+    def test_openai_passes_like_builtin_provider(self):
+        assert model_availability.provider_probeable(
+            "openai/gpt-5.6-luna", {}, {"OPENCODE_AUTH_CONTENT": '{"openai":{"type":"oauth","access":"a","refresh":"r","expires":123}}'}
+        )
 
 class TestParseWhitelistedModels:
     def test_uses_exact_openai_patterns_without_changing_opencode_matching(self):
@@ -1073,9 +1098,11 @@ class TestModelAvailabilityAction:
         )
         assert "printf '%s\\n' \"$OPENCODE_AUTH_CONTENT\"" not in setup
         action = Path(__file__).with_name("action.yml").read_text()
-        assert "OPENCODE_AUTH_CONTENT" not in action
-        assert "auth.json" not in action
+        assert "OPENCODE_AUTH_CONTENT" in action
+        assert "auth.json" in action
         assert "python3" in action
+        assert "umask 077" in action
+        assert "printf '%s' \"$OPENCODE_AUTH_CONTENT\" > ~/.local/share/opencode/auth.json" in action
 
 
 class TestMainProbeSummary:
