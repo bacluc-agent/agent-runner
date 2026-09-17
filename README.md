@@ -145,7 +145,7 @@ automatically by the `bacluc-opencode-completion-check-command` plugin; the
 agent does not need to invoke it manually. The plugin also supports an
 alternative source: `~/.claude/settings.json` with a `hooks.Stop` array
 (`{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"..."}]}]}}`);
-both sources work together.
+the plugin tries `.agents/.completion-check-command` → `.opencode/.completion-check-command` → `~/.claude/settings.json` `hooks.Stop` → `AGENTS.md`.
 
 ## Examples: from idea to merged change
 
