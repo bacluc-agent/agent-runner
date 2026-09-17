@@ -21,6 +21,8 @@ ALL CHANGED CODE PATHS HAVE TO BE COVERED BY THE LINKED ACTION RUNS.
 ./scripts/completion-check
 ```
 
+The `/completion-check-command` block above is the declaration the plugin reads automatically (agent need not invoke it). The `bacluc-opencode-completion-check-command` plugin also supports an alternative source: `~/.claude/settings.json` with a `hooks.Stop` array containing a `command` entry. Both sources work; the plugin tries `.agents/.completion-check-command` → `.opencode/.completion-check-command` → `AGENTS.md` → `~/.claude/settings.json` `hooks.Stop`.
+
 ## Renovate
 
 Renovate must be able to update all dependencies.
