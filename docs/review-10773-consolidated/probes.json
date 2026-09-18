@@ -1,0 +1,240 @@
+[
+  {
+    "endpoint": "camps-nofilter",
+    "deployment": "https://pr10773.ecamp3.ch",
+    "status": 400,
+    "count": "0",
+    "message": "Filter on campCollaborator or isPrototype is required."
+  },
+  {
+    "endpoint": "camps-nofilter",
+    "deployment": "https://dev.ecamp3.ch",
+    "status": 200,
+    "count": "9",
+    "message": ""
+  },
+  {
+    "endpoint": "camps-collab",
+    "deployment": "https://pr10773.ecamp3.ch",
+    "status": 200,
+    "count": "5",
+    "message": ""
+  },
+  {
+    "endpoint": "camps-collab",
+    "deployment": "https://dev.ecamp3.ch",
+    "status": 200,
+    "count": "7",
+    "message": ""
+  },
+  {
+    "endpoint": "camps-prototype",
+    "deployment": "https://pr10773.ecamp3.ch",
+    "status": 200,
+    "count": "5",
+    "message": ""
+  },
+  {
+    "endpoint": "camps-prototype",
+    "deployment": "https://dev.ecamp3.ch",
+    "status": 200,
+    "count": "7",
+    "message": ""
+  },
+  {
+    "endpoint": "camps-collab-empty",
+    "deployment": "https://pr10773.ecamp3.ch",
+    "status": 400,
+    "count": "0",
+    "message": "No resource associated to \"\"."
+  },
+  {
+    "endpoint": "camps-collab-empty",
+    "deployment": "https://dev.ecamp3.ch",
+    "status": 400,
+    "count": "0",
+    "message": "No resource associated to \"\"."
+  },
+  {
+    "endpoint": "periods-nofilter",
+    "deployment": "https://pr10773.ecamp3.ch",
+    "status": 400,
+    "count": "0",
+    "message": "Filter on camp or campCollaborator is required."
+  },
+  {
+    "endpoint": "periods-nofilter",
+    "deployment": "https://dev.ecamp3.ch",
+    "status": 200,
+    "count": "11",
+    "message": ""
+  },
+  {
+    "endpoint": "periods-camp",
+    "deployment": "https://pr10773.ecamp3.ch",
+    "status": 200,
+    "count": "1",
+    "message": ""
+  },
+  {
+    "endpoint": "periods-camp",
+    "deployment": "https://dev.ecamp3.ch",
+    "status": 200,
+    "count": "1",
+    "message": ""
+  },
+  {
+    "endpoint": "activities-nofilter",
+    "deployment": "https://pr10773.ecamp3.ch",
+    "status": 400,
+    "count": "0",
+    "message": "Filter on camp is required."
+  },
+  {
+    "endpoint": "activities-nofilter",
+    "deployment": "https://dev.ecamp3.ch",
+    "status": 200,
+    "count": "143",
+    "message": ""
+  },
+  {
+    "endpoint": "activities-camp",
+    "deployment": "https://pr10773.ecamp3.ch",
+    "status": 200,
+    "count": "18",
+    "message": ""
+  },
+  {
+    "endpoint": "activities-camp",
+    "deployment": "https://dev.ecamp3.ch",
+    "status": 200,
+    "count": "18",
+    "message": ""
+  },
+  {
+    "endpoint": "content-types",
+    "deployment": "https://pr10773.ecamp3.ch",
+    "status": 200,
+    "count": "11",
+    "message": ""
+  },
+  {
+    "endpoint": "content-types",
+    "deployment": "https://dev.ecamp3.ch",
+    "status": 200,
+    "count": "11",
+    "message": ""
+  },
+  {
+    "endpoint": "subresource-activities",
+    "deployment": "https://pr10773.ecamp3.ch",
+    "status": 200,
+    "count": "18",
+    "message": ""
+  },
+  {
+    "endpoint": "subresource-activities",
+    "deployment": "https://dev.ecamp3.ch",
+    "status": 200,
+    "count": "18",
+    "message": ""
+  },
+  {
+    "endpoint": "unauth-camps",
+    "deployment": "https://pr10773.ecamp3.ch",
+    "status": 401,
+    "count": "0",
+    "message": "JWT Token not found"
+  },
+  {
+    "endpoint": "unauth-camps",
+    "deployment": "https://dev.ecamp3.ch",
+    "status": 401,
+    "count": "0",
+    "message": "JWT Token not found"
+  },
+  {
+    "endpoint": "periods-camp-empty",
+    "deployment": "https://pr10773.ecamp3.ch",
+    "status": 200,
+    "count": "0",
+    "message": ""
+  },
+  {
+    "endpoint": "periods-camp-empty",
+    "deployment": "https://dev.ecamp3.ch",
+    "status": 200,
+    "count": "0",
+    "message": ""
+  },
+  {
+    "endpoint": "periods-camp-array",
+    "deployment": "https://pr10773.ecamp3.ch",
+    "status": 200,
+    "count": "0",
+    "message": ""
+  },
+  {
+    "endpoint": "periods-camp-array",
+    "deployment": "https://dev.ecamp3.ch",
+    "status": 200,
+    "count": "0",
+    "message": ""
+  },
+  {
+    "endpoint": "camps-camp-key",
+    "deployment": "https://pr10773.ecamp3.ch",
+    "status": 400,
+    "count": "0",
+    "message": "Filter on campCollaborator or isPrototype is required."
+  },
+  {
+    "endpoint": "camps-camp-key",
+    "deployment": "https://dev.ecamp3.ch",
+    "status": 200,
+    "count": "9",
+    "message": ""
+  },
+  {
+    "endpoint": "checklist-dotted",
+    "deployment": "https://pr10773.ecamp3.ch",
+    "status": 200,
+    "count": "0",
+    "message": ""
+  },
+  {
+    "endpoint": "checklist-dotted",
+    "deployment": "https://dev.ecamp3.ch",
+    "status": 200,
+    "count": "0",
+    "message": ""
+  },
+  {
+    "endpoint": "checklist-underscore",
+    "deployment": "https://pr10773.ecamp3.ch",
+    "status": 400,
+    "count": "0",
+    "message": "Filter on checklist or checklist.camp is required."
+  },
+  {
+    "endpoint": "checklist-underscore",
+    "deployment": "https://dev.ecamp3.ch",
+    "status": 200,
+    "count": "2282",
+    "message": ""
+  },
+  {
+    "endpoint": "root-api",
+    "deployment": "https://pr10773.ecamp3.ch",
+    "status": 200,
+    "count": "0",
+    "message": ""
+  },
+  {
+    "endpoint": "root-api",
+    "deployment": "https://dev.ecamp3.ch",
+    "status": 200,
+    "count": "0",
+    "message": ""
+  }
+]
