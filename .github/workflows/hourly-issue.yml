@@ -163,8 +163,8 @@ jobs:
               *) repo_list+=("$repo") ;;
             esac
           done
-          if (( ${#repo_list[@]} > 10 )); then
-            repo_list=("${repo_list[@]:0:10}")
+          if (( ${#repo_list[@]} > 20 )); then
+            repo_list=("${repo_list[@]:0:20}")
           fi
 
           pr_lookup_dir="$RUNNER_TEMP/pr-lookup"
