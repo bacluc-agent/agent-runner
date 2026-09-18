@@ -148,22 +148,28 @@ jobs:
 
           enriched="$RUNNER_TEMP/candidates.enriched.txt"
           : > "$enriched"
-          # ponytail: sequential per-candidate gh calls O(n), batch via single pr list + join if rate exceeds limit
+
+          pr_lookup_dir="$RUNNER_TEMP/pr-lookup"
+          mkdir -p "$pr_lookup_dir"
+          for repo in "$GITHUB_REPOSITORY" "$ISSUE_REPOSITORY" bacluc/provision-machines bacluc-agent/ecamp3; do
+            key="$(echo "$repo" | tr '/' '_')"
+            gh pr list -R "$repo" --state open --limit 200 --json number,updatedAt,headRefName \
+              --jq '.[] | "\(.headRefName)|#\(.number)|\(.updatedAt)"' 2>/dev/null \
+              | sort -t'|' -k3 -r > "$pr_lookup_dir/$key.lookup" || true
+          done
+
           while IFS= read -r num; do
-            pr_json="$(gh pr list -R "$GITHUB_REPOSITORY" --state open --head "issue-$num" --json number,updatedAt,headRefName 2>/dev/null || echo '[]')"
-            if [[ "$(echo "$pr_json" | jq 'length')" -eq 0 ]]; then
-              pr_json="$(gh pr list -R "$ISSUE_REPOSITORY" --state open --head "issue-$num" --json number,updatedAt,headRefName 2>/dev/null || echo '[]')"
-            fi
-            if [[ "$(echo "$pr_json" | jq 'length')" -eq 0 ]]; then
-              pr_json="$(gh pr list -R bacluc/provision-machines --state open --head "issue-$num" --json number,updatedAt,headRefName 2>/dev/null || echo '[]')"
-            fi
-            if [[ "$(echo "$pr_json" | jq 'length')" -eq 0 ]]; then
-              pr_info="none"
-            else
-              pr_number="$(echo "$pr_json" | jq -r '.[0].number')"
-              pr_updated="$(echo "$pr_json" | jq -r '.[0].updatedAt')"
-              pr_info="open #${pr_number} updated:${pr_updated}"
-            fi
+            pr_info="none"
+            for repo in "$GITHUB_REPOSITORY" "$ISSUE_REPOSITORY" bacluc/provision-machines bacluc-agent/ecamp3; do
+              key="$(echo "$repo" | tr '/' '_')"
+              match="$(grep -m1 -E "issue-${num}([-_]|\|)" "$pr_lookup_dir/$key.lookup" 2>/dev/null || true)"
+              if [[ -n "$match" ]]; then
+                pr_number="$(echo "$match" | cut -d'|' -f2 | tr -d '#')"
+                pr_updated="$(echo "$match" | cut -d'|' -f3)"
+                pr_info="open #${pr_number} updated:${pr_updated}"
+                break
+              fi
+            done
             human_ts="$(gh issue view "$num" -R "$ISSUE_REPOSITORY" --json comments --jq '[.comments[] | select(.author.login != "bacluc-agent")] | max_by(.createdAt) | .createdAt // "none"' 2>/dev/null || echo "none")"
             if [[ -z "$human_ts" || "$human_ts" == "null" ]]; then
               human_ts="none"
@@ -177,7 +183,7 @@ jobs:
           candidate_lines="$RUNNER_TEMP/candidate-lines.txt"
           : > "$candidate_lines"
           while IFS='|' read -r num pr_info human_ts; do
-            line="$(jq -r --argjson num "$num" --arg pr_info "$pr_info" --arg human_ts "$human_ts" '.[] | select(.number == $num) | "\(.number): \(.title) [labels: \([.labels[].name] | join(","))] [created: \(.created_at)] [PR: \($pr_info)] [last-human-feedback:\($human_ts)] | \((.body // "" | gsub("[\\r\\n\\t]+"; " ") | .[0:300]))"' "$search_json")"
+            line="$(jq -r --arg num "$num" --arg pr_info "$pr_info" --arg human_ts "$human_ts" '.[] | select((.number | tostring) == $num) | "\(.number): \(.title) [labels: \([.labels[].name] | join(","))] [created: \(.created_at)] [PR: \($pr_info)] [last-human-feedback:\($human_ts)] | \((.body // "" | gsub("[\\r\\n\\t]+"; " ") | .[0:300]))"' "$search_json")"
             printf '%s\n' "$line" >> "$candidate_lines"
           done < "$enriched"
 
