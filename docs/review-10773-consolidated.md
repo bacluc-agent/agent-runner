@@ -24,32 +24,32 @@ This run closes the gap of the prior attempt (bacluc-agent/agent-todo#202), wher
 
 17 probes × 2 deployments, all status assertions PASS. Item counts drift vs the prior review because both deployments share test data that changes over time.
 
-| #   | Endpoint                                                         | PR status/count/message                                                                                | devel status/count/message |
-| --- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ | -------------------------- |
-| 1   | `/api/camps` (no filter)                                         | 400 / 0 / "Filter on campCollaborator or isPrototype is required."                                     | 200 / 9                    |
-| 2   | `/api/camps?campCollaborator=$USER`                              | 200 / 5                                                                                                | 200 / 7                    |
-| 3   | `/api/camps?isPrototype=false`                                   | 200 / 5                                                                                                | 200 / 7                    |
-| 4   | `/api/camps?campCollaborator=` (empty)                           | 400 / 0 / "No resource associated to \"\"."                                                            | 400 / 0 / same             |
-| 5   | `/api/periods` (no filter)                                       | 400 / 0 / "Filter on camp or campCollaborator is required."                                            | 200 / 11                   |
-| 6   | `/api/periods?camp=$CAMP`                                        | 200 / 1                                                                                                | 200 / 1                    |
-| 7   | `/api/activities` (no filter)                                    | 400 / 0 / "Filter on camp is required."                                                                | 200 / 143                  |
-| 8   | `/api/activities?camp=$CAMP`                                     | 200 / 18                                                                                               | 200 / 18                   |
-| 9   | `/api/content_types` (exempt `false`)                            | 200 / 11                                                                                               | 200 / 11                   |
-| 10  | `/api/camps/$CAMP/activities` (sub-resource uriVariables exempt) | 200 / 18                                                                                               | 200 / 18                   |
-| 11  | unauth `/api/camps`                                              | 401 / 0 / "JWT Token not found"                                                                        | 401 / 0 / same             |
-| 12  | `/api/periods?camp=` (empty value)                               | 200 / 0 — value-blind gate                                                                             | 200 / 0                    |
-| 13  | `/api/periods?camp[]=x` (array)                                  | 200 / 0 — value-blind gate                                                                             | 200 / 0                    |
-| 14  | `/api/camps?camp=` (unknown key)                                 | 400 / 0 / "Filter on campCollaborator or isPrototype is required." (key-based gate)                    | 200 / 9                    |
-| 15  | `/api/checklist_items?checklist.camp=$CAMP` (dotted)             | 200 / 0                                                                                                | 200 / 0                    |
-| 16  | `/api/checklist_items?checklist_camp=$CAMP` (underscore)         | 400 / 0 / "Filter on checklist or checklist.camp is required."                                         | 200 / 2282                 |
-| 17  | root GET `/api`                                                  | 200 — Entrypoint has no `_links` key; collection search IriTemplates mark all filters `required:false` | 200 — identical            |
+| #   | Endpoint                                                         | PR status/count/message                                                                                                                                                                                                                   | devel status/count/message |
+| --- | ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
+| 1   | `/api/camps` (no filter)                                         | 400 / 0 / "Filter on campCollaborator or isPrototype is required."                                                                                                                                                                        | 200 / 9                    |
+| 2   | `/api/camps?campCollaborator=$USER`                              | 200 / 5                                                                                                                                                                                                                                   | 200 / 7                    |
+| 3   | `/api/camps?isPrototype=false`                                   | 200 / 5                                                                                                                                                                                                                                   | 200 / 7                    |
+| 4   | `/api/camps?campCollaborator=` (empty)                           | 400 / 0 / "No resource associated to \"\"."                                                                                                                                                                                               | 400 / 0 / same             |
+| 5   | `/api/periods` (no filter)                                       | 400 / 0 / "Filter on camp or campCollaborator is required."                                                                                                                                                                               | 200 / 11                   |
+| 6   | `/api/periods?camp=$CAMP`                                        | 200 / 1                                                                                                                                                                                                                                   | 200 / 1                    |
+| 7   | `/api/activities` (no filter)                                    | 400 / 0 / "Filter on camp is required."                                                                                                                                                                                                   | 200 / 143                  |
+| 8   | `/api/activities?camp=$CAMP`                                     | 200 / 18                                                                                                                                                                                                                                  | 200 / 18                   |
+| 9   | `/api/content_types` (exempt `false`)                            | 200 / 11                                                                                                                                                                                                                                  | 200 / 11                   |
+| 10  | `/api/camps/$CAMP/activities` (sub-resource uriVariables exempt) | 200 / 18                                                                                                                                                                                                                                  | 200 / 18                   |
+| 11  | unauth `/api/camps`                                              | 401 / 0 / "JWT Token not found"                                                                                                                                                                                                           | 401 / 0 / same             |
+| 12  | `/api/periods?camp=` (empty value)                               | 200 / 0 — value-blind gate                                                                                                                                                                                                                | 200 / 0                    |
+| 13  | `/api/periods?camp[]=x` (array)                                  | 200 / 0 — value-blind gate                                                                                                                                                                                                                | 200 / 0                    |
+| 14  | `/api/camps?camp=` (unknown key)                                 | 400 / 0 / "Filter on campCollaborator or isPrototype is required." (key-based gate)                                                                                                                                                       | 200 / 9                    |
+| 15  | `/api/checklist_items?checklist.camp=$CAMP` (dotted)             | 200 / 0                                                                                                                                                                                                                                   | 200 / 0                    |
+| 16  | `/api/checklist_items?checklist_camp=$CAMP` (underscore)         | 400 / 0 / "Filter on checklist or checklist.camp is required."                                                                                                                                                                            | 200 / 2282                 |
+| 17  | root GET `/api`                                                  | 200 — with Accept: application/ld+json no `_links` key (with application/hal+json it has templated `_links` only); collection search IriTemplates mark all filters `required:false` — the API does not document required filters anywhere | 200 — identical            |
 
 ### Key interpretations
 
 - **Rows 12/13 — the gate is VALUE-BLIND.** It checks key presence only. Empty (`?camp=`) and array (`?camp[]=x`) values pass the gate but return 0 items — no data leak, but the gate does not validate that the filter value is meaningful.
 - **Row 14 — key-based gate.** An unknown key (`?camp=` on `/api/camps`) does not satisfy the required-filter check and yields 400.
 - **Row 16 — underscore-mangled behavior change.** The old provider on devel checked PHP-mangled query names (`checklist_camp`), so the literal underscore form silently bypassed the filter and returned **2282 unfiltered items**. The new provider parses the raw query string, so `?checklist_camp=` now 400s on PR while `?checklist.camp=` works. This is a real behavior improvement.
-- **Row 17 — the API does NOT document required filters anywhere.** The root Entrypoint has no `_links` key and all collection search IriTemplates mark filters `required:false`. This directly answers maintainer question (i) — see section 8.
+- **Row 17 — the API does NOT document required filters anywhere.** Root GET `/api` with Accept: application/ld+json has no `_links` key (with application/hal+json it has templated `_links` only) and all collection search IriTemplates mark filters `required:false`. This directly answers maintainer question (i) — see section 8.
 
 ## 3. Frontend testing with playwright-cli
 
@@ -90,7 +90,7 @@ Committed at `docs/review-10773-consolidated/screenshots/`:
 ![pr-camps-mobile](./screenshots/pr-camps-mobile.png)
 ![dev-camps-mobile](./screenshots/dev-camps-mobile.png)
 
-**The wizard-mobile pair is byte-identical (md5 42279ae6… both) — a GENUINE finding, not a test bug.** PR #10773 is backend-only, the wizard form component is untouched, and at 390×844 the dialog fills the viewport so no differing background is visible. The prior review's "invalid comparison" verdict was actually correct behavior.
+**The wizard-mobile pair is byte-identical (md5 42279ae6… both) — a GENUINE finding, not a test bug.** The wizard FORM components (CampCreateStep1/2.vue) are untouched and CampCreate.vue's change is URL-logic only, so at 390×844 the dialog fills the viewport and no differing background is visible. The prior review's "invalid comparison" verdict was actually correct behavior.
 
 **The camps-mobile pair DIFFERS** (a319de42… vs 68adaaa5…) — that comparison exercises the filtered API call and shows deployment-specific data, so it is the meaningful mobile comparison.
 
@@ -134,7 +134,7 @@ Committed at `docs/review-10773-consolidated/screenshots/`:
 
 ## 6. CRITICAL upstream finding — nuxtPrint e2e failure still latent
 
-Upstream mandatory CI run [https://github.com/ecamp/ecamp3/actions/runs/34902101092](https://github.com/ecamp/ecamp3/actions/runs/34902101092) = **FAILURE** (never re-run): `e2e/tests/9-behavior-tests/nuxtPrint.spec.ts:19` calls unfiltered `GET /api/camps.jsonhal` and expects `body._embedded.items` — the PR's 400 breaks it, and the test was NOT updated.
+Upstream mandatory CI run [https://github.com/ecamp/ecamp3/actions/runs/34902101092](https://github.com/ecamp/ecamp3/actions/runs/34902101092) = **FAILURE** (never re-run): `e2e/tests/9-behavior-tests/nuxtPrint.spec.ts:15` calls unfiltered `GET /api/camps.jsonhal` and line 19 expects `body._embedded.items` — the PR's 400 breaks it, and the test was NOT updated.
 
 The proven fix is adding `?isPrototype=false` (exactly what fork PR [bacluc-agent/ecamp3#14](https://github.com/bacluc-agent/ecamp3/pull/14) commit `2bb7db8d1` did; fork CI run [https://github.com/bacluc-agent/ecamp3/actions/runs/34940733452](https://github.com/bacluc-agent/ecamp3/actions/runs/34940733452) success).
 
@@ -166,6 +166,6 @@ Approval has already been given; both questions are effectively resolved.
 - [https://github.com/bacluc-agent/agent-runner/actions/runs/35392090076](https://github.com/bacluc-agent/agent-runner/actions/runs/35392090076) (this run)
 - [https://github.com/ecamp/ecamp3/actions/runs/34902101092](https://github.com/ecamp/ecamp3/actions/runs/34902101092) (upstream CI failure nuxtPrint)
 - [https://github.com/ecamp/ecamp3/actions/runs/34928405332](https://github.com/ecamp/ecamp3/actions/runs/34928405332) (deploy success)
-- [https://github.com/bacluc-agent/agent-runner/actions/runs/35009245570](https://github.com/bacluc-agent/agent-runner/actions/runs/35009245570) (prior evidence run)
+- [https://github.com/bacluc-agent/agent-runner/actions/runs/35009103759](https://github.com/bacluc-agent/agent-runner/actions/runs/35009103759) (prior evidence run)
 - [https://github.com/bacluc-agent/agent-runner/actions/runs/34937998570](https://github.com/bacluc-agent/agent-runner/actions/runs/34937998570) (prior first run)
 - [https://github.com/bacluc-agent/ecamp3/actions/runs/34940733452](https://github.com/bacluc-agent/ecamp3/actions/runs/34940733452) (fork CI success)
