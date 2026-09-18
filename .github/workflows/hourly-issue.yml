@@ -182,8 +182,8 @@ jobs:
           mkdir -p "$pr_lookup_dir"
           for repo in "${repo_list[@]}"; do
             key="$(echo "$repo" | tr '/' '_')"
-            gh pr list -R "$repo" --state open --limit 200 --json number,updatedAt,headRefName,title \
-              --jq '.[] | "\(.headRefName)|#\(.number)|\(.updatedAt)|\(.title)"' 2>/dev/null \
+            gh pr list -R "$repo" --state all --limit 200 --json number,updatedAt,headRefName,state,title \
+              --jq '.[] | "\(.headRefName)|#\(.number)|\(.updatedAt)|\(.state)|\(.title)"' 2>/dev/null \
               | sort -t'|' -k3 -r > "$pr_lookup_dir/$key.lookup" || true
           done
 
@@ -196,7 +196,12 @@ jobs:
               if [[ -n "$match" ]]; then
                 pr_number="$(echo "$match" | cut -d'|' -f2 | tr -d '#')"
                 pr_updated="$(echo "$match" | cut -d'|' -f3)"
-                pr_info="open #${pr_number} updated:${pr_updated}"
+                pr_state="$(echo "$match" | cut -d'|' -f4)"
+                case "$pr_state" in
+                  MERGED) pr_info="merged #${pr_number} updated:${pr_updated}" ;;
+                  CLOSED) pr_info="closed #${pr_number} updated:${pr_updated}" ;;
+                  *) pr_info="open #${pr_number} updated:${pr_updated}" ;;
+                esac
                 break
               fi
             done
@@ -222,7 +227,7 @@ jobs:
 
           prompt="$RUNNER_TEMP/selection-prompt.txt"
           {
-            printf '%s\n' 'Open issue candidates in this repository (number: title [labels] [created] [PR: none|open #<n> updated:<ts>] [last-human-feedback:<ts|none>] | body-excerpt), RANDOM ORDER — position carries no priority:'
+            printf '%s\n' 'Open issue candidates in this repository (number: title [labels] [created] [PR: none|open|merged|closed #<n> updated:<ts>] [last-human-feedback:<ts|none>] | body-excerpt), RANDOM ORDER — position carries no priority:'
             cat "$candidate_lines" | shuf
             printf '%s\n' "Recently selected — avoid: ${recent_issues}"
             printf '%s\n' "$tail_instruction"
