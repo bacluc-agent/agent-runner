@@ -63,6 +63,7 @@ jobs:
           SELECTION_PROMPT: ${{ inputs.selection_prompt }}
           AVAILABLE_MODELS: ${{ steps.model-availability.outputs.available-models }}
           OPENCODE_FATAL_STAGE: selection
+          GH_REPO: ${{ vars.ISSUE_REPOSITORY || github.repository }}
         run: |
           set -Eeuo pipefail
           rm -f "$RUNNER_TEMP/opencode-fatal.json"

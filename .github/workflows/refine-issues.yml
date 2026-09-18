@@ -42,6 +42,7 @@ jobs:
         shell: bash
         env:
           AVAILABLE_MODELS: ${{ steps.model-availability.outputs.available-models }}
+          GH_REPO: ${{ vars.ISSUE_REPOSITORY || github.repository }}
         run: |
           set -Eeuo pipefail
 
