@@ -155,6 +155,9 @@ jobs:
               pr_json="$(gh pr list -R "$ISSUE_REPOSITORY" --state open --head "issue-$num" --json number,updatedAt,headRefName 2>/dev/null || echo '[]')"
             fi
             if [[ "$(echo "$pr_json" | jq 'length')" -eq 0 ]]; then
+              pr_json="$(gh pr list -R bacluc/provision-machines --state open --head "issue-$num" --json number,updatedAt,headRefName 2>/dev/null || echo '[]')"
+            fi
+            if [[ "$(echo "$pr_json" | jq 'length')" -eq 0 ]]; then
               pr_info="none"
             else
               pr_number="$(echo "$pr_json" | jq -r '.[0].number')"
