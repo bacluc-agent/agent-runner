@@ -38,13 +38,16 @@ GITHUB_ISSUE_BODY_LIMIT = 65536
 
 
 def run_gh(*args: str) -> str:
-    repo = os.environ.get("ISSUE_REPOSITORY", "").strip()
-    gh_args = ["gh", *(["-R", repo] if repo else []), *args]
-    return subprocess.run(gh_args, check=True, capture_output=True, text=True).stdout
+    return subprocess.run(["gh", *args], check=True, capture_output=True, text=True).stdout
 
 
 def issue_repo() -> str:
     return os.environ.get("ISSUE_REPOSITORY", "")
+
+
+def repo_flag() -> list[str]:
+    repo = issue_repo().strip()
+    return ["-R", repo] if repo else []
 
 
 def resolve_cache_issue() -> str | None:
@@ -68,7 +71,7 @@ def resolve_cache_issue() -> str | None:
 def read_cache(cache_issue: str) -> dict:
     try:
         body = run_gh(
-            "issue", "view", str(cache_issue), "--json", "body", "--jq", ".body"
+            "issue", "view", str(cache_issue), *repo_flag(), "--json", "body", "--jq", ".body"
         )
         cache = json.loads(body)
         return cache if isinstance(cache, dict) else {}
@@ -86,7 +89,7 @@ def write_cache(cache_issue: str, cache: dict) -> None:
         )
         return
     try:
-        run_gh("issue", "edit", str(cache_issue), "--body", body)
+        run_gh("issue", "edit", str(cache_issue), *repo_flag(), "--body", body)
     except Exception as e:
         print(f"warning: failed to write cache issue {cache_issue}: {e}", file=sys.stderr)
 
