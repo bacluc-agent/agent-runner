@@ -837,6 +837,7 @@ class TestReadCache:
 
 class TestWriteCache:
     def test_writes_issue_body(self, monkeypatch):
+        monkeypatch.delenv("ISSUE_REPOSITORY", raising=False)
         calls = []
 
         def fake_run_gh(*args):
@@ -995,8 +996,8 @@ class TestDiscoverModelsLogging:
         assert log.read_text() == "opencode/a-free\nopencode/big-pickle\n"
 
 
-class TestRunGhRepoInjection:
-    def test_injects_repo_when_set(self, monkeypatch):
+class TestRunGhRepoFlag:
+    def test_run_gh_passes_args_through(self, monkeypatch):
         monkeypatch.setenv("ISSUE_REPOSITORY", "bacluc-agent/agent-todo")
         captured = {}
 
@@ -1006,20 +1007,61 @@ class TestRunGhRepoInjection:
 
         monkeypatch.setattr(model_availability.subprocess, "run", fake_run)
         model_availability.run_gh("issue", "view", "49")
-        assert captured["args"][:3] == ["gh", "-R", "bacluc-agent/agent-todo"]
-        assert captured["args"][3:] == ["issue", "view", "49"]
+        assert captured["args"] == ["gh", "issue", "view", "49"]
 
-    def test_no_repo_when_unset(self, monkeypatch):
-        monkeypatch.delenv("ISSUE_REPOSITORY", raising=False)
+    def test_read_cache_passes_repo_flag_after_subcommand(self, monkeypatch):
+        monkeypatch.setenv("ISSUE_REPOSITORY", "bacluc-agent/agent-todo")
         captured = {}
 
-        def fake_run(args, *a, **kw):
+        def fake_run_gh(*args):
             captured["args"] = args
-            return types.SimpleNamespace(stdout="")
+            return "{}"
 
-        monkeypatch.setattr(model_availability.subprocess, "run", fake_run)
-        model_availability.run_gh("issue", "view", "49")
-        assert captured["args"] == ["gh", "issue", "view", "49"]
+        monkeypatch.setattr(model_availability, "run_gh", fake_run_gh)
+        model_availability.read_cache("49")
+        assert captured["args"] == (
+            "issue",
+            "view",
+            "49",
+            "-R",
+            "bacluc-agent/agent-todo",
+            "--json",
+            "body",
+            "--jq",
+            ".body",
+        )
+
+    def test_write_cache_passes_repo_flag_after_subcommand(self, monkeypatch):
+        monkeypatch.setenv("ISSUE_REPOSITORY", "bacluc-agent/agent-todo")
+        captured = {}
+
+        def fake_run_gh(*args):
+            captured["args"] = args
+
+        monkeypatch.setattr(model_availability, "run_gh", fake_run_gh)
+        model_availability.write_cache("49", {"a": 1})
+        assert captured["args"] == (
+            "issue",
+            "edit",
+            "49",
+            "-R",
+            "bacluc-agent/agent-todo",
+            "--body",
+            '{"a": 1}',
+        )
+
+    def test_no_repo_flag_when_unset(self, monkeypatch):
+        monkeypatch.delenv("ISSUE_REPOSITORY", raising=False)
+        captured = []
+
+        def fake_run_gh(*args):
+            captured.append(args)
+            return "{}"
+
+        monkeypatch.setattr(model_availability, "run_gh", fake_run_gh)
+        model_availability.read_cache("49")
+        model_availability.write_cache("49", {"a": 1})
+        assert all("-R" not in args for args in captured)
 
 
 class TestOpencodeWhitelist:
