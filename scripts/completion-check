@@ -11,6 +11,18 @@ ACTIONLINT_VERSION=1.7.12
 mount=(-v "$PWD:/workspace" -w /workspace)
 status=0
 
+# The prettier check must not cover nested git checkouts in the workspace
+# (e.g. cloned target repositories): they have their own formatting rules
+# and toolchain. git lists such checkouts as a single untracked "<dir>/"
+# entry, while regular untracked files of this repository stay checked.
+prettier_ignore=".prettierignore.completion-check"
+trap 'rm -f "$prettier_ignore"' EXIT
+cat .gitignore .prettierignore 2>/dev/null >"$prettier_ignore" || true
+printf '%s\n' "$prettier_ignore" >>"$prettier_ignore"
+while IFS= read -r entry; do
+  if [[ -e "${entry%/}/.git" ]]; then printf '%s\n' "${entry%/}/"; fi
+done < <(git ls-files --others --exclude-standard) >>"$prettier_ignore"
+
 check() {
   local name="$1"
   shift
@@ -23,7 +35,7 @@ check() {
   fi
 }
 
-check 'formatting (prettier --check .)' docker run --rm "${mount[@]}" "ghcr.io/bacluc/prettier-image/prettier-image:${PRETTIER_VERSION}" --check .
+check 'formatting (prettier --check .)' docker run --rm "${mount[@]}" "ghcr.io/bacluc/prettier-image/prettier-image:${PRETTIER_VERSION}" --ignore-path "$prettier_ignore" --check .
 check 'actionlint (workflows + used actions)' docker run --rm "${mount[@]}" "rhysd/actionlint:${ACTIONLINT_VERSION}" -color
 check 'opencode plugin tests (node --test)' node --test ".opencode/plugin/*.test.mjs"
 if command -v uv >/dev/null 2>&1; then
