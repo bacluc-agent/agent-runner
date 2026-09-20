@@ -1,0 +1,17 @@
+name: Verify Checksums Issue 72
+
+on:
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: bacluc/provision-machines
+          ref: issue-72
+      - name: Verify uv checksum
+        run: |
+          curl -fsSL -o /tmp/uv.tar.gz "https://releases.astral.sh/github/uv/releases/download/0.12.5/uv-x86_64-unknown-linux-gnu.tar.gz"
+          echo "b65f23a420c4acc96427efb30e5ed9bc0f7e25d2d712000f6ede77c1a0de5f46  /tmp/uv.tar.gz" | sha256sum -c -
