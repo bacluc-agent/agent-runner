@@ -25,6 +25,22 @@ def compute_metrics(
     }
 
 
+def load_artifact(path: str = "loop-metrics.json") -> dict | None:
+    """Load the artifact written by the opencode tool (camelCase) as snake_case metrics."""
+    try:
+        with open(path) as f:
+            raw = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return None
+    return {
+        "step_count": raw["steps"],
+        "token_cost_per_step": raw["tokenCostPerStep"],
+        "convergence_rate": raw["convergenceRate"],
+        "failure_mode": raw["failureMode"],
+        "terminated_at": raw["terminatedAt"],
+    }
+
+
 def emit_metrics(
     metrics: dict,
     summary_path: str | None = None,
@@ -53,15 +69,9 @@ def emit_metrics(
 
 
 def main() -> int:
-    # Default invocation for workflow step: emit with sensible defaults.
-    artifact_file = "loop-metrics.json"
-    if os.path.exists(artifact_file):
-        # The agent's tool invocation already appended the summary table and
-        # wrote the artifact; only surface the metrics as a step output.
-        with open(artifact_file) as f:
-            metrics = json.load(f)
-        print(f"Metrics read from artifact: {json.dumps(metrics)}")
-    else:
+    # Prefer the artifact written by the opencode tool during the run; fall back to env defaults.
+    metrics = load_artifact()
+    if metrics is None:
         steps = int(os.environ.get("LOOP_STEPS", "0"))
         progress_delta = float(os.environ.get("LOOP_PROGRESS_DELTA", "1"))
         failure_mode = os.environ.get("LOOP_FAILURE_MODE", "unknown")
@@ -69,10 +79,11 @@ def main() -> int:
         token_estimate_f = float(token_estimate) if token_estimate else None
 
         metrics = compute_metrics(steps, progress_delta, failure_mode, token_estimate_f)
-        result = emit_metrics(metrics)
-        print(f"Metrics emitted: {json.dumps(metrics)}")
-        print(f"Summary: {result['summary']}")
-        print(f"Artifact: {result['artifact']}")
+
+    result = emit_metrics(metrics)
+    print(f"Metrics emitted: {json.dumps(metrics)}")
+    print(f"Summary: {result['summary']}")
+    print(f"Artifact: {result['artifact']}")
     # Write step output for GitHub Actions
     if "GITHUB_OUTPUT" in os.environ:
         with open(os.environ["GITHUB_OUTPUT"], "a") as f:
