@@ -21,6 +21,14 @@ ALL CHANGED CODE PATHS HAVE TO BE COVERED BY THE LINKED ACTION RUNS.
 ./scripts/completion-check
 ```
 
+## ACI edit tools
+
+When working in this repo, prefer the project tools in `.opencode/tool/`:
+
+- `edit_file` for targeted search/replace edits instead of rewriting whole files.
+- `navigate_repo` to list tracked files before opening individual files.
+- `run_tests` to run the test command and close the edit loop.
+
 ## Renovate
 
 Renovate must be able to update all dependencies.
