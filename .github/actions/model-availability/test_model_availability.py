@@ -795,6 +795,26 @@ class TestResolveCacheIssue:
             )
         ]
 
+    def test_auto_detect_when_env_empty_string(self, monkeypatch):
+        monkeypatch.setenv("MODEL_AVAILABILITY_CACHE_ISSUE", "")
+        monkeypatch.setenv("ISSUE_REPOSITORY", "bacluc-agent/agent-todo")
+        calls = []
+
+        def fake_run_gh(*args):
+            calls.append(args)
+            return "3\n"
+
+        monkeypatch.setattr(model_availability, "run_gh", fake_run_gh)
+        assert model_availability.resolve_cache_issue() == "3"
+        assert calls == [
+            (
+                "api",
+                "search/issues?q=repo:bacluc-agent/agent-todo+is:issue+in:title+%22model-discovery+cache%22",
+                "--jq",
+                ".items[0].number // empty",
+            )
+        ]
+
     def test_no_repo_returns_none(self, monkeypatch, capsys):
         monkeypatch.delenv("MODEL_AVAILABILITY_CACHE_ISSUE", raising=False)
         monkeypatch.delenv("ISSUE_REPOSITORY", raising=False)
