@@ -17,6 +17,8 @@ export function computeMetrics(
 ): LoopMetrics {
   // ponytail: token cost estimated from model-discovery output or plumbed from context; upgrade when real token usage API available
   const tokenCostPerStep = tokenEstimate ?? Math.max(0.001, steps * 0.0005);
+  // convergenceRate = steps / progressDelta when progressDelta > 0, else steps (unbounded;
+  // deviation from the issue's 0-1 `1 - step_count/max_steps` formula, documented in the PR description).
   const convergenceRate = progressDelta > 0 ? steps / progressDelta : steps;
   return {
     steps,
@@ -62,7 +64,7 @@ export default tool({
       .min(0)
       .describe("Progress delta for convergence rate"),
     failureMode: tool.schema
-      .string()
+      .enum(["success", "max-steps", "error", "timeout", "unknown"])
       .optional()
       .describe("Failure mode: success, max-steps, error, timeout, unknown"),
     tokenEstimate: tool.schema

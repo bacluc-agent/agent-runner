@@ -62,6 +62,11 @@ class TestLoadArtifact:
     def test_returns_none_when_artifact_missing(self, tmp_path):
         assert loop_metrics.load_artifact(str(tmp_path / "missing.json")) is None
 
+    def test_returns_none_when_artifact_wrong_shape(self, tmp_path):
+        artifact_path = tmp_path / "loop-metrics.json"
+        artifact_path.write_text(json.dumps({"steps": 12}))
+        assert loop_metrics.load_artifact(str(artifact_path)) is None
+
 
 class TestMain:
     def test_reads_artifact_and_emits_snake_case_metrics(self, tmp_path, monkeypatch):
