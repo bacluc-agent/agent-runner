@@ -103,6 +103,36 @@ idea (issue in agent-todo)
 - `issue-selection-tail.txt` — the default selection instructions appended to
   the issue-selector prompt.
 
+## GitHub CLI PR destination guard
+
+`setup-opencode` installs a Python-stdlib `gh` wrapper in
+`$RUNNER_TEMP/gh-guard` before starting OpenCode. `GITHUB_PATH` makes it apply
+to subsequent steps and child shells, including work in other checkouts.
+The installer saves the real CLI's absolute path before changing PATH.
+
+- `gh pr create` and `gh pr new` require exactly one explicit `-R`/`--repo`
+  targeting `BacLuc` or `bacluc-agent` (case-insensitive) on github.com.
+  For outsider repositories, create the fork and a branch representing upstream
+  main, then open the PR with `-R bacluc-agent/<repo>` against that branch.
+- REST PR creation is checked too, including implicit POST via fields or
+  `--input`. Ambiguous options, noncanonical paths and routing overrides fail
+  closed. Ordinary REST reads, issue comments, PATCH, forks and dispatches remain
+  available; accepted calls preserve arguments, stdin, output and exit status.
+- Direct `gh api graphql`, configured alias execution, alias management and
+  extension commands are denied. Use builtin CLI commands or canonical REST
+  endpoints instead. Unknown builtin commands/options on guarded routes require
+  review before adding support; this is not a complete CLI parser.
+
+This is an accidental-misrouting guardrail, **not a sandbox or universal PR
+prevention**. An absolute executable path, direct HTTP, changing PATH or changing
+the wrapper can bypass it. CLI builtin commands may internally use GraphQL;
+only direct `gh api graphql` is denied.
+
+Regression tests use a fake backend and never create forbidden PRs. Run
+`python3 -m unittest discover -s scripts -p test_gh_guard.py` locally. The
+dispatchable CI workflow also runs the actual setup composite with a fake backend
+and verifies forwarding and historical denial in a later step outside the checkout.
+
 ## Repository variables
 
 Set these in Settings → Secrets and variables → Actions → Variables:

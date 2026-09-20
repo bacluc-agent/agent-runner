@@ -6,6 +6,10 @@ description: >-
 runs:
   using: composite
   steps:
+    - name: Install GitHub CLI PR destination guard
+      shell: bash
+      run: bash "$GITHUB_ACTION_PATH/../../../scripts/install-gh-guard.sh"
+
     - name: Install OpenCode
       shell: bash
       run: npm install --global opencode-ai@1.18.29
