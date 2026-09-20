@@ -7,6 +7,8 @@ export function terminateLoop(
   failureMode:
     "success" | "max-steps" | "error" | "timeout" | "unknown" = "unknown",
   tokenEstimate?: number,
+  summaryPath?: string,
+  artifactPath?: string,
 ): string {
   const metrics = computeMetrics(
     steps,
@@ -14,6 +16,6 @@ export function terminateLoop(
     failureMode,
     tokenEstimate,
   );
-  const result = emitMetrics(metrics);
+  const result = emitMetrics(metrics, summaryPath, artifactPath);
   return result.summary;
 }
