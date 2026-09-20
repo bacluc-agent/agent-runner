@@ -226,11 +226,22 @@ jobs:
                 model="$fallback_model"
               fi
             fi
-          else
-            printf 'Model selection: preserving explicit model input: %q\n' "$requested"
-          fi
+            else
+              printf 'Model selection: preserving explicit model input: %q\n' "$requested"
+            fi
 
-          resolve_model() {
+            # ponytail: heuristic classification ceiling — simple keyword match; upgrade to larger model for reasoning-heavy tasks (e.g. run 35415994991). No ML classifier to keep diff minimal.
+            reasoning_heavy=0
+            if printf '%s' "${PROMPT:-}" | grep -qiE 'reasoning|complex|heavy|improve.*model|model.*selection|discover.*model|select.*model'; then reasoning_heavy=1; fi
+            if [[ "$reasoning_heavy" -eq 1 ]]; then
+              preferred_large='openrouter/thinkingmachines/inkling:free'
+              if grep -Fxq "$preferred_large" "$available_models_file"; then
+                printf 'Heuristic: reasoning-heavy prompt detected; upgrading to larger model %q.\n' "$preferred_large"
+                model="$preferred_large"
+              fi
+            fi
+
+            resolve_model() {
             python3 - "$1" "$available_models_file" <<'PY'
           import re
           import sys
@@ -350,6 +361,7 @@ jobs:
         shell: bash
         env:
           MODEL: ${{ steps.select-model.outputs.model }}
+          OPENCODE_MODEL: ${{ steps.select-model.outputs.model }}
           COORDINATOR_TIMEOUT: ${{ inputs.timeout_minutes || 120 }}
           GITHUB_TOKEN: ${{ secrets.BACLUC_AGENT_GITHUB_TOKEN }}
           BACLUC_AGENT_GITHUB_TOKEN: ${{ secrets.BACLUC_AGENT_GITHUB_TOKEN }}
