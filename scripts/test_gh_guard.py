@@ -116,6 +116,30 @@ class GuardTest(unittest.TestCase):
         self.call(["api", "graphql", "-XGET"], False)
         self.call(["api", "repos/BacLuc/r/pulls", "-f", "body=--hostname=evil.com", "--hostname=github.com"])
 
+    def test_revert(self):
+        for argv in (
+            ["pr", "revert", "123", "-R", "ecamp/ecamp3", "--title", "Revert change", "--body", "Revert change"],
+            ["pr", "-R", "ecamp/ecamp3", "revert", "123"],
+            ["pr", "--repo=ecamp/ecamp3", "revert", "123"],
+            ["pr", "revert", "https://github.com/ecamp/ecamp3/pull/123"],
+            ["pr", "revert", "123"],
+            ["pr", "revert", "123", "-R", "BacLuc/r", "-R", "ecamp/ecamp3"],
+            ["pr", "revert", "-R", "BacLuc/r"],
+            ["pr", "revert", "--help"],
+            ["pr", "revert", "123", "-R", "BacLuc/r", "--unknown"],
+            ["api", "repos/ecamp/ecamp3/pulls/123/reverts", "-XPOST"],
+            ["api", "repos/ecamp/ecamp3/pulls/123/reverts", "-f", "title=test"],
+        ):
+            self.call(argv, False)
+        for argv in (
+            ["pr", "revert", "123", "-R", "BaClUc-AgEnT/r", "--title", "Revert change", "--body", "Revert change"],
+            ["pr", "revert", "https://github.com/BacLuc/r/pull/123"],
+            ["pr", "-R", "BacLuc/r", "revert", "123"],
+            ["api", "repos/BacLuc/r/pulls/123/reverts", "-XPOST"],
+            ["api", "repos/ecamp/ecamp3/pulls/123/reverts", "-XGET"],
+        ):
+            self.call(argv)
+
     def test_other_calls_and_aliases(self):
         for argv in (["issue", "comment", "234", "-R", "outsider/r", "--body", "pr create"],
                      ["pr", "view", "10800", "-R", "ecamp/ecamp3"], ["search", "issues", "test"],
