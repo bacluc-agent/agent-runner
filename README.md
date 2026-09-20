@@ -143,9 +143,10 @@ every pull request.
 The `/completion-check-command` declaration (see `AGENTS.md`) is read
 automatically by the `bacluc-opencode-completion-check-command` plugin; the
 agent does not need to invoke it manually. The plugin also supports an
-alternative source: `~/.claude/settings.json` with a `hooks.Stop` array
+alternative source: Claude `hooks.Stop` entries in `.claude/settings.local.json`,
+`.claude/settings.json` or `~/.claude/settings.json`
 (`{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"..."}]}]}}`);
-the plugin tries `.agents/.completion-check-command` → `.opencode/.completion-check-command` → `~/.claude/settings.json` `hooks.Stop` → `AGENTS.md`.
+the plugin tries `.agents/.completion-check-command` → `.opencode/.completion-check-command` → `AGENTS.md` → Claude hooks (last fallback).
 
 ## Examples: from idea to merged change
 

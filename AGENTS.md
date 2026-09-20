@@ -22,7 +22,7 @@ AUTOMATIC CI (`ci.yml` in `bacluc-agent/agent-runner`, which runs `./scripts/com
 ./scripts/completion-check
 ```
 
-The `/completion-check-command` block above is the declaration the plugin reads automatically (agent need not invoke it). The `bacluc-opencode-completion-check-command` plugin also supports an alternative source: `~/.claude/settings.json` with a `hooks.Stop` array containing a `command` entry. Both sources work; the plugin tries `.agents/.completion-check-command` → `.opencode/.completion-check-command` → `~/.claude/settings.json` `hooks.Stop` → `AGENTS.md`.
+The `/completion-check-command` block above is the declaration the plugin reads automatically (agent need not invoke it). The `bacluc-opencode-completion-check-command` plugin also supports an alternative source: Claude `hooks.Stop` entries in `.claude/settings.local.json`, `.claude/settings.json` or `~/.claude/settings.json` (a `hooks.Stop` array containing `type: "command"` entries). Both sources work; the plugin tries `.agents/.completion-check-command` → `.opencode/.completion-check-command` → `AGENTS.md` → Claude hooks (last fallback).
 
 ## ACI edit tools
 
