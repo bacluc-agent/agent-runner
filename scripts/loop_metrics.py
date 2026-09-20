@@ -15,6 +15,8 @@ def compute_metrics(
     # ponytail: token cost estimated from model-discovery output or plumbed from context;
     # upgrade when real token usage API available.
     token_cost_per_step = token_estimate if token_estimate is not None else max(0.001, steps * 0.0005)
+    # convergence_rate = steps / progress_delta when progress_delta > 0, else steps (unbounded;
+    # deviation from the issue's 0-1 `1 - step_count/max_steps` formula, documented in the PR description).
     convergence_rate = steps / progress_delta if progress_delta > 0 else steps
     return {
         "step_count": steps,
@@ -30,15 +32,15 @@ def load_artifact(path: str = "loop-metrics.json") -> dict | None:
     try:
         with open(path) as f:
             raw = json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
+        return {
+            "step_count": raw["steps"],
+            "token_cost_per_step": raw["tokenCostPerStep"],
+            "convergence_rate": raw["convergenceRate"],
+            "failure_mode": raw["failureMode"],
+            "terminated_at": raw["terminatedAt"],
+        }
+    except (FileNotFoundError, json.JSONDecodeError, KeyError):
         return None
-    return {
-        "step_count": raw["steps"],
-        "token_cost_per_step": raw["tokenCostPerStep"],
-        "convergence_rate": raw["convergenceRate"],
-        "failure_mode": raw["failureMode"],
-        "terminated_at": raw["terminatedAt"],
-    }
 
 
 def emit_metrics(
