@@ -57,6 +57,9 @@ def validate_pr(args):
             prefix.append(value)
     if not args or args[0].startswith("-"):
         deny("use gh pr SUBCOMMAND followed by options")
+    if args[0] == "revert":
+        validate_revert(prefix, args)
+        return
     if args[0] not in {"create", "new"}:
         return
     values = {key: "repo" for key in ("-R", "--repo")}
@@ -72,6 +75,26 @@ def validate_pr(args):
     if positional or len(parsed.get("repo", [])) != 1:
         deny("PR creation requires exactly one explicit -R/--repo destination")
     owned_repo(parsed["repo"][0])
+
+
+def validate_revert(prefix, args):
+    values = {key: "repo" for key in ("-R", "--repo")}
+    values.update({key: key for key in ("-b", "--body", "-F", "--body-file", "-t", "--title")})
+    positional, parsed = options(prefix + args[1:], values, {"-d", "--draft", "--help"})
+    if len(positional) != 1:
+        deny("PR revert requires exactly one PR number or github.com PR URL")
+    repos = parsed.get("repo", [])
+    if len(repos) > 1:
+        deny("PR revert requires exactly one explicit -R/--repo destination")
+    selector = positional[0]
+    match = re.fullmatch(r"https?://github\.com/([^/]+/[^/]+)/pull/[0-9]+", selector, flags=re.IGNORECASE)
+    url_repo = match.group(1) if match else None
+    if repos:
+        owned_repo(repos[0])
+    if url_repo:
+        owned_repo(url_repo)
+    if not repos and not url_repo:
+        deny("PR revert requires an explicit -R/--repo destination or a github.com PR URL")
 
 
 def validate_api(args):
@@ -117,6 +140,10 @@ def validate_api(args):
         if parts[-1].lower() == "pulls":
             if len(parts) != 4 or parts[0] != "repos" or parts[3] != "pulls":
                 deny("PR creation requires the canonical repos/OWNER/REPO/pulls endpoint")
+            owned_repo("/".join(parts[1:3]))
+        elif parts[-1].lower() == "reverts":
+            if len(parts) != 6 or parts[0] != "repos" or parts[3].lower() != "pulls":
+                deny("PR revert requires the canonical repos/OWNER/REPO/pulls/N/reverts endpoint")
             owned_repo("/".join(parts[1:3]))
 
 
