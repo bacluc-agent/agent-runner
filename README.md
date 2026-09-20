@@ -114,6 +114,10 @@ The installer saves the real CLI's absolute path before changing PATH.
   targeting `BacLuc` or `bacluc-agent` (case-insensitive) on github.com.
   For outsider repositories, create the fork and a branch representing upstream
   main, then open the PR with `-R bacluc-agent/<repo>` against that branch.
+- `gh pr revert` requires exactly one PR number or github.com PR URL and an
+  explicit `-R`/`--repo` (or a URL selector) targeting `BacLuc` or
+  `bacluc-agent`; implicit destinations fail closed. The REST revert endpoint
+  `repos/OWNER/REPO/pulls/N/reverts` is checked the same way.
 - REST PR creation is checked too, including implicit POST via fields or
   `--input`. Ambiguous options, noncanonical paths and routing overrides fail
   closed. Ordinary REST reads, issue comments, PATCH, forks and dispatches remain
