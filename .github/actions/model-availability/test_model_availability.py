@@ -398,6 +398,9 @@ class TestParseWhitelistedModels:
             "openai/gpt-5.6-sol-fast\n"
             "openai/gpt-5.6-terra\n"
             "openai/gpt-5.6-terra-fast\n"
+            "openai/gpt-6-astra\n"
+            "openai/gpt-6\n"
+            "openai/gpt-6-astra-fast\n"
             "opencode/gpt-5.6-luna-preview\n"
             "opencode/ling-3.0-flash-fin-free\n"
         )
