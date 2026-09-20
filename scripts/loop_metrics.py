@@ -52,20 +52,33 @@ def emit_metrics(
     return {"summary": table, "artifact": artifact_file}
 
 
-if __name__ == "__main__":
+def main() -> int:
     # Default invocation for workflow step: emit with sensible defaults.
-    steps = int(os.environ.get("LOOP_STEPS", "0"))
-    progress_delta = float(os.environ.get("LOOP_PROGRESS_DELTA", "1"))
-    failure_mode = os.environ.get("LOOP_FAILURE_MODE", "unknown")
-    token_estimate = os.environ.get("LOOP_TOKEN_ESTIMATE")
-    token_estimate_f = float(token_estimate) if token_estimate else None
+    artifact_file = "loop-metrics.json"
+    if os.path.exists(artifact_file):
+        # The agent's tool invocation already appended the summary table and
+        # wrote the artifact; only surface the metrics as a step output.
+        with open(artifact_file) as f:
+            metrics = json.load(f)
+        print(f"Metrics read from artifact: {json.dumps(metrics)}")
+    else:
+        steps = int(os.environ.get("LOOP_STEPS", "0"))
+        progress_delta = float(os.environ.get("LOOP_PROGRESS_DELTA", "1"))
+        failure_mode = os.environ.get("LOOP_FAILURE_MODE", "unknown")
+        token_estimate = os.environ.get("LOOP_TOKEN_ESTIMATE")
+        token_estimate_f = float(token_estimate) if token_estimate else None
 
-    metrics = compute_metrics(steps, progress_delta, failure_mode, token_estimate_f)
-    result = emit_metrics(metrics)
-    print(f"Metrics emitted: {json.dumps(metrics)}")
-    print(f"Summary: {result['summary']}")
-    print(f"Artifact: {result['artifact']}")
+        metrics = compute_metrics(steps, progress_delta, failure_mode, token_estimate_f)
+        result = emit_metrics(metrics)
+        print(f"Metrics emitted: {json.dumps(metrics)}")
+        print(f"Summary: {result['summary']}")
+        print(f"Artifact: {result['artifact']}")
     # Write step output for GitHub Actions
     if "GITHUB_OUTPUT" in os.environ:
         with open(os.environ["GITHUB_OUTPUT"], "a") as f:
             f.write(f"metrics={json.dumps(metrics)}\n")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

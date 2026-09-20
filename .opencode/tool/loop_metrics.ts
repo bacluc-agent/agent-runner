@@ -69,6 +69,18 @@ export default tool({
       .number()
       .optional()
       .describe("Estimated token cost per step"),
+    summaryPath: tool.schema
+      .string()
+      .optional()
+      .describe(
+        "Path to append the summary table to (defaults to GITHUB_STEP_SUMMARY)",
+      ),
+    artifactPath: tool.schema
+      .string()
+      .optional()
+      .describe(
+        "Path to write the metrics JSON artifact to (defaults to loop-metrics.json)",
+      ),
   },
   async execute(args, context) {
     const mode = (args.failureMode as LoopMetrics["failureMode"]) ?? "unknown";
@@ -78,7 +90,7 @@ export default tool({
       mode,
       args.tokenEstimate,
     );
-    const result = emitMetrics(metrics);
+    const result = emitMetrics(metrics, args.summaryPath, args.artifactPath);
     return `Metrics emitted: ${JSON.stringify(metrics)}\nSummary: ${result.summary}\nArtifact: ${result.artifact}`;
   },
 });

@@ -42,11 +42,22 @@ test("tool execute returns metrics string", async () => {
       progressDelta: 1,
       failureMode: "max-steps",
       tokenEstimate: 0.01,
+      summaryPath: join(ctx.worktree, "summary.md"),
+      artifactPath: join(ctx.worktree, "metrics.json"),
     },
     ctx,
   );
   assert.ok(typeof res === "string");
   assert.ok(res.includes("max-steps"));
-  assert.ok(res.includes("loop-metrics.json"));
+  assert.ok(res.includes("metrics.json"));
+  assert.ok(
+    readFileSync(join(ctx.worktree, "summary.md"), "utf8").includes(
+      "max-steps",
+    ),
+  );
+  assert.equal(
+    JSON.parse(readFileSync(join(ctx.worktree, "metrics.json"), "utf8")).steps,
+    5,
+  );
   rmSync(ctx.worktree, { recursive: true, force: true });
 });
