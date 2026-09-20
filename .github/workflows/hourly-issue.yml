@@ -236,10 +236,28 @@ jobs:
 
           selection="$RUNNER_TEMP/selection.out"
           set +e
-          timeout 10m opencode run --agent issue-selector --model "$selection_model" --title "issue-selector" "$(< "$prompt")" 2> >(tee "${selection}.stderr" >&2) | tee "$selection"
-          selection_statuses=("${PIPESTATUS[@]}")
+          run_selector() {
+            timeout 10m opencode run --agent issue-selector --model "$1" --title "issue-selector" "$(< "$prompt")" 2> >(tee "${selection}.stderr" >&2) | tee "$selection"
+            selection_statuses=("${PIPESTATUS[@]}")
+          }
+          run_selector "$selection_model"
           selection_status=${selection_statuses[0]}
           selection_tee_status=${selection_statuses[1]}
+          if (( selection_status == 124 )); then
+            # Selector timed out (re-verification loop, see agent-todo#233): retry once with a
+            # stronger model. Free models like opencode/big-pickle loop on this reasoning-heavy task.
+            escalation_model=''
+            for candidate in 'openai/gpt-5.6-luna' 'opencode-go-openai/gpt-5.6-luna' 'opencode-go-openai/glm-5.3' 'opencode-go-openai/qwen3.8-max'; do
+              if grep -Fxq "$candidate" "$available_models_file"; then escalation_model="$candidate"; break; fi
+            done
+            if [[ -n "$escalation_model" && "$escalation_model" != "$selection_model" ]]; then
+              printf 'Selector timed out with %s; retrying once with %s\n' "$selection_model" "$escalation_model" >&2
+              : > "$selection"
+              run_selector "$escalation_model"
+              selection_status=${selection_statuses[0]}
+              selection_tee_status=${selection_statuses[1]}
+            fi
+          fi
           set -e
           printf 'Model selection statuses: opencode=%s tee=%s\n' "$selection_status" "$selection_tee_status"
           if (( selection_tee_status != 0 )); then
