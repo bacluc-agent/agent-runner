@@ -38,27 +38,61 @@ class TestEmitMetrics:
             assert json.load(f)["step_count"] == 3
 
 
+class TestLoadArtifact:
+    def test_maps_camel_case_artifact_to_snake_case(self, tmp_path):
+        artifact_path = tmp_path / "loop-metrics.json"
+        artifact_path.write_text(
+            json.dumps(
+                {
+                    "steps": 12,
+                    "tokenCostPerStep": 0.042,
+                    "convergenceRate": 6,
+                    "failureMode": "max-steps",
+                    "terminatedAt": "2026-09-20T12:00:00+00:00",
+                }
+            )
+        )
+        m = loop_metrics.load_artifact(str(artifact_path))
+        assert m["step_count"] == 12
+        assert m["token_cost_per_step"] == 0.042
+        assert m["convergence_rate"] == 6
+        assert m["failure_mode"] == "max-steps"
+        assert m["terminated_at"] == "2026-09-20T12:00:00+00:00"
+
+    def test_returns_none_when_artifact_missing(self, tmp_path):
+        assert loop_metrics.load_artifact(str(tmp_path / "missing.json")) is None
+
+
 class TestMain:
-    def test_reads_existing_artifact_and_writes_only_output(self, tmp_path, monkeypatch):
+    def test_reads_artifact_and_emits_snake_case_metrics(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
-        artifact = {"step_count": 5, "failure_mode": "max-steps"}
         with open("loop-metrics.json", "w") as f:
-            json.dump(artifact, f)
+            json.dump(
+                {
+                    "steps": 12,
+                    "tokenCostPerStep": 0.042,
+                    "convergenceRate": 6,
+                    "failureMode": "max-steps",
+                    "terminatedAt": "2026-09-20T12:00:00+00:00",
+                },
+                f,
+            )
+        summary_path = tmp_path / "summary.md"
         output_path = tmp_path / "output.txt"
+        monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary_path))
         monkeypatch.setenv("GITHUB_OUTPUT", str(output_path))
-        monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(tmp_path / "summary.md"))
         monkeypatch.setenv("LOOP_STEPS", "0")
         monkeypatch.setenv("LOOP_FAILURE_MODE", "unknown")
 
         assert loop_metrics.main() == 0
 
-        with open(output_path) as f:
-            assert f.read() == f"metrics={json.dumps(artifact)}\n"
-        # The summary table was already appended by the tool; do not duplicate it.
-        assert not (tmp_path / "summary.md").exists()
-        # The artifact is not rewritten.
+        assert "| Steps | 12 |" in summary_path.read_text()
         with open("loop-metrics.json") as f:
-            assert json.load(f) == artifact
+            artifact = json.load(f)
+        assert artifact["step_count"] == 12
+        assert artifact["failure_mode"] == "max-steps"
+        with open(output_path) as f:
+            assert f"metrics={json.dumps(artifact)}\n" in f.read()
 
     def test_emits_from_env_when_no_artifact(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
