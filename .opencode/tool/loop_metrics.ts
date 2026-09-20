@@ -1,6 +1,5 @@
 import { tool } from "@opencode-ai/plugin";
-import { writeFileSync, appendFileSync, existsSync } from "node:fs";
-import { resolve } from "node:path";
+import { writeFileSync, appendFileSync } from "node:fs";
 
 export interface LoopMetrics {
   steps: number;
