@@ -16,9 +16,7 @@
     },
     {
       "customType": "regex",
-      "managerFilePatterns": [
-        "/.*/"
-      ],
+      "managerFilePatterns": ["/.*/"],
       "matchStrings": [
         "# renovate: datasource=(?<datasource>[^\\s]+) depName=(?<depName>[^\\s]+)\\n[A-Z_]+=(?<currentValue>[0-9][\\w.-]*)"
       ]
