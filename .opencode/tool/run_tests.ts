@@ -1,3 +1,5 @@
+// ponytail: minimal self-check via .test.mjs (node --test), no framework; prior PR #69 merged
+// Re-verified for bacluc-agent/agent-runner#229 — run_tests ACI tool
 import { tool } from "@opencode-ai/plugin";
 import { spawnSync } from "node:child_process";
 
