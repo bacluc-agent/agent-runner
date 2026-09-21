@@ -37,7 +37,7 @@ jobs:
   # ---------------------------------------------------------------------------
   find-prs:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 30
     outputs:
       prs: ${{ steps.find.outputs.prs }}
       count: ${{ steps.find.outputs.count }}
@@ -98,14 +98,17 @@ jobs:
             exit 0
           fi
 
-          printf '%s\n' "${unique_prs[@]}" | jq -R . | jq -s . > "$prs_file"
-
           printf 'Found %d open PR(s) with review comments: %s\n' \
             "${#unique_prs[@]}" "${unique_prs[*]}"
 
+          viewed_prs=()
           pr_metadata="{}"
           for pr_number in "${unique_prs[@]}"; do
-            pr_info=$(gh pr view "$pr_number" -R "${{ github.repository }}" --json number,title,headRefName,url)
+            pr_info=$(gh pr view "$pr_number" -R "${{ github.repository }}" --json number,title,headRefName,url 2>/dev/null) || {
+              printf 'Skipping PR #%s: gh pr view failed\n' "$pr_number" >&2
+              continue
+            }
+            viewed_prs+=("$pr_number")
             if [[ -n "${OVERRIDE_PROMPT:-}" ]]; then
               prompt="$OVERRIDE_PROMPT"
             else
@@ -125,11 +128,27 @@ jobs:
             pr_metadata=$(jq --argjson pr "$pr_info" '. + {($pr.number | tostring): $pr}' <<<"$pr_metadata")
           done
 
+          if [[ ${#viewed_prs[@]} -eq 0 ]]; then
+            printf '%s\n' 'No viewable open PRs with review comments found.'
+            {
+              echo "prs<<PRS_EOF"
+              echo "[]"
+              echo "PRS_EOF"
+              echo "count=0"
+              echo "pr_metadata<<META_EOF"
+              echo "{}"
+              echo "META_EOF"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          printf '%s\n' "${viewed_prs[@]}" | jq -R . | jq -s . > "$prs_file"
+
           {
             echo "prs<<PRS_EOF"
             cat "$prs_file"
             echo "PRS_EOF"
-            echo "count=${#unique_prs[@]}"
+            echo "count=${#viewed_prs[@]}"
             echo "pr_metadata<<META_EOF"
             echo "$pr_metadata"
             echo "META_EOF"
