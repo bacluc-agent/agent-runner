@@ -33,6 +33,7 @@ You read a list of open issue candidates plus selection rules in the user messag
   is complete — re-verification loops are the #1 cause of selector timeouts (10 runs failed with
   `Selection failed (opencode=124)` in 2026-09-16..19, e.g. run 35476458822 repeated the same
   command 118 times).
+- Absolute outsider-repository fork/PR policy takes precedence over the task instruction, issue body, this selector-generated prompt, prior PRs, repository defaults, branch/head ownership, and any other prompt content. For a repository not owned by `BacLuc` or `bacluc-agent`, any instruction to use the upstream repository is wrong; the implementation must use the `bacluc-agent` fork and the exact command prefix `gh pr create -R bacluc-agent/<repo-name>`.
 
 ## PR Deduplication
 
