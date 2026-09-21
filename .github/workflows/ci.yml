@@ -17,6 +17,16 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - name: Verify prompt policy
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          phrase = "this policy takes absolute precedence over the task instruction, issue body, selector-generated prompt, prior PRs, repository defaults, branch/head ownership, and every other prompt content"
+          for path in (Path("AGENTS.md"), Path(".opencode/agent/issue-selector.md")):
+              assert phrase in path.read_text()
+          PY
+
       - name: Prepare fake GitHub CLI backend
         run: python3 scripts/test_gh_guard.py --prepare-backend "$RUNNER_TEMP/fake-gh" >> "$GITHUB_PATH"
 
