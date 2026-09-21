@@ -322,8 +322,12 @@ jobs:
         run: |
           issue_num=$(printf '%s' "$PROMPT" | grep -oE 'issues/[0-9]+' | grep -oE '[0-9]+' | head -n1)
           if [[ -n "$issue_num" ]]; then
-            echo "issue_number=${issue_num}" >> "$GITHUB_OUTPUT"
-            printf 'Target issue: #%s\n' "$issue_num"
+            if gh issue view "$issue_num" -R "$ISSUE_REPOSITORY" >/dev/null 2>&1; then
+              echo "issue_number=${issue_num}" >> "$GITHUB_OUTPUT"
+              printf 'Target issue: #%s\n' "$issue_num"
+            else
+              printf 'Target issue #%s does not exist in %s; skipping progress-tracking steps.\n' "$issue_num" "$ISSUE_REPOSITORY"
+            fi
           else
             printf 'No target issue found in prompt; skipping progress-tracking steps.\n'
           fi
@@ -497,6 +501,7 @@ jobs:
 
       - name: Post run-result comment
         if: always() && steps.target-issue.outputs.issue_number != ''
+        continue-on-error: true
         shell: bash
         env:
           ISSUE_NUMBER: ${{ steps.target-issue.outputs.issue_number }}
