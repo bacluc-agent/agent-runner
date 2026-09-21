@@ -6,6 +6,10 @@ description: >-
 runs:
   using: composite
   steps:
+    - name: Install GitHub CLI PR destination guard
+      shell: bash
+      run: bash "$GITHUB_ACTION_PATH/../../../scripts/install-gh-guard.sh"
+
     - name: Install OpenCode
       shell: bash
       run: npm install --global opencode-ai@1.18.29
@@ -21,8 +25,8 @@ runs:
         set -Eeuo pipefail
 
         printf '::add-mask::%s\n' "$GITHUB_TOKEN"
-        printf '::add-mask::%s\n' "${OPENCODE_GO_API_KEY:-}"
-        printf '::add-mask::%s\n' "${OPENCODE_GO_2_API_KEY:-}"
+        if [[ -n "${OPENCODE_GO_API_KEY:-}" ]]; then printf '::add-mask::%s\n' "$OPENCODE_GO_API_KEY"; fi
+        if [[ -n "${OPENCODE_GO_2_API_KEY:-}" ]]; then printf '::add-mask::%s\n' "$OPENCODE_GO_2_API_KEY"; fi
         source_dir="$RUNNER_TEMP/provision-machines"
         config_dir="$RUNNER_TEMP/opencode-config"
         mapfile -t tags < <(git ls-remote --tags "$SOURCE_REPOSITORY" \

@@ -3,11 +3,30 @@ name: CI
 on:
   push:
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
+  gh-guard-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Prepare fake GitHub CLI backend
+        run: python3 scripts/test_gh_guard.py --prepare-backend "$RUNNER_TEMP/fake-gh" >> "$GITHUB_PATH"
+
+      - name: Run actual OpenCode setup
+        uses: ./.github/actions/setup-opencode
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Verify guard in subsequent step and child shell outside checkout
+        run: python3 scripts/test_gh_guard.py --verify-installed
+
   completion-check:
     runs-on: ubuntu-latest
     timeout-minutes: 10
