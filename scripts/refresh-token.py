@@ -18,26 +18,15 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
-ISSUER = "https://auth.openai.com"
-TOKEN_PATH = "/oauth/token"
-
-
-def build_auth_json(access: str, refresh: str, expires: int) -> dict:
-    if not isinstance(access, str) or not access:
-        raise ValueError("access must be a non-empty string")
-    if not isinstance(refresh, str) or not refresh:
-        raise ValueError("refresh must be a non-empty string")
-    if not isinstance(expires, int):
-        raise ValueError("expires must be an int (millisecond epoch)")
-    return {"openai": {"type": "oauth", "access": access, "refresh": refresh, "expires": expires}}
-
-
-def write_auth_file(auth: dict, path: Path | None = None) -> Path:
-    dest = path or Path.home() / ".local" / "share" / "opencode" / "auth.json"
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    dest.write_text(json.dumps(auth), encoding="utf-8")
-    return dest
+from opencode_auth import (
+    CLIENT_ID,
+    ISSUER,
+    SCOPE,
+    TOKEN_PATH,
+    USER_AGENT,
+    build_auth_json,
+    write_auth_file,
+)
 
 
 def _current_auth() -> dict | None:
@@ -59,12 +48,12 @@ def refresh_tokens(refresh_token: str) -> dict:
         "grant_type": "refresh_token",
         "refresh_token": refresh_token,
         "client_id": CLIENT_ID,
-        "scope": "openid profile email offline_access",
+        "scope": SCOPE,
     }).encode()
     req = urllib.request.Request(
         f"{ISSUER}{TOKEN_PATH}",
         data=body,
-        headers={"Content-Type": "application/x-www-form-urlencoded", "User-Agent": "opencode/refresh"},
+        headers={"Content-Type": "application/x-www-form-urlencoded", "User-Agent": USER_AGENT},
     )
     try:
         with urllib.request.urlopen(req, timeout=30) as resp:
@@ -137,7 +126,7 @@ def _self_check() -> None:
         "grant_type": "refresh_token",
         "refresh_token": "test",
         "client_id": CLIENT_ID,
-        "scope": "openid profile email offline_access",
+        "scope": SCOPE,
     })
     assert "scope=openid+profile+email+offline_access" in body, "scope missing from refresh body"
 

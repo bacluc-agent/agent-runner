@@ -40,12 +40,19 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
-ISSUER = "https://auth.openai.com"
+from opencode_auth import (
+    CLIENT_ID,
+    ISSUER,
+    SCOPE,
+    TOKEN_PATH,
+    USER_AGENT,
+    build_auth_json,
+    write_auth_file,
+)
+
 CALLBACK_PORT = 1455
 REDIRECT_URI = f"http://localhost:{CALLBACK_PORT}/auth/callback"
 AUTHORIZE_PATH = "/oauth/authorize"
-TOKEN_PATH = "/oauth/token"
 CALLBACK_PATH = "/auth/callback"
 
 ISSUER_HOST = urllib.parse.urlparse(ISSUER).netloc
@@ -70,23 +77,6 @@ OTP_SELECTORS = [
 ]
 
 TWO_FA_TEXTS = ["Two-factor", "Two-factor authentication", "authenticator"]
-
-
-def build_auth_json(access: str, refresh: str, expires: int) -> dict:
-    if not isinstance(access, str) or not access:
-        raise ValueError("access must be a non-empty string")
-    if not isinstance(refresh, str) or not refresh:
-        raise ValueError("refresh must be a non-empty string")
-    if not isinstance(expires, int):
-        raise ValueError("expires must be an int (millisecond epoch)")
-    return {"openai": {"type": "oauth", "access": access, "refresh": refresh, "expires": expires}}
-
-
-def write_auth_file(auth: dict, path: Path | None = None) -> Path:
-    dest = path or Path.home() / ".local" / "share" / "opencode" / "auth.json"
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    dest.write_text(json.dumps(auth), encoding="utf-8")
-    return dest
 
 
 def _env(name: str, fallbacks: list[str]) -> str | None:
@@ -262,7 +252,7 @@ def _authorize_url(verifier: str, state: str) -> str:
         "response_type": "code",
         "client_id": CLIENT_ID,
         "redirect_uri": REDIRECT_URI,
-        "scope": "openid profile email offline_access",
+        "scope": SCOPE,
         "code_challenge": challenge,
         "code_challenge_method": "S256",
         "id_token_add_organizations": "true",
@@ -340,7 +330,7 @@ def _exchange_code(code: str, verifier: str) -> dict:
     req = urllib.request.Request(
         f"{ISSUER}{TOKEN_PATH}",
         data=body,
-        headers={"Content-Type": "application/x-www-form-urlencoded", "User-Agent": "opencode/refresh"},
+        headers={"Content-Type": "application/x-www-form-urlencoded", "User-Agent": USER_AGENT},
     )
     with urllib.request.urlopen(req, timeout=30) as resp:
         return json.load(resp)
