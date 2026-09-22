@@ -6,7 +6,8 @@
     {
       "customType": "regex",
       "managerFilePatterns": [
-        "/^\\.github/actions/setup-opencode/action\\.yml$/"
+        "/^\\.github/actions/setup-opencode/action\\.yml$/",
+        "/^\\.github/workflows/refresh-chatgpt-auth\\.yml$/"
       ],
       "matchStrings": [
         "npm install --global opencode-ai@(?<currentValue>\\d+\\.\\d+\\.\\d+)"
