@@ -1215,4 +1215,4 @@ class TestWorkflowOpenRouterSelection:
             assert "openrouter/*)" in content
             assert '[[ -n "$OPENROUTER_API_KEY" ]]' in content
             assert "OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}" in content
-            assert "/(ling-3\\.0-flash-fin|mimo-v2\\.5)(-free|:free)$|/nemotron-" in content
+            assert "/(ling-3\\.0-flash-fin|mimo-v2\\.5)(-free|:free)$|/nemotron-|/muse-spark-" in content
