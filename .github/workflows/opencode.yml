@@ -112,6 +112,14 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.BACLUC_AGENT_GITHUB_TOKEN }}
 
+      - name: Check out agent-runner diagnostics
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: bacluc-agent/agent-runner
+          path: .agent-runner
+          fetch-depth: 1
+          token: ${{ secrets.BACLUC_AGENT_GITHUB_TOKEN }}
+
       - name: Set up OpenCode
         uses: ./.github/actions/setup-opencode
 
@@ -425,7 +433,7 @@ jobs:
         env:
           COORDINATOR_SESSION_TITLE: coordinator-run
         run: |
-          python3 scripts/dump_subagent_transcripts.py || true
+          python3 "$GITHUB_WORKSPACE/.agent-runner/scripts/dump_subagent_transcripts.py" || true
 
       - name: Dump debug output
         if: always()
@@ -433,7 +441,7 @@ jobs:
         env:
           COORDINATOR_SESSION_TITLE: model-discovery
         run: |
-          python3 scripts/dump_subagent_transcripts.py || true
+          python3 "$GITHUB_WORKSPACE/.agent-runner/scripts/dump_subagent_transcripts.py" || true
 
       - name: Ensure work is pushed
         if: always() && steps.target-issue.outputs.issue_number != ''
@@ -508,7 +516,7 @@ jobs:
           LOOP_TOKEN_ESTIMATE: "${{ steps.coordinator.outputs.token_estimate || '' }}"
         run: |
           set -Eeuo pipefail
-          python3 scripts/loop_metrics.py
+          python3 "$GITHUB_WORKSPACE/.agent-runner/scripts/loop_metrics.py"
 
       - name: Post run-result comment
         if: always() && steps.target-issue.outputs.issue_number != ''
