@@ -83,18 +83,7 @@ jobs:
 
           mapfile -t unique_prs < <(printf '%s\n' "${!seen[@]}" | sort -n)
 
-          filtered_prs=()
-          if [[ ${#unique_prs[@]} -gt 0 && -n "${unique_prs[0]}" ]]; then
-            for pr_number in "${unique_prs[@]}"; do
-              if gh pr view "$pr_number" -R "${{ github.repository }}" --json labels --jq '.labels[].name' | grep -Fxq 'agents-ignore'; then
-                printf 'Skipping PR %s (agents-ignore)\n' "$pr_number"
-                continue
-              fi
-              filtered_prs+=("$pr_number")
-            done
-          fi
-
-          if [[ ${#filtered_prs[@]} -eq 0 || -z "${filtered_prs[0]}" ]]; then
+          if [[ ${#unique_prs[@]} -eq 0 || -z "${unique_prs[0]}" ]]; then
             printf '%s\n' 'No open PRs with review comments found.'
             {
               echo "prs<<PRS_EOF"
@@ -109,11 +98,11 @@ jobs:
           fi
 
           printf 'Found %d open PR(s) with review comments: %s\n' \
-            "${#filtered_prs[@]}" "${filtered_prs[*]}"
+            "${#unique_prs[@]}" "${unique_prs[*]}"
 
           viewed_prs=()
           pr_metadata="{}"
-          for pr_number in "${filtered_prs[@]}"; do
+          for pr_number in "${unique_prs[@]}"; do
             pr_info=$(gh pr view "$pr_number" -R "${{ github.repository }}" --json number,title,headRefName,url 2>/dev/null) || {
               printf 'Skipping PR #%s: gh pr view failed\n' "$pr_number" >&2
               continue
@@ -138,8 +127,7 @@ jobs:
             pr_metadata=$(jq --argjson pr "$pr_info" '. + {($pr.number | tostring): $pr}' <<<"$pr_metadata")
           done
 
-          filtered_prs=("${viewed_prs[@]}")
-          if [[ ${#filtered_prs[@]} -eq 0 ]]; then
+          if [[ ${#viewed_prs[@]} -eq 0 ]]; then
             printf '%s\n' 'No viewable open PRs with review comments found.'
             {
               echo "prs<<PRS_EOF"
@@ -153,13 +141,13 @@ jobs:
             exit 0
           fi
 
-          printf '%s\n' "${filtered_prs[@]}" | jq -R . | jq -s . > "$prs_file"
+          printf '%s\n' "${viewed_prs[@]}" | jq -R . | jq -s . > "$prs_file"
 
           {
             echo "prs<<PRS_EOF"
             cat "$prs_file"
             echo "PRS_EOF"
-            echo "count=${#filtered_prs[@]}"
+            echo "count=${#viewed_prs[@]}"
             echo "pr_metadata<<META_EOF"
             echo "$pr_metadata"
             echo "META_EOF"
