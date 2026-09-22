@@ -5,10 +5,7 @@
   "customManagers": [
     {
       "customType": "regex",
-      "managerFilePatterns": [
-        "/^\\.github/actions/setup-opencode/action\\.yml$/",
-        "/^\\.github/workflows/refresh-chatgpt-auth\\.yml$/"
-      ],
+      "managerFilePatterns": ["/^\\.github\\/.*\\.yml$/"],
       "matchStrings": [
         "npm install --global opencode-ai@(?<currentValue>\\d+\\.\\d+\\.\\d+)"
       ],
