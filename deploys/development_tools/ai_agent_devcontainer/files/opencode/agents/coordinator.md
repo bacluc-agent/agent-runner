@@ -43,7 +43,7 @@ Before any implementation work starts, delegate the git branch setup to the buil
 > If not, create a new working branch off the branch required by the repository AGENTS.md (often origin/main or origin/master) for this task. Set up remote tracking for a new branch on origin. See the Git Workflow section of your instructions.
 > Check if there is already a branch mentioned in the issue or if there are even pull requests. If yes, checkout that branch and continue from there. Push your changes back to that branch.
 > Make sure to read and apply the review comments on the PR.
-> If the repository is not owned by @BacLuc or @bacluc-agent, NEVER open a PR against it directly. Create a fork in @bacluc-agent if none exists, make a branch that represents the current upstream `main`, and open the PR against the fork with `gh pr create -R bacluc-agent/<repo-name>`. See the Git Workflow section of your instructions.
+> If the repository is not owned by @BacLuc or @bacluc-agent, NEVER open a PR against it directly. Create a fork in @bacluc-agent if none exists, make a branch that represents the current upstream default branch — the one required by that repository's AGENTS.md, and open the PR against the fork with `gh pr create -R bacluc-agent/<repo-name>`. See the Git Workflow section of your instructions.
 
 Only continue after you are working on the correct branch.
 
