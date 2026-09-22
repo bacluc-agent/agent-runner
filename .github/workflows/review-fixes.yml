@@ -68,8 +68,8 @@ jobs:
             seen[$pr]=1
           done < <(
             gh api --paginate \
-              "search/issues?q=repo:${{ github.repository }}+is:pr+is:open+reviewed-by:Bacluc+-label:\"agents-ignore\"&per_page=100" \
-              --jq '.items[].number' 2>/dev/null || true
+              "search/issues?q=is:pr+is:open+author:${{ github.repository_owner }}+reviewed-by:Bacluc+-label:\"agents-ignore\"&per_page=100" \
+              --jq '.items[] | "\(.repository_url | sub("https://api.github.com/repos/"; ""))#\(.number)"' 2>/dev/null || true
           )
 
           while IFS= read -r pr; do
@@ -77,11 +77,11 @@ jobs:
             seen[$pr]=1
           done < <(
             gh api --paginate \
-              "search/issues?q=repo:${{ github.repository }}+is:pr+is:open+reviewed-by:bacluc-agent+-label:\"agents-ignore\"&per_page=100" \
-              --jq '.items[].number' 2>/dev/null || true
+              "search/issues?q=is:pr+is:open+author:${{ github.repository_owner }}+reviewed-by:${{ github.repository_owner }}+-label:\"agents-ignore\"&per_page=100" \
+              --jq '.items[] | "\(.repository_url | sub("https://api.github.com/repos/"; ""))#\(.number)"' 2>/dev/null || true
           )
 
-          mapfile -t unique_prs < <(printf '%s\n' "${!seen[@]}" | sort -n)
+          mapfile -t unique_prs < <(printf '%s\n' "${!seen[@]}" | sort -t'#' -k2,2n)
 
           if [[ ${#unique_prs[@]} -eq 0 || -z "${unique_prs[0]}" ]]; then
             printf '%s\n' 'No open PRs with review comments found.'
@@ -102,12 +102,14 @@ jobs:
 
           viewed_prs=()
           pr_metadata="{}"
-          for pr_number in "${unique_prs[@]}"; do
-            pr_info=$(gh pr view "$pr_number" -R "${{ github.repository }}" --json number,title,headRefName,url 2>/dev/null) || {
-              printf 'Skipping PR #%s: gh pr view failed\n' "$pr_number" >&2
+          for pr_key in "${unique_prs[@]}"; do
+            repo="${pr_key%#*}"
+            pr_number="${pr_key##*#}"
+            pr_info=$(gh pr view "$pr_number" -R "$repo" --json number,title,headRefName,url 2>/dev/null) || {
+              printf 'Skipping PR %s: gh pr view failed\n' "$pr_key" >&2
               continue
             }
-            viewed_prs+=("$pr_number")
+            viewed_prs+=("$pr_key")
             if [[ -n "${OVERRIDE_PROMPT:-}" ]]; then
               prompt="$OVERRIDE_PROMPT"
             else
@@ -124,7 +126,8 @@ jobs:
                 "the changes work. Update the corresponding issue with progress.")
             fi
             pr_info=$(jq --arg prompt "$prompt" '. + {prompt: $prompt}' <<<"$pr_info")
-            pr_metadata=$(jq --argjson pr "$pr_info" '. + {($pr.number | tostring): $pr}' <<<"$pr_metadata")
+            pr_metadata=$(jq --argjson pr "$pr_info" --arg key "$pr_key" --arg repo "$repo" \
+              '. + {($key): ($pr + {repository: $repo})}' <<<"$pr_metadata")
           done
 
           if [[ ${#viewed_prs[@]} -eq 0 ]]; then
