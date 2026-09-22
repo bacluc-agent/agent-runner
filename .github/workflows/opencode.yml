@@ -116,9 +116,14 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: bacluc-agent/agent-runner
-          path: ${{ runner.temp }}/agent-runner
+          path: .agent-runner
           fetch-depth: 1
           token: ${{ secrets.BACLUC_AGENT_GITHUB_TOKEN }}
+
+      - name: Move diagnostics outside target worktree
+        shell: bash
+        run: |
+          mv "$GITHUB_WORKSPACE/.agent-runner" "$RUNNER_TEMP/agent-runner"
 
       - name: Set up OpenCode
         uses: ./.github/actions/setup-opencode
