@@ -37,10 +37,10 @@ Anything else is **involved**. When in doubt, treat the task as involved - the c
 
 ### Always - Git branch setup
 
-Before any implementation work starts, delegate the git branch setup to the build agent so the work happens on an isolated branch off the branch required by the repository AGENTS.md (origin/devel for provision-machines), tracked against a fork if one exists. Send this instruction to the build agent as the very first delegation:
+Before any implementation work starts, delegate the git branch setup to the build agent so the work happens on an isolated branch off the branch required by the repository AGENTS.md (normally origin/main or origin/master), tracked against a fork if one exists. Send this instruction to the build agent as the very first delegation:
 
 > If you are already on a branch vaguely describing the feature you are working on, STAY ON THE BRANCH.
-> If not, create a new working branch off the branch required by the repository AGENTS.md (origin/devel for provision-machines) for this task. Set up remote tracking for a new branch on origin. See the Git Workflow section of your instructions.
+> If not, create a new working branch off the branch required by the repository AGENTS.md (normally origin/main or origin/master) for this task. Set up remote tracking for a new branch on origin. See the Git Workflow section of your instructions.
 > Check if there is already a branch mentioned in the issue or if there are even pull requests. If yes, checkout that branch and continue from there. Push your changes back to that branch.
 > Make sure to read and apply the review comments on the PR.
 > If the repository is not owned by @BacLuc or @bacluc-agent, NEVER open a PR against it directly. Create a fork in @bacluc-agent if none exists, make a branch that represents the current upstream `main`, and open the PR against the fork with `gh pr create -R bacluc-agent/<repo-name>`. See the Git Workflow section of your instructions.
