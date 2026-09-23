@@ -113,9 +113,17 @@ jobs:
           token: ${{ secrets.BACLUC_AGENT_GITHUB_TOKEN }}
 
       - name: Check out agent-runner diagnostics
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: bacluc-agent/agent-runner
+          path: .agent-runner
+          fetch-depth: 1
+          token: ${{ secrets.BACLUC_AGENT_GITHUB_TOKEN }}
+
+      - name: Move agent-runner diagnostics checkout
         shell: bash
         run: |
-          git clone --depth 1 "https://x-access-token:${BACLUC_AGENT_GITHUB_TOKEN}@github.com/bacluc-agent/agent-runner.git" "$RUNNER_TEMP/agent-runner"
+          mv "$GITHUB_WORKSPACE/.agent-runner" "$RUNNER_TEMP/agent-runner"
 
       - name: Set up OpenCode
         uses: ./.github/actions/setup-opencode
