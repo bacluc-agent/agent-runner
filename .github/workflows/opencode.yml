@@ -91,6 +91,7 @@ jobs:
       ISSUE_REPOSITORY: ${{ vars.ISSUE_REPOSITORY || github.repository }}
       MODEL_AVAILABILITY_CACHE_ISSUE: ${{ vars.MODEL_AVAILABILITY_CACHE_ISSUE }}
       GITHUB_FORK_INVITE_USER: ${{ vars.FORK_INVITE_USER || secrets.FORK_INVITE_USER }}
+      DIAGNOSTICS_CHECKOUT: .agent-runner-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
       PROMPT: "${{ inputs.prompt || 'Push-triggered validation: review the changed files in this push and verify the workflows are correct and complete. Report the result; do not modify files, create issues, or open pull requests.' }}"
 
     steps:
@@ -116,14 +117,15 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: bacluc-agent/agent-runner
-          path: .agent-runner
+          path: ${{ env.DIAGNOSTICS_CHECKOUT }}
           fetch-depth: 1
+          persist-credentials: false
           token: ${{ secrets.BACLUC_AGENT_GITHUB_TOKEN }}
 
       - name: Move agent-runner diagnostics checkout
         shell: bash
         run: |
-          mv "$GITHUB_WORKSPACE/.agent-runner" "$RUNNER_TEMP/agent-runner"
+          mv "$GITHUB_WORKSPACE/$DIAGNOSTICS_CHECKOUT" "$RUNNER_TEMP/agent-runner"
 
       - name: Set up OpenCode
         uses: ./.github/actions/setup-opencode
