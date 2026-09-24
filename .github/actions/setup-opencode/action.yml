@@ -5,9 +5,9 @@ description: >-
   GITHUB_TOKEN set by the caller.
 inputs:
   source-branch:
-    description: 'Optional branch name from provision-machines to use instead of latest tag'
+    description: "Optional branch name from provision-machines to use instead of latest tag"
     required: false
-    default: ''
+    default: ""
 runs:
   using: composite
   steps:
