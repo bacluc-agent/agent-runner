@@ -2,6 +2,9 @@ name: Refine issues (test with issue-238-refiner-concise)
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/refine-issues-test-238.yml"
 
 permissions:
   contents: read
