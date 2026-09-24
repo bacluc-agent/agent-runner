@@ -1,9 +1,9 @@
-import test from "node:test";
+import loopMetrics, { computeMetrics, emitMetrics } from "./loop_metrics.ts";
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import loopMetrics, { computeMetrics, emitMetrics } from "./loop_metrics.ts";
+import test from "node:test";
 
 const mkCtx = () => {
   const worktree = mkdtempSync(join(tmpdir(), "loop-metrics-"));

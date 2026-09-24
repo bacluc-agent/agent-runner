@@ -1,7 +1,5 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["config:recommended"],
-  "minimumReleaseAge": "14 days",
   "customManagers": [
     {
       "customType": "regex",
@@ -19,5 +17,7 @@
         "# renovate: datasource=(?<datasource>[^\\s]+) depName=(?<depName>[^\\s]+)\\n[A-Z_]+=(?<currentValue>[0-9][\\w.-]*)"
       ]
     }
-  ]
+  ],
+  "extends": ["config:recommended"],
+  "minimumReleaseAge": "14 days"
 }

@@ -1,7 +1,9 @@
+import { classifyEvent } from "../classify.ts";
 import type { Plugin } from "@opencode-ai/plugin";
 import type { Event } from "@opencode-ai/sdk";
 import { writeFileSync } from "node:fs";
-import { classifyEvent } from "../classify.ts"; // .ts extension REQUIRED for Node type stripping
+
+// .ts extension REQUIRED for Node type stripping
 
 const plugin: Plugin = () => ({
   async event({ event }: { event: Event }) {

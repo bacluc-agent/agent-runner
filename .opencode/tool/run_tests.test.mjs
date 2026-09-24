@@ -1,9 +1,9 @@
-import test from "node:test";
+import runTests from "./run_tests.ts";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import runTests from "./run_tests.ts";
+import test from "node:test";
 
 const mkCtx = () => {
   const worktree = mkdtempSync(join(tmpdir(), "run-tests-"));

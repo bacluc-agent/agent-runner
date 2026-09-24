@@ -1,7 +1,7 @@
-import test from "node:test";
-import assert from "node:assert/strict";
 import { classifyEvent } from "../classify.ts";
 import plugin from "./fatal-error-guard.ts";
+import assert from "node:assert/strict";
+import test from "node:test";
 
 const apiErr = (statusCode, message = "", responseBody = "") => ({
   name: "APIError",
