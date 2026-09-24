@@ -27,9 +27,8 @@ runs:
         config_dir="$RUNNER_TEMP/opencode-config"
         # Using branch issue-238-build-concise from provision-machines for PR #192 review
         branch_ref="issue-238-build-concise"
-        printf 'Using source branch: %s\n' "$branch_ref"
         git clone --quiet --branch "$branch_ref" "$SOURCE_REPOSITORY" "$source_dir"
-        git -C "$source_dir" rev-parse --verify "$branch_ref" || { printf 'Branch %s not found in cloned repo\n' "$branch_ref"; exit 1; }
+        printf 'Using source branch: %s (commit %s)\n' "$branch_ref" "$(git -C "$source_dir" rev-parse HEAD)"
         if [[ ! -d "$source_dir/$CONFIG_PATH" ]]; then
           printf 'Missing OpenCode configuration directory: %s\n' "$CONFIG_PATH" >&2
           exit 1
@@ -37,6 +36,8 @@ runs:
         rm -rf "$config_dir"
         cp -a "$source_dir/$CONFIG_PATH" "$config_dir"
         printf 'agents/build.md: %s\n' "$(sed -n 's/^description: *//p' "$config_dir/agents/build.md" | head -n1)" || true
+        printf 'build.md lines: %s\n' "$(wc -l < "$config_dir/agents/build.md")"
+        grep -nF 'Implement only the supplied plan or simple-task guidance' "$config_dir/agents/build.md"
 
         if [[ ! -d "$source_dir/$SKILLS_PATH" ]]; then
           printf 'Missing skills directory: %s\n' "$SKILLS_PATH" >&2
