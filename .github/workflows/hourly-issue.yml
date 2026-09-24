@@ -50,6 +50,9 @@ jobs:
 
       - name: Set up OpenCode
         uses: ./.github/actions/setup-opencode
+        env:
+          SOURCE_BRANCH: issue-238-prompt-generator-concise
+          SOURCE_SHA: 086f7fdc5febe7f411dc0d98916c13227b17ede8
 
       - name: Check model availability
         id: model-availability
