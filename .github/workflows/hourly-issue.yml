@@ -52,7 +52,7 @@ jobs:
         uses: ./.github/actions/setup-opencode
         env:
           SOURCE_BRANCH: issue-238-prompt-generator-concise
-          SOURCE_SHA: 086f7fdc5febe7f411dc0d98916c13227b17ede8
+          SOURCE_SHA: 06a136d7c88785c8b966909a093f55fddbf464fd
 
       - name: Check model availability
         id: model-availability
