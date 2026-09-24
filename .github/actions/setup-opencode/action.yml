@@ -3,6 +3,11 @@ description: >-
   Installs the OpenCode CLI and prepares the shared OpenCode configuration
   from the provision-machines repository. Relies on the job-level
   GITHUB_TOKEN set by the caller.
+inputs:
+  source-branch:
+    description: "Optional branch name from provision-machines to use instead of latest tag"
+    required: false
+    default: ""
 runs:
   using: composite
   steps:
@@ -15,6 +20,7 @@ runs:
       shell: bash
       env:
         SOURCE_REPOSITORY: https://github.com/bacluc/provision-machines.git
+        SOURCE_BRANCH: ${{ inputs.source-branch || '' }}
         CONFIG_PATH: deploys/development_tools/ai_agent_devcontainer/files/opencode
         SKILLS_PATH: deploys/development_tools/ai_agent_devcontainer/files/claude/skills
       run: |
@@ -25,38 +31,46 @@ runs:
         printf '::add-mask::%s\n' "${OPENCODE_GO_2_API_KEY:-}"
         source_dir="$RUNNER_TEMP/provision-machines"
         config_dir="$RUNNER_TEMP/opencode-config"
-        mapfile -t tags < <(git ls-remote --tags "$SOURCE_REPOSITORY" \
-          | awk '$2 !~ /\^\{\}$/ { sub("refs/tags/", "", $2); print $2 }' \
-          | grep -E '^[vV]?[0-9]+([.][0-9]+){1,2}([-.][0-9A-Za-z.-]+)?$' \
-          | sort -V)
+        if [[ -n "$SOURCE_BRANCH" ]]; then
+          git clone --quiet --branch "$SOURCE_BRANCH" "$SOURCE_REPOSITORY" "$source_dir"
+          git -C "$source_dir" checkout --quiet --detach HEAD
+          printf 'Using source branch: %s (commit %s)\n' "$SOURCE_BRANCH" "$(git -C "$source_dir" rev-parse HEAD)"
+        else
+          mapfile -t tags < <(git ls-remote --tags "$SOURCE_REPOSITORY" \
+            | awk '$2 !~ /\^\{\}$/ { sub("refs/tags/", "", $2); print $2 }' \
+            | grep -E '^[vV]?[0-9]+([.][0-9]+){1,2}([-.][0-9A-Za-z.-]+)?$' \
+            | sort -V)
 
-        if ((${#tags[@]} == 0)); then
-          printf '%s\n' 'No semver tags found in the source repository' >&2
-          exit 1
-        fi
+          if ((${#tags[@]} == 0)); then
+            printf '%s\n' 'No semver tags found in the source repository' >&2
+            exit 1
+          fi
 
-        tag="${tags[${#tags[@]}-1]}"
-        tag_refs="$(git ls-remote --tags "$SOURCE_REPOSITORY" "refs/tags/$tag" "refs/tags/$tag^{}")"
-        tag_sha="$(printf '%s\n' "$tag_refs" | awk -v tag="$tag" \
-          '$2 == "refs/tags/" tag "^{}" { peeled=$1 } $2 == "refs/tags/" tag { direct=$1 } END { print peeled ? peeled : direct }')"
-        if [[ ! "$tag_sha" =~ ^[0-9a-f]{40}$ ]]; then
-          printf 'Unable to resolve source config tag to a commit: %s\n' "$tag" >&2
-          exit 1
+          tag="${tags[${#tags[@]}-1]}"
+          tag_refs="$(git ls-remote --tags "$SOURCE_REPOSITORY" "refs/tags/$tag" "refs/tags/$tag^{}")"
+          tag_sha="$(printf '%s\n' "$tag_refs" | awk -v tag="$tag" \
+            '$2 == "refs/tags/" tag "^{}" { peeled=$1 } $2 == "refs/tags/" tag { direct=$1 } END { print peeled ? peeled : direct }')"
+          if [[ ! "$tag_sha" =~ ^[0-9a-f]{40}$ ]]; then
+            printf 'Unable to resolve source config tag to a commit: %s\n' "$tag" >&2
+            exit 1
+          fi
+          printf 'Using source config tag: %s (commit %s)\n' "$tag" "$tag_sha"
+          git clone --quiet "$SOURCE_REPOSITORY" "$source_dir"
+          cloned_tag_sha="$(git -C "$source_dir" rev-parse --verify "refs/tags/$tag^{commit}" 2>/dev/null || true)"
+          if [[ "$cloned_tag_sha" != "$tag_sha" ]]; then
+            printf 'Source config tag changed while cloning: expected %s, got %s\n' "$tag_sha" "${cloned_tag_sha:-unresolved}" >&2
+            exit 1
+          fi
+          git -C "$source_dir" checkout --quiet --detach "$tag_sha"
         fi
-        printf 'Using source config tag: %s (commit %s)\n' "$tag" "$tag_sha"
-        git clone --quiet "$SOURCE_REPOSITORY" "$source_dir"
-        cloned_tag_sha="$(git -C "$source_dir" rev-parse --verify "refs/tags/$tag^{commit}" 2>/dev/null || true)"
-        if [[ "$cloned_tag_sha" != "$tag_sha" ]]; then
-          printf 'Source config tag changed while cloning: expected %s, got %s\n' "$tag_sha" "${cloned_tag_sha:-unresolved}" >&2
-          exit 1
-        fi
-        git -C "$source_dir" checkout --quiet --detach "$tag_sha"
         if [[ ! -d "$source_dir/$CONFIG_PATH" ]]; then
           printf 'Missing OpenCode configuration directory: %s\n' "$CONFIG_PATH" >&2
           exit 1
         fi
         rm -rf "$config_dir"
         cp -a "$source_dir/$CONFIG_PATH" "$config_dir"
+        printf 'Loaded coordinator agent description: %s\n' "$(grep -m1 '^description:' "$config_dir/agents/coordinator.md")"
+        printf 'coordinator.md sha256: %s\n' "$(sha256sum "$config_dir/agents/coordinator.md" | awk '{print $1}')"
 
         if [[ ! -d "$source_dir/$SKILLS_PATH" ]]; then
           printf 'Missing skills directory: %s\n' "$SKILLS_PATH" >&2
