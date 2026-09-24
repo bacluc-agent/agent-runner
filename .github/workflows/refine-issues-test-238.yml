@@ -5,7 +5,7 @@ on:
 
 permissions:
   contents: read
-  issues: write
+  issues: read
 
 jobs:
   refine:
@@ -36,13 +36,231 @@ jobs:
         timeout-minutes: 10
         uses: ./.github/actions/model-availability
 
-      - name: Refine issues
-        id: refine
-        timeout-minutes: 22
+      - name: Prove refiner source branch
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          printf 'Using source branch: %s\n' 'issue-238-refiner-concise'
+          ls -l "$HOME/.config/opencode/agents/refiner.md"
+          cat "$HOME/.config/opencode/agents/refiner.md"
+          sha256sum "$HOME/.config/opencode/agents/refiner.md"
+          wc -l "$HOME/.config/opencode/agents/refiner.md"
+          git -C "$RUNNER_TEMP/provision-machines" rev-parse HEAD
+          git -C "$RUNNER_TEMP/provision-machines" log --oneline -1
+
+      - name: Direct refiner run
+        id: direct
+        timeout-minutes: 8
         shell: bash
         env:
           AVAILABLE_MODELS: ${{ steps.model-availability.outputs.available-models }}
         run: |
-          printf 'Using agent description from provision-machines branch: issue-238-refiner-concise\n'
-          printf 'Agent file: deploys/development_tools/ai_agent_devcontainer/files/opencode/agents/refiner.md\n'
-          printf 'This workflow validates the concise refiner prompt from PR #196.\n'
+          set -Eeuo pipefail
+
+          printf '::add-mask::%s\n' "$GITHUB_TOKEN"
+          printf '::add-mask::%s\n' "$OPENCODE_GO_API_KEY"
+          printf '::add-mask::%s\n' "$OPENCODE_GO_2_API_KEY"
+          printf '::add-mask::%s\n' "$OPENCODE_AUTH_CONTENT"
+
+          printf 'Selecting model...\n'
+
+          available_models_file="$RUNNER_TEMP/available-models.txt"
+          printf '%s\n' "$AVAILABLE_MODELS" > "$available_models_file"
+
+          selection_model=''
+          # Exclude known-weak free models (ling-3.0-flash-fin-free, mimo-v2.5-free, nemotron-*, muse-spark-*)
+          # per model-discovery.md (provision-machines devel branch); they pass the trivial OK
+          # probe but fail as coordinator/selector in 10+ runs (e.g. 34029380869, 34042660858).
+          mapfile -t free_models < <(grep -E '^(opencode|openrouter)/[^[:space:]]+(-free|:free)$' "$available_models_file" | grep -Ev '/(ling-3\.0-flash-fin|mimo-v2\.5)(-free|:free)$|/nemotron-|/muse-spark-' | awk '!seen[$0]++')
+          for candidate in \
+            'opencode-go-openai/qwen3.8-flash' \
+            'opencode-go-openai-2/qwen3.8-flash' \
+            'opencode/big-pickle' \
+            "${free_models[@]}"; do
+            case "$candidate" in
+              opencode-go-openai/qwen3.8-flash)
+                grep -Fxq "$candidate" "$available_models_file" && [[ -n "$OPENCODE_GO_API_KEY" ]] || continue
+                ;;
+              opencode-go-openai-2/qwen3.8-flash)
+                grep -Fxq "$candidate" "$available_models_file" && [[ -n "$OPENCODE_GO_2_API_KEY" ]] || continue
+                ;;
+              opencode/big-pickle)
+                grep -Fxq "$candidate" "$available_models_file" || continue
+                ;;
+              opencode/*-free) ;;
+              openrouter/*)
+                [[ -n "$OPENROUTER_API_KEY" ]] || continue
+                ;;
+              *) continue ;;
+            esac
+            selection_model="$candidate"
+            break
+          done
+          if [[ -z "$selection_model" ]]; then
+            printf '%s\n' 'No refinement model is available; not dispatching.' >&2
+            exit 1
+          fi
+          printf 'Refinement model: %s\n' "$selection_model"
+
+          sample_title='Sample: add a /healthz endpoint for load-balancer checks'
+          sample_body='The service needs a health endpoint so the load balancer can check liveness. It should answer GET /healthz with HTTP 200 and {"status":"ok"}. Register the route next to the existing routes in src/server.ts and cover it with a unit test.'
+
+          prompt="$RUNNER_TEMP/refine-prompt-direct-238.txt"
+          {
+            printf '%s\n' 'Refine the following GitHub issue into clear, agent-ready text.'
+            printf '%s\n' ''
+            printf 'Issue: %s\n' "$sample_title"
+            printf '%s\n' ''
+            printf '%s\n' 'Current body:'
+            printf '%s\n' "$sample_body"
+            printf '%s\n' ''
+            printf '%s\n' 'Your task: rewrite the issue body so that a coding agent can implement it'
+            printf '%s\n' 'without ambiguity. The refined body MUST contain exactly two sections:'
+            printf '%s\n' ''
+            printf '%s\n' '## Goal'
+            printf '%s\n' 'A single, precise sentence describing what the final state should be.'
+            printf '%s\n' ''
+            printf '%s\n' '## How to implement'
+            printf '%s\n' 'Concrete steps, files to touch, and patterns to follow — enough for an'
+            printf '%s\n' 'agent to start coding immediately.'
+            printf '%s\n' ''
+            printf '%s\n' 'Do NOT include any step to run ./scripts/completion-check,'
+            printf '%s\n' 'AGENTS.md completion-check-command, or /completion-check-command'
+            printf '%s\n' '— opencode enforces the AGENTS.md completion-check-command'
+            printf '%s\n' 'automatically, so repeating it in the refined body is redundant.'
+            printf '%s\n' ''
+            printf '%s\n' 'This is a read-only evidence run for bacluc-agent/agent-todo#238:'
+            printf '%s\n' 'do NOT edit any files, do NOT push commits, do NOT call gh issue view,'
+            printf '%s\n' 'gh issue edit, or any other gh command. Only return the refined text.'
+            printf '%s\n' ''
+            printf '%s\n' 'Output ONLY the new issue body. No preamble, no markdown fences around'
+            printf '%s\n' 'the whole output, no commentary.'
+          } > "$prompt"
+
+          out="$RUNNER_TEMP/refine-direct-238.txt"
+          set +e
+          timeout 8m opencode run --agent refiner --model "$selection_model" --title "refiner-direct-238" \
+            "$(< "$prompt")" 2> >(tee "${out}.stderr" >&2) | tee "$out"
+          statuses=("${PIPESTATUS[@]}")
+          opencode_status=${statuses[0]}
+          tee_status=${statuses[1]}
+          set -e
+          if (( tee_status != 0 )); then
+            printf 'Tee failed for direct refiner run (tee=%s).\n' "$tee_status" >&2
+            exit 1
+          fi
+          if (( opencode_status != 0 )); then
+            printf 'Direct refiner run failed (opencode=%s).\n' "$opencode_status" >&2
+            exit 1
+          fi
+          python3 scripts/validate_refined_issue.py --file "$out"
+
+      - name: Coordinator-delegated refiner run
+        id: delegated
+        timeout-minutes: 10
+        shell: bash
+        env:
+          AVAILABLE_MODELS: ${{ steps.model-availability.outputs.available-models }}
+        run: |
+          set -Eeuo pipefail
+
+          printf '::add-mask::%s\n' "$GITHUB_TOKEN"
+          printf '::add-mask::%s\n' "$OPENCODE_GO_API_KEY"
+          printf '::add-mask::%s\n' "$OPENCODE_GO_2_API_KEY"
+          printf '::add-mask::%s\n' "$OPENCODE_AUTH_CONTENT"
+
+          printf 'Selecting model...\n'
+
+          available_models_file="$RUNNER_TEMP/available-models-delegated.txt"
+          printf '%s\n' "$AVAILABLE_MODELS" > "$available_models_file"
+
+          selection_model=''
+          # Exclude known-weak free models (ling-3.0-flash-fin-free, mimo-v2.5-free, nemotron-*, muse-spark-*)
+          # per model-discovery.md (provision-machines devel branch); they pass the trivial OK
+          # probe but fail as coordinator/selector in 10+ runs (e.g. 34029380869, 34042660858).
+          mapfile -t free_models < <(grep -E '^(opencode|openrouter)/[^[:space:]]+(-free|:free)$' "$available_models_file" | grep -Ev '/(ling-3\.0-flash-fin|mimo-v2\.5)(-free|:free)$|/nemotron-|/muse-spark-' | awk '!seen[$0]++')
+          for candidate in \
+            'opencode-go-openai/qwen3.8-flash' \
+            'opencode-go-openai-2/qwen3.8-flash' \
+            'opencode/big-pickle' \
+            "${free_models[@]}"; do
+            case "$candidate" in
+              opencode-go-openai/qwen3.8-flash)
+                grep -Fxq "$candidate" "$available_models_file" && [[ -n "$OPENCODE_GO_API_KEY" ]] || continue
+                ;;
+              opencode-go-openai-2/qwen3.8-flash)
+                grep -Fxq "$candidate" "$available_models_file" && [[ -n "$OPENCODE_GO_2_API_KEY" ]] || continue
+                ;;
+              opencode/big-pickle)
+                grep -Fxq "$candidate" "$available_models_file" || continue
+                ;;
+              opencode/*-free) ;;
+              openrouter/*)
+                [[ -n "$OPENROUTER_API_KEY" ]] || continue
+                ;;
+              *) continue ;;
+            esac
+            selection_model="$candidate"
+            break
+          done
+          if [[ -z "$selection_model" ]]; then
+            printf '%s\n' 'No refinement model is available; not dispatching.' >&2
+            exit 1
+          fi
+          printf 'Refinement model: %s\n' "$selection_model"
+
+          sample_title='Sample: add a /healthz endpoint for load-balancer checks'
+          sample_body='The service needs a health endpoint so the load balancer can check liveness. It should answer GET /healthz with HTTP 200 and {"status":"ok"}. Register the route next to the existing routes in src/server.ts and cover it with a unit test.'
+
+          prompt="$RUNNER_TEMP/refine-prompt-delegated-238.txt"
+          {
+            printf '%s\n' 'You are the coordinator. Delegate the refinement task below to the refiner'
+            printf '%s\n' 'agent and return ONLY its refined issue body.'
+            printf '%s\n' ''
+            printf '%s\n' 'Refine the following GitHub issue into clear, agent-ready text.'
+            printf '%s\n' ''
+            printf 'Issue: %s\n' "$sample_title"
+            printf '%s\n' ''
+            printf '%s\n' 'Current body:'
+            printf '%s\n' "$sample_body"
+            printf '%s\n' ''
+            printf '%s\n' 'Your task: rewrite the issue body so that a coding agent can implement it'
+            printf '%s\n' 'without ambiguity. The refined body MUST contain exactly two sections:'
+            printf '%s\n' ''
+            printf '%s\n' '## Goal'
+            printf '%s\n' 'A single, precise sentence describing what the final state should be.'
+            printf '%s\n' ''
+            printf '%s\n' '## How to implement'
+            printf '%s\n' 'Concrete steps, files to touch, and patterns to follow — enough for an'
+            printf '%s\n' 'agent to start coding immediately.'
+            printf '%s\n' ''
+            printf '%s\n' 'Do NOT include any step to run ./scripts/completion-check,'
+            printf '%s\n' 'AGENTS.md completion-check-command, or /completion-check-command'
+            printf '%s\n' '— opencode enforces the AGENTS.md completion-check-command'
+            printf '%s\n' 'automatically, so repeating it in the refined body is redundant.'
+            printf '%s\n' ''
+            printf '%s\n' 'This is a read-only evidence run for bacluc-agent/agent-todo#238:'
+            printf '%s\n' 'do NOT edit any files, do NOT push commits, do NOT call gh issue view,'
+            printf '%s\n' 'gh issue edit, or any other gh command. Do NOT call any agent except refiner.'
+            printf '%s\n' ''
+            printf '%s\n' 'Output ONLY the new issue body. No preamble, no markdown fences around'
+            printf '%s\n' 'the whole output, no commentary.'
+          } > "$prompt"
+
+          out="$RUNNER_TEMP/refine-delegated-238.txt"
+          set +e
+          timeout 10m opencode run --agent coordinator --model "$selection_model" --title "coordinator-delegated-238" \
+            "$(< "$prompt")" 2> >(tee "${out}.stderr" >&2) | tee "$out"
+          statuses=("${PIPESTATUS[@]}")
+          opencode_status=${statuses[0]}
+          tee_status=${statuses[1]}
+          set -e
+          if (( tee_status != 0 )); then
+            printf 'Tee failed for coordinator-delegated run (tee=%s).\n' "$tee_status" >&2
+            exit 1
+          fi
+          if (( opencode_status != 0 )); then
+            printf 'Coordinator-delegated run failed (opencode=%s).\n' "$opencode_status" >&2
+            exit 1
+          fi
+          python3 scripts/validate_refined_issue.py --file "$out"
