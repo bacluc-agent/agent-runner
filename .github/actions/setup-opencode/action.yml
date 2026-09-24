@@ -36,6 +36,7 @@ runs:
         fi
         rm -rf "$config_dir"
         cp -a "$source_dir/$CONFIG_PATH" "$config_dir"
+        printf 'agents/build.md: %s\n' "$(sed -n 's/^description: *//p' "$config_dir/agents/build.md" | head -n1)" || true
 
         if [[ ! -d "$source_dir/$SKILLS_PATH" ]]; then
           printf 'Missing skills directory: %s\n' "$SKILLS_PATH" >&2
