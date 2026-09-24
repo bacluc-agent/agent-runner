@@ -88,6 +88,19 @@ This comment consolidates the research on AI agent patterns gathered on this iss
 - [#227 (OPEN) ReAct loop demo](https://github.com/bacluc-agent/agent-todo/issues/227), [#228 (OPEN) reflection evaluator-optimizer](https://github.com/bacluc-agent/agent-todo/issues/228), [#229 (CLOSED) SWE-agent ACI](https://github.com/bacluc-agent/agent-todo/issues/229), [#230 (OPEN) Voyager skill-library](https://github.com/bacluc-agent/agent-todo/issues/230), [#231 (CLOSED) loop-termination metrics](https://github.com/bacluc-agent/agent-todo/issues/231).
 - Implemented: #120, #124. Rejected by human: #121, #122, #123.
 
+## Search queries executed (fresh, 2026-09-24)
+
+1. "AI agent design patterns survey 2026" → [arXiv:2605.13850v2](https://arxiv.org/abs/2605.13850) (Huang & Zhou; 7×6 matrix, 28 patterns).
+2. "self-improving LLM agents research 2026" → [arXiv:2609.26457](https://arxiv.org/abs/2609.26457) (AIDE²; recursive self-improvement, reward hacking 55%→32%).
+3. "agent loop patterns September 2026 LLM orchestration" → [PAOVR Loop (auditme.dev)](https://auditme.dev/blog/paovr-loop).
+4. "multi-agent debate DMAD 2026 research paper" → [Findings ACL 2026: Demystifying MAD](https://aclanthology.org/2026.findings-acl.1694/).
+5. "agentic AI survey 2026 taxonomy" → [Springer Cognitive Computation survey](https://link.springer.com/article/10.1007/s12559-026-10500-0).
+6. "SWE-agent coding agents 2026" → [SWE-AGILE (Findings ACL 2026)](https://aclanthology.org/2026.findings-acl.868/).
+7. "Voyager skill library 2026" → only original [MineDojo/Voyager](https://github.com/MineDojo/Voyager); no new source.
+8. "reflexion self-improvement agents 2026 follow-up" → only original [arXiv:2303.11366](https://arxiv.org/abs/2303.11366); no new follow-up.
+9. "When collaboration fails … adversarial influence in MAD" → [Scientific Reports 2026](https://www.nature.com/articles/s41598-026-42705-7).
+10. "OpenAI practical guide to building AI agents" → [OpenAI guide](https://openai.com/business/guides-and-resources/a-practical-guide-to-building-ai-agents/) (verified via search; direct fetch 403).
+
 ### Actions taken on this issue
 
 - 10 fresh web searches + 20 verified sources (all accessed 2026-09-24; details in research notes committed to agent-runner branch `research/agent-patterns-76`).
