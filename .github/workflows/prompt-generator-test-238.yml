@@ -2,6 +2,9 @@ name: Prompt-generator test (issue-238-prompt-generator-concise)
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - .github/workflows/prompt-generator-test-238.yml
 
 permissions:
   contents: read
