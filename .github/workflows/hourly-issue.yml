@@ -50,6 +50,8 @@ jobs:
 
       - name: Set up OpenCode
         uses: ./.github/actions/setup-opencode
+        with:
+          source-branch: issue-238-prompt-generator-concise
 
       - name: Check model availability
         id: model-availability
