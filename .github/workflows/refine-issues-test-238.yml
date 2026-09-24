@@ -49,8 +49,8 @@ jobs:
         run: |
           set -Eeuo pipefail
           pinned='0250c09cbfe79f506413dffd07022f68df11ac9e'
-          expected_sha='d7ba4d7d03d50935ab318761c644d06bced81eea5074cc4709c43761b3274204'
-          expected_lines=20
+          expected_sha='52cb4c0eebc127c04857498cca1e89cfa61f4c02eab70730c2061a27230721e1'
+          expected_lines=21
           refiner="$HOME/.config/opencode/agents/refiner.md"
           source_dir="$RUNNER_TEMP/provision-machines"
 
@@ -86,7 +86,7 @@ jobs:
             exit 1
           fi
           printf 'refiner.md: %s lines, sha256 %s\n' "$actual_lines" "$actual_sha"
-          printf 'Provenance OK: installed refiner.md is the 20-line concise prompt from provision-machines issue-238-refiner-concise @ 0250c09\n'
+          printf 'Provenance OK: installed refiner.md is the 21-line concise prompt from provision-machines issue-238-refiner-concise @ 0250c09\n'
 
       - name: Direct refiner run
         id: direct
