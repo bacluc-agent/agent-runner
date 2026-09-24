@@ -52,6 +52,11 @@ jobs:
           printf 'Using agent description from provision-machines branch: issue-238-tester-concise\n'
           printf 'Agent file: deploys/development_tools/ai_agent_devcontainer/files/opencode/agents/tester.md\n'
           printf 'This workflow validates the concise tester prompt from BacLuc/provision-machines#198.\n'
-          MODEL="$(printf '%s\n' "$AVAILABLE_MODELS" | head -n 1)"
+          PREFERRED_MODEL="opencode/muse-spark-1.3-contributor-free"
+          if printf '%s\n' "$AVAILABLE_MODELS" | grep -Fxq "$PREFERRED_MODEL"; then
+            MODEL="$PREFERRED_MODEL"
+          else
+            MODEL="$(printf '%s\n' "$AVAILABLE_MODELS" | head -n 1)"
+          fi
           printf 'Using model: %s\n' "$MODEL"
           timeout 20m opencode run --agent coordinator --model "$MODEL" --title "tester-proof-238" "Delegate to the tester subagent (subagent_type=\"tester\"): run the repo fast self-check and return tester output." 2>&1 | tee "$RUNNER_TEMP/tester-proof.out"
