@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Prints the subagent transcripts for the opencode session named by COORDINATOR_SESSION_TITLE.
 
 import json
 import os
