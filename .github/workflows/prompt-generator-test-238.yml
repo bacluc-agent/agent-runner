@@ -1,0 +1,58 @@
+name: Prompt-generator test (issue-238-prompt-generator-concise)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: read
+
+jobs:
+  exercise:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GITHUB_TOKEN: ${{ secrets.BACLUC_AGENT_GITHUB_TOKEN }}
+      OPENCODE_GO_API_KEY: ${{ secrets.OPENCODE_GO_API_KEY }}
+      OPENCODE_GO_2_API_KEY: ${{ secrets.OPENCODE_GO_2_API_KEY }}
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      OPENCODE_AUTH_CONTENT: ${{ secrets.OPENCODE_AUTH_JSON }}
+      ISSUE_REPOSITORY: ${{ vars.ISSUE_REPOSITORY || github.repository }}
+      MODEL_AVAILABILITY_CACHE_ISSUE: ${{ vars.MODEL_AVAILABILITY_CACHE_ISSUE }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          token: ${{ secrets.BACLUC_AGENT_GITHUB_TOKEN }}
+
+      - name: Set up OpenCode (issue-238-prompt-generator-concise branch)
+        uses: ./.github/actions/setup-opencode
+        with:
+          source-branch: issue-238-prompt-generator-concise
+
+      - name: Check model availability
+        id: model-availability
+        timeout-minutes: 10
+        uses: ./.github/actions/model-availability
+
+      - name: Exercise prompt-generator
+        id: exercise
+        timeout-minutes: 10
+        shell: bash
+        env:
+          AVAILABLE_MODELS: ${{ steps.model-availability.outputs.available-models }}
+        run: |
+          set -Eeuo pipefail
+          printf 'Using agent description from provision-machines branch: issue-238-prompt-generator-concise\n'
+          printf 'Agent file: deploys/development_tools/ai_agent_devcontainer/files/opencode/agents/prompt-generator.md\n'
+          model="$(printf '%s\n' "$AVAILABLE_MODELS" | head -n 1)"
+          if [[ -z "$model" ]]; then
+            printf '%s\n' 'No available models found' >&2
+            exit 1
+          fi
+          printf 'Exercising prompt-generator with model: %s\n' "$model"
+          timeout 8m opencode run --agent prompt-generator --model "$model" --title "prompt-generator-test" "Write an implementation prompt for: add a health-check endpoint that returns HTTP 200 with body OK" | tee "$RUNNER_TEMP/prompt-out.txt"
+          lines="$(wc -l < "$RUNNER_TEMP/prompt-out.txt" | tr -d ' ')"
+          printf 'Prompt output lines: %s\n' "$lines"
+          cat "$RUNNER_TEMP/prompt-out.txt"
