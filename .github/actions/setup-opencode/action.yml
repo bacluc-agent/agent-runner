@@ -26,7 +26,7 @@ runs:
         source_dir="$RUNNER_TEMP/provision-machines"
         config_dir="$RUNNER_TEMP/opencode-config"
         # Using branch issue-238-build-concise from provision-machines for PR #192 review
-        branch_ref="issue-238-build-concise"
+        branch_ref="issue-238-planner-concise"
         printf 'Using source branch: %s\n' "$branch_ref"
         git clone --quiet --branch "$branch_ref" "$SOURCE_REPOSITORY" "$source_dir"
         git -C "$source_dir" rev-parse --verify "$branch_ref" || { printf 'Branch %s not found in cloned repo\n' "$branch_ref"; exit 1; }
