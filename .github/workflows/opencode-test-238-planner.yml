@@ -2,6 +2,9 @@ name: OpenCode planner test (issue-238-planner-concise)
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/opencode-test-238-planner.yml"
 
 permissions:
   contents: read
