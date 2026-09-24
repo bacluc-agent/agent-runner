@@ -365,3 +365,5 @@ jobs:
           fi
           python3 scripts/validate_refined_issue.py --file "$out"
           printf '%s\n' 'Delegated run OK: coordinator identity present, no agent fallback, body valid.'
+
+# re-trigger: evidence for BacLuc/provision-machines PR #196 review (2026-09-24)
