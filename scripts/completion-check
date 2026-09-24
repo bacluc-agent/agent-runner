@@ -17,11 +17,11 @@ status=0
 # entry, while regular untracked files of this repository stay checked.
 prettier_ignore=".prettierignore.completion-check"
 trap 'rm -f "$prettier_ignore"' EXIT
-cat .gitignore .prettierignore 2>/dev/null >"$prettier_ignore" || true
-printf '%s\n' "$prettier_ignore" >>"$prettier_ignore"
+cat .gitignore .prettierignore 2> /dev/null > "$prettier_ignore" || true
+printf '%s\n' "$prettier_ignore" >> "$prettier_ignore"
 while IFS= read -r entry; do
   if [[ -e "${entry%/}/.git" ]]; then printf '%s\n' "${entry%/}/"; fi
-done < <(git ls-files --others --exclude-standard) >>"$prettier_ignore"
+done < <(git ls-files --others --exclude-standard) >> "$prettier_ignore"
 
 check() {
   local name="$1"
@@ -42,9 +42,9 @@ if [[ ! -d .opencode/node_modules/@opencode-ai/plugin ]]; then
 fi
 check 'opencode plugin tests (node --test)' node --test ".opencode/plugin/*.test.mjs"
 check 'opencode tool tests (node --test)' node --test ".opencode/tool/*.test.mjs"
-if command -v uv >/dev/null 2>&1; then
+if command -v uv > /dev/null 2>&1; then
   check 'pytest (scripts tests)' uv run --group dev pytest -q
-elif command -v pytest >/dev/null 2>&1; then
+elif command -v pytest > /dev/null 2>&1; then
   check 'pytest (scripts tests)' pytest -q
 else
   check 'pytest (scripts tests)' bash -c 'python3 -m pip install --quiet pytest && python3 -m pytest -q'

@@ -1,10 +1,10 @@
-import test from "node:test";
+import navigateRepo from "./navigate_repo.ts";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import navigateRepo from "./navigate_repo.ts";
+import test from "node:test";
 
 const mkRepo = () => {
   const worktree = mkdtempSync(join(tmpdir(), "navigate-repo-"));
