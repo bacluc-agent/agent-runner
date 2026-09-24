@@ -2,6 +2,11 @@ name: Refine issues (test with issue-238-refiner-concise)
 
 on:
   workflow_dispatch:
+    inputs:
+      model:
+        description: "Model for the direct refiner run (empty = auto-selection)"
+        required: false
+        default: ""
   push:
     paths:
       - ".github/workflows/refine-issues-test-238.yml"
@@ -13,7 +18,7 @@ permissions:
 jobs:
   refine:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     env:
       GITHUB_TOKEN: ${{ secrets.BACLUC_AGENT_GITHUB_TOKEN }}
       OPENCODE_GO_API_KEY: ${{ secrets.OPENCODE_GO_API_KEY }}
@@ -43,13 +48,45 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
+          pinned='0250c09cbfe79f506413dffd07022f68df11ac9e'
+          expected_sha='d7ba4d7d03d50935ab318761c644d06bced81eea5074cc4709c43761b3274204'
+          expected_lines=20
+          refiner="$HOME/.config/opencode/agents/refiner.md"
+          source_dir="$RUNNER_TEMP/provision-machines"
+
           printf 'Using source branch: %s\n' 'issue-238-refiner-concise'
-          ls -l "$HOME/.config/opencode/agents/refiner.md"
-          cat "$HOME/.config/opencode/agents/refiner.md"
-          sha256sum "$HOME/.config/opencode/agents/refiner.md"
-          wc -l "$HOME/.config/opencode/agents/refiner.md"
-          git -C "$RUNNER_TEMP/provision-machines" rev-parse HEAD
-          git -C "$RUNNER_TEMP/provision-machines" log --oneline -1
+          if [[ ! -f "$refiner" ]]; then
+            printf 'Provenance FAILED: %s does not exist.\n' "$refiner" >&2
+            exit 1
+          fi
+          ls -l "$refiner"
+          cat "$refiner"
+          sha256sum "$refiner"
+          wc -l "$refiner"
+          head_sha="$(git -C "$source_dir" rev-parse HEAD)"
+          printf 'provision-machines HEAD: %s\n' "$head_sha"
+          git -C "$source_dir" log --oneline -1
+
+          actual_lines="$(wc -l < "$refiner" | tr -d '[:space:]')"
+          if [[ "$actual_lines" != "$expected_lines" ]]; then
+            printf 'Provenance FAILED: refiner.md has %s lines, expected %s. The agent description is not the concise prompt; stop and report instead of weakening this check.\n' "$actual_lines" "$expected_lines" >&2
+            exit 1
+          fi
+          actual_sha="$(sha256sum "$refiner" | awk '{print $1}')"
+          if [[ "$actual_sha" != "$expected_sha" ]]; then
+            printf 'Provenance FAILED: refiner.md sha256 %s != expected %s. The agent description changed; stop and report instead of weakening this check.\n' "$actual_sha" "$expected_sha" >&2
+            exit 1
+          fi
+          if ! git -C "$source_dir" merge-base --is-ancestor "$pinned" "$head_sha"; then
+            printf 'Provenance FAILED: pinned commit %s is not an ancestor of HEAD %s in %s.\n' "$pinned" "$head_sha" "$source_dir" >&2
+            exit 1
+          fi
+          if ! grep -Fq 'Headless: never ask questions' "$refiner"; then
+            printf 'Provenance FAILED: installed refiner.md does not contain the concise rule 1 "Headless: never ask questions".\n' >&2
+            exit 1
+          fi
+          printf 'refiner.md: %s lines, sha256 %s\n' "$actual_lines" "$actual_sha"
+          printf 'Provenance OK: installed refiner.md is the 20-line concise prompt from provision-machines issue-238-refiner-concise @ 0250c09\n'
 
       - name: Direct refiner run
         id: direct
@@ -57,10 +94,12 @@ jobs:
         shell: bash
         env:
           AVAILABLE_MODELS: ${{ steps.model-availability.outputs.available-models }}
+          GITHUB_TOKEN: ""
+          REQUESTED_MODEL: ${{ inputs.model || '' }}
         run: |
           set -Eeuo pipefail
 
-          printf '::add-mask::%s\n' "$GITHUB_TOKEN"
+          if [[ -n "$GITHUB_TOKEN" ]]; then printf '::add-mask::%s\n' "$GITHUB_TOKEN"; fi
           printf '::add-mask::%s\n' "$OPENCODE_GO_API_KEY"
           printf '::add-mask::%s\n' "$OPENCODE_GO_2_API_KEY"
           printf '::add-mask::%s\n' "$OPENCODE_AUTH_CONTENT"
@@ -74,31 +113,45 @@ jobs:
           # Exclude known-weak free models (ling-3.0-flash-fin-free, mimo-v2.5-free, nemotron-*, muse-spark-*)
           # per model-discovery.md (provision-machines devel branch); they pass the trivial OK
           # probe but fail as coordinator/selector in 10+ runs (e.g. 34029380869, 34042660858).
-          mapfile -t free_models < <(grep -E '^(opencode|openrouter)/[^[:space:]]+(-free|:free)$' "$available_models_file" | grep -Ev '/(ling-3\.0-flash-fin|mimo-v2\.5)(-free|:free)$|/nemotron-|/muse-spark-' | awk '!seen[$0]++')
-          for candidate in \
-            'opencode-go-openai/qwen3.8-flash' \
-            'opencode-go-openai-2/qwen3.8-flash' \
-            'opencode/big-pickle' \
-            "${free_models[@]}"; do
-            case "$candidate" in
-              opencode-go-openai/qwen3.8-flash)
-                grep -Fxq "$candidate" "$available_models_file" && [[ -n "$OPENCODE_GO_API_KEY" ]] || continue
-                ;;
-              opencode-go-openai-2/qwen3.8-flash)
-                grep -Fxq "$candidate" "$available_models_file" && [[ -n "$OPENCODE_GO_2_API_KEY" ]] || continue
-                ;;
-              opencode/big-pickle)
-                grep -Fxq "$candidate" "$available_models_file" || continue
-                ;;
-              opencode/*-free) ;;
-              openrouter/*)
-                [[ -n "$OPENROUTER_API_KEY" ]] || continue
-                ;;
-              *) continue ;;
-            esac
-            selection_model="$candidate"
-            break
-          done
+          if [[ -n "$REQUESTED_MODEL" ]]; then
+            if ! grep -Fxq "$REQUESTED_MODEL" "$available_models_file"; then
+              printf 'Requested model %s is not in the model-availability output.\nAvailable models:\n%s\n' "$REQUESTED_MODEL" "$AVAILABLE_MODELS" >&2
+              exit 1
+            fi
+            if printf '%s\n' "$REQUESTED_MODEL" | grep -Eq '/(ling-3\.0-flash-fin|mimo-v2\.5)(-free|:free)$|/nemotron-|/muse-spark-'; then
+              printf 'Requested model %s is on the known-weak exclusion list.\n' "$REQUESTED_MODEL" >&2
+              exit 1
+            fi
+            selection_model="$REQUESTED_MODEL"
+            printf 'Using requested model: %s\n' "$selection_model"
+          fi
+          if [[ -z "$selection_model" ]]; then
+            mapfile -t free_models < <(grep -E '^(opencode|openrouter)/[^[:space:]]+(-free|:free)$' "$available_models_file" | grep -Ev '/(ling-3\.0-flash-fin|mimo-v2\.5)(-free|:free)$|/nemotron-|/muse-spark-' | awk '!seen[$0]++')
+            for candidate in \
+              'opencode-go-openai/qwen3.8-flash' \
+              'opencode-go-openai-2/qwen3.8-flash' \
+              'opencode/big-pickle' \
+              "${free_models[@]}"; do
+              case "$candidate" in
+                opencode-go-openai/qwen3.8-flash)
+                  grep -Fxq "$candidate" "$available_models_file" && [[ -n "$OPENCODE_GO_API_KEY" ]] || continue
+                  ;;
+                opencode-go-openai-2/qwen3.8-flash)
+                  grep -Fxq "$candidate" "$available_models_file" && [[ -n "$OPENCODE_GO_2_API_KEY" ]] || continue
+                  ;;
+                opencode/big-pickle)
+                  grep -Fxq "$candidate" "$available_models_file" || continue
+                  ;;
+                opencode/*-free) ;;
+                openrouter/*)
+                  [[ -n "$OPENROUTER_API_KEY" ]] || continue
+                  ;;
+                *) continue ;;
+              esac
+              selection_model="$candidate"
+              break
+            done
+          fi
           if [[ -z "$selection_model" ]]; then
             printf '%s\n' 'No refinement model is available; not dispatching.' >&2
             exit 1
@@ -136,8 +189,13 @@ jobs:
             printf '%s\n' 'do NOT edit any files, do NOT push commits, do NOT call gh issue view,'
             printf '%s\n' 'gh issue edit, or any other gh command. Only return the refined text.'
             printf '%s\n' ''
-            printf '%s\n' 'Output ONLY the new issue body. No preamble, no markdown fences around'
-            printf '%s\n' 'the whole output, no commentary.'
+            printf '%s\n' 'Output EXACTLY this format, no preamble and no commentary:'
+            printf '%s\n' 'Line 1: the literal text "Rule 1: " followed by rule 1 of your agent'
+            printf '%s\n' 'definition quoted verbatim, word for word, including its trailing period.'
+            printf '%s\n' 'Line 2: Read: AGENTS.md'
+            printf '%s\n' 'Line 3: (blank line)'
+            printf '%s\n' 'Line 4 onward: the refined issue body only. No markdown fences around'
+            printf '%s\n' 'the whole output.'
           } > "$prompt"
 
           out="$RUNNER_TEMP/refine-direct-238.txt"
@@ -156,7 +214,35 @@ jobs:
             printf 'Direct refiner run failed (opencode=%s).\n' "$opencode_status" >&2
             exit 1
           fi
-          python3 scripts/validate_refined_issue.py --file "$out"
+          # ponytail: the stderr tee runs as a process substitution; give it a beat to flush
+          sleep 1
+          if grep -Fq 'Falling back to default agent' "$out" "${out}.stderr"; then
+            printf 'opencode fell back to the default agent; the refiner agent was not used.\n' >&2
+            exit 1
+          fi
+          if ! grep -Fq 'refiner ·' "$out" "${out}.stderr"; then
+            printf 'No "refiner ·" identity marker in the direct run output; refiner did not run.\n' >&2
+            exit 1
+          fi
+          proof="$RUNNER_TEMP/refine-direct-238-proof.txt"
+          body="$RUNNER_TEMP/refine-direct-238-body.txt"
+          sed -n '1,2p' "$out" > "$proof"
+          sed -n '3,$p' "$out" > "$body"
+          printf '%s\n' '--- prompt proof lines ---'
+          cat "$proof"
+          printf '%s\n' '--- end prompt proof lines ---'
+          python3 scripts/validate_refined_issue.py --file "$body"
+          if ! grep -Fq 'Headless: never ask questions' "$proof"; then
+            printf 'Prompt proof FAILED: the reply does not quote rule 1 verbatim: %s\n' "$proof" >&2
+            cat "$proof" >&2
+            exit 1
+          fi
+          if ! grep -Fq 'Read: AGENTS.md' "$proof"; then
+            printf 'Prompt proof FAILED: the reply does not print "Read: AGENTS.md": %s\n' "$proof" >&2
+            cat "$proof" >&2
+            exit 1
+          fi
+          printf '%s\n' 'Prompt proof OK: reply quotes rule 1 verbatim and prints Read: AGENTS.md.'
 
       - name: Coordinator-delegated refiner run
         id: delegated
@@ -164,10 +250,11 @@ jobs:
         shell: bash
         env:
           AVAILABLE_MODELS: ${{ steps.model-availability.outputs.available-models }}
+          GITHUB_TOKEN: ""
         run: |
           set -Eeuo pipefail
 
-          printf '::add-mask::%s\n' "$GITHUB_TOKEN"
+          if [[ -n "$GITHUB_TOKEN" ]]; then printf '::add-mask::%s\n' "$GITHUB_TOKEN"; fi
           printf '::add-mask::%s\n' "$OPENCODE_GO_API_KEY"
           printf '::add-mask::%s\n' "$OPENCODE_GO_2_API_KEY"
           printf '::add-mask::%s\n' "$OPENCODE_AUTH_CONTENT"
@@ -266,4 +353,15 @@ jobs:
             printf 'Coordinator-delegated run failed (opencode=%s).\n' "$opencode_status" >&2
             exit 1
           fi
+          # ponytail: the stderr tee runs as a process substitution; give it a beat to flush
+          sleep 1
+          if grep -Fq 'Falling back to default agent' "$out" "${out}.stderr"; then
+            printf 'opencode fell back to the default agent; the coordinator/refiner agents were not used.\n' >&2
+            exit 1
+          fi
+          if ! grep -Fq 'coordinator ·' "$out" "${out}.stderr"; then
+            printf 'No "coordinator ·" identity marker in the delegated run output; coordinator did not run.\n' >&2
+            exit 1
+          fi
           python3 scripts/validate_refined_issue.py --file "$out"
+          printf '%s\n' 'Delegated run OK: coordinator identity present, no agent fallback, body valid.'
