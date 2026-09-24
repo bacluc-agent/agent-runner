@@ -13,6 +13,5 @@ Progress:
 - [x] Research phase: 10 fresh 2026-dated searches + 20 verified sources (taxonomy/frameworks, self-improvement, loops, MAD 2026 wave); notes in research_notes.md; citation traps confirmed (ReWOO=2305.18323, STO=COLM 2024, SEAL=Zweiger NeurIPS 2025, DMAD-2026 != DMAD-ICLR2025); URL fixes (nature.com replaces blocked pubmed, agentpatterns.ai moved, openai.com guide 403 -> verified via search)
 - [x] Build phase: archive part 1/2/3 drafts + summary.md + verification script
 - [x] Archive phase: created+closed archive issues #266/#267/#268 (5/6/9 comments, all verbatim, verified); summary comment posted (issuecomment-5819005255)
-- [ ] Delete phase: delete 17 bot comments (keep 2 BacLuc + run-tracking + summary)
 - [x] Delete phase: deleted 17 bot comments (204s); #76 now has exactly 4 comments: 5568648208 (BacLuc), 5818668536 (BacLuc), 5818690727 (run-tracking), 5819005255 (summary)
 - [x] Final verification: archive re-verified (all 20 comments verbatim in #266/#267/#268, closed, < 65536); traceability artifacts committed to research/issue-76-2026-09-24 on branch research/agent-patterns-76
