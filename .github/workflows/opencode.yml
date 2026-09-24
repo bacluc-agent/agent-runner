@@ -129,6 +129,17 @@ jobs:
 
       - name: Set up OpenCode
         uses: ./.github/actions/setup-opencode
+        with:
+          source-branch: issue-238-planner-concise
+
+      - name: Prove planner source branch
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          git -C "$RUNNER_TEMP/provision-machines" rev-parse HEAD
+          git -C "$RUNNER_TEMP/provision-machines" log --oneline -1
+          wc -l "$HOME/.config/opencode/agents/planner.md"
+          cat "$HOME/.config/opencode/agents/planner.md"
 
       - name: Install uv
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
