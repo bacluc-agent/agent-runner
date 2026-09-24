@@ -22,10 +22,12 @@ I've conducted extensive research across the cited sources and additional materi
 **How it's built:** Interleaves Thought → Action → Observation in a loop. The model generates reasoning, calls a tool, receives the result, and decides the next step. Introduced by Yao et al. (ICLR 2023, arXiv:2210.03629).
 
 **Implementation examples:**
+
 - **From scratch (~50 lines of Python):** A system prompt locking the Thought/Action/Observation grammar, a regex parser for action extraction, a tool registry (dict), and a while loop with a stop condition. The Claude Agent SDK collapses this to ~10 lines with `query()` yielding messages as the agent thinks, calls tools, and observes results.
 - **Production pattern:** A `ToolGateway` with allowlist, budget enforcement (`max_steps`, `max_tool_calls`, `max_seconds`), loop detection for repeated calls, and explicit `stop_reason` values. The policy boundary separates the model's decision from tool execution.
 
 **Key learnings:**
+
 - Each action is motivated by explicit reasoning — the agent doesn't call tools randomly
 - The loop is the engine: seed messages → generate → record → branch on tool calls → guard with step ceiling
 - **Main failure modes:** hallucinated tool names, infinite loops, quadratic token cost (every turn re-sends full history)
@@ -41,12 +43,14 @@ I've conducted extensive research across the cited sources and additional materi
 **How it's built:** Generate → critique → revise, repeating until convergence. Reflexion (Shinn et al., 2023) adds persistent verbal memory across trials. The agent solves a task, sees failure, writes a natural-language critique, stores it, and tries again conditioned on that feedback.
 
 **Implementation examples:**
+
 - **ReflexionAgent** with 5 prompt roles: thinking, execution, reflection, documentation, and final generation
 - Multi-trial cycle: Plan (using memory) → Execute → Evaluate → Reflect → Update Memory
 - On HumanEval, verbal RL bumped pass@1 from GPT-4 baseline to ~91%
 - **Self-Refine** (Madaan et al., 2023) uses the same generate→critique→revise pattern
 
 **Key learnings:**
+
 - No weight updates needed — cheap to adopt for any LLM
 - Improvements are **ephemeral** unless reflections are persisted and reused
 - The model can hallucinate bad reflections and reinforce them
@@ -62,11 +66,13 @@ I've conducted extensive research across the cited sources and additional materi
 **How it's built:** Lifts the agent loop into a Monte Carlo Tree Search. Each node is a partial trajectory. Uses UCT (Upper Confidence Bound for Trees) for selection, expansion, evaluation, and backpropagation. Published at ICML 2024.
 
 **Implementation examples:**
+
 - **LangGraph LATS notebook:** `Node` class with messages, reflection, parent/children, value, visits. `upper_confidence_bound()` balances exploitation vs exploration. `backpropagate()` updates scores up the tree.
 - Four steps: Select (UCB) → Expand (generate candidates) → Evaluate (score) → Backpropagate
 - 10 iterations × 4 calls = 40 LLM calls; 20 iterations = 80 calls
 
 **Key learnings:**
+
 - Explores multiple solution paths simultaneously rather than committing to one trajectory
 - **Outperforms** simpler reflection because it can backtrack from failing branches
 - Token cost is 5-10x ReAct — best reserved for high-stakes tasks
@@ -82,12 +88,14 @@ I've conducted extensive research across the cited sources and additional materi
 **How it's built:** Separates planning from execution. A Planner creates a complete plan with placeholders for tool results, all tools execute, then a Solver integrates results. Paper: Xu et al. (2023, arXiv:2305.18323).
 
 **Implementation examples:**
+
 - **Three phases:** (1) Worker creates plan with placeholders like `#E1`, `#E2` (2) Execute all solver requests, resolving dependencies (3) Worker integrates results
 - Only **2 LLM calls** regardless of number of tools (plan + integrate) vs ReAct's N+1
 - Achieves **5× token efficiency** and **4% accuracy improvement** on HotpotQA
 - Can offload reasoning from 175B GPT-3.5 into 7B LLaMA via instruction tuning
 
 **Key learnings:**
+
 - **64% token reduction** vs ReAct across 6 public benchmarks, with 4.4% accuracy gain
 - Cleaner reasoning: separation of planning and execution lets the model focus purely on logic
 - Reduced hallucination: clear plan before execution
@@ -103,12 +111,14 @@ I've conducted extensive research across the cited sources and additional materi
 **How it's built:** Three components: (1) automatic curriculum maximizing exploration, (2) ever-growing skill library of executable code, (3) iterative prompting with environment feedback, execution errors, and self-verification. Wang et al. (2023, arXiv:2305.16291).
 
 **Implementation examples:**
+
 - Skills stored as executable code programs indexed by embedding vectors
 - Skill retrieval: query top-5 relevant skills from vector database
 - Iterative code refinement: execute → get feedback/errors → refine → self-verify → commit to library
 - **Results:** 3.3× more unique items, 2.3× longer distances, 15.3× faster tech tree mastery vs prior SOTA
 
 **Key learnings:**
+
 - Code as action space enables temporally extended, compositional, interpretable behaviors
 - Skill library compounds capabilities — new skills built upon older ones
 - **Without skill library, agent plateaus** — the library is pivotal for long-term improvement
@@ -124,6 +134,7 @@ I've conducted extensive research across the cited sources and additional materi
 **How it's built:** Breaks report generation into pre-writing (research + outline) and writing stages. Uses perspective-guided question asking and simulated conversations. Shao et al. (NAACL 2024).
 
 **Implementation examples:**
+
 - **Four modules:** Knowledge Curation → Outline Generation → Article Generation → Article Polishing
 - **Perspective-Guided Question Asking:** Discovers diverse perspectives from existing articles
 - **Simulated Conversation:** Writer and expert debate to refine understanding
@@ -131,6 +142,7 @@ I've conducted extensive research across the cited sources and additional materi
 - ~15-30 LLM calls per report, 72+ retrievals
 
 **Key learnings:**
+
 - Direct prompting leads to superficial questions — perspective-guided approach yields deeper coverage
 - Multi-perspective analysis reveals insights single-view approaches miss
 - **Major challenge:** source bias transfer and over-association of unrelated facts (not hallucination)
@@ -143,6 +155,7 @@ I've conducted extensive research across the cited sources and additional materi
 **How it's built:** Agent plays two roles — challenger (creates tasks with verified test code) and executor (solves them). RL on self-generated tasks doubles performance on tool-use benchmarks. Zhou et al. (NeurIPS 2025).
 
 **Key learnings:**
+
 - Fully label-free: no human annotations for tasks or rewards
 - Tasks automatically scale with capability
 - **Risk:** curriculum collapse — agent keeps generating tasks near its comfort zone
@@ -154,6 +167,7 @@ I've conducted extensive research across the cited sources and additional materi
 **How it's built:** Agent evaluates its own performance, enters self-edit phase using LLM to propose modifications to its own source code, re-evaluates, and keeps improvements. SICA reports 17-53% performance improvements.
 
 **Key learnings:**
+
 - Agent treats its own implementation as editable state
 - Improvements persist and accumulate over time
 - **Risk:** overfitting to benchmark, inadvertently disabling safety checks
@@ -181,14 +195,14 @@ I've conducted extensive research across the cited sources and additional materi
 
 ## What They Did Differently
 
-| Dimension | ReAct | Reflexion | LATS | REWOO | Voyager | STORM |
-|-----------|-------|-----------|------|-------|---------|-------|
-| **Exploration** | Single path | Sequential trials | Tree search | Plan upfront | Curriculum-driven | Multi-perspective |
-| **Memory** | None | Verbal memory across trials | Tree values | Placeholders | Skill library | Retrieved sources |
-| **Feedback** | Tool observation | Self-critique | Value function | Tool results | Environment | Retrieval |
-| **Cost** | Medium | Very High | Very High | Low-Medium | Medium | Very High |
-| **Best for** | Tool interaction | Learning from failures | Complex reasoning | Cost-efficient workflows | Lifelong learning | Research reports |
-| **Self-improvement** | None | Ephemeral | Via search | None | Persistent skills | None |
+| Dimension            | ReAct            | Reflexion                   | LATS              | REWOO                    | Voyager           | STORM             |
+| -------------------- | ---------------- | --------------------------- | ----------------- | ------------------------ | ----------------- | ----------------- |
+| **Exploration**      | Single path      | Sequential trials           | Tree search       | Plan upfront             | Curriculum-driven | Multi-perspective |
+| **Memory**           | None             | Verbal memory across trials | Tree values       | Placeholders             | Skill library     | Retrieved sources |
+| **Feedback**         | Tool observation | Self-critique               | Value function    | Tool results             | Environment       | Retrieval         |
+| **Cost**             | Medium           | Very High                   | Very High         | Low-Medium               | Medium            | Very High         |
+| **Best for**         | Tool interaction | Learning from failures      | Complex reasoning | Cost-efficient workflows | Lifelong learning | Research reports  |
+| **Self-improvement** | None             | Ephemeral                   | Via search        | None                     | Persistent skills | None              |
 
 ---
 
@@ -247,6 +261,7 @@ This is an updated comprehensive research covering all patterns from the issue, 
 **How it's built:** A system prompt locking the Thought/Action/Observation grammar, a regex parser for action extraction, a tool registry, and a while loop with a stop condition. The Claude Agent SDK collapses this to ~10 lines with `query()` yielding messages as the agent thinks, calls tools, and observes results.
 
 **Key learnings:**
+
 - Each action is motivated by explicit reasoning — the agent doesn't call tools randomly
 - **Main failure modes:** hallucinated tool names, infinite loops, quadratic token cost (every turn re-sends full history)
 - ReAct optimizes the next action, not the full plan — lacks strategic foresight
@@ -265,6 +280,7 @@ This is an updated comprehensive research covering all patterns from the issue, 
 **How it's built:** The agent solves a task, sees failure, writes a natural-language critique, stores it, and tries again conditioned on that feedback. On HumanEval, verbal RL bumped pass@1 from GPT-4 baseline to ~91%.
 
 **Key learnings:**
+
 - No weight updates needed — cheap to adopt for any LLM
 - Improvements are **ephemeral** unless reflections are persisted and reused
 - The model can hallucinate bad reflections and reinforce them
@@ -283,6 +299,7 @@ This is an updated comprehensive research covering all patterns from the issue, 
 **Cost:** Very High (40-80+ LLM calls for 10-20 iterations)
 
 **Key learnings:**
+
 - Explores multiple solution paths simultaneously rather than committing to one trajectory
 - **Outperforms** simpler reflection because it can backtrack from failing branches
 - Token cost is 5-10x ReAct — best reserved for high-stakes tasks
@@ -301,6 +318,7 @@ This is an updated comprehensive research covering all patterns from the issue, 
 **Cost:** Low-Medium (only 2 LLM calls regardless of number of tools)
 
 **Key learnings:**
+
 - **64% token reduction** vs ReAct across 6 public benchmarks, with 4.4% accuracy gain
 - Cleaner reasoning: separation of planning and execution lets the model focus purely on logic
 - **Limitation:** Only works when tool dependencies are predictable upfront
@@ -321,6 +339,7 @@ This is an updated comprehensive research covering all patterns from the issue, 
 **How it's built:** RISE converts single-turn problems into multi-turn MDPs. The state is the prompt + history of prior attempts + optional feedback. Data is collected by unrolling the current model k-1 times followed by an improved version (via self-distillation or distillation from a more capable model). Training uses reward-weighted regression.
 
 **Key learnings:**
+
 - Self-correction becomes a **built-in capability** after training, not just a prompt trick
 - RISE enables Llama2, Llama3, and Mistral models to improve themselves with more turns on math reasoning tasks
 - On GSM8K, RISE improves LLaMa3-8B by 8.2% and Mistral-7B by 6.6% entirely using their own data
@@ -343,6 +362,7 @@ This is an updated comprehensive research covering all patterns from the issue, 
 **How it's built:** SEAL operates with two nested loops: an outer RL loop that optimizes self-edit generation, and an inner update loop that uses the generated self-edit to update the model via gradient descent. The model produces a self-edit SE, updates parameters via SFT: θ' ← SFT(θ, SE), evaluates performance, and uses the reward to improve the self-edit generation policy.
 
 **Key learnings:**
+
 - On factual QA (SQuAD no-passage), SEAL improves accuracy from 33.5% → 47%
 - Self-generated data from SEAL **outperforms synthetic data generated by GPT-4.1**
 - On few-shot learning (ARC-AGI subset), SEAL enhances performance over both standard ICL and self-editing without RL
@@ -363,6 +383,7 @@ This is an updated comprehensive research covering all patterns from the issue, 
 **Cost:** Medium
 
 **Key learnings:**
+
 - Code as action space enables temporally extended, compositional, interpretable behaviors
 - Skill library compounds capabilities — new skills built upon older ones
 - **Without skill library, agent plateaus** — the library is pivotal for long-term improvement
@@ -382,6 +403,7 @@ This is an updated comprehensive research covering all patterns from the issue, 
 **How it's built:** The canonical flow is: (1) Proposal round — 2+ agents answer independently with different prompts/models; (2) Critique round — each agent receives others' proposals and names weaknesses; (3) Revision round — agents rework answers based on critique; (4) Consensus/decision — converge or moderator selects final answer.
 
 **Key learnings:**
+
 - **Diversity is critical:** Vanilla MAD with homogeneous agents often underperforms simple majority vote. Diversity-aware initialization (selecting diverse candidate answers) improves the prior probability of success (ACL 2026 Findings).
 - **Confidence matters:** Confidence-modulated debate (agents express calibrated confidence and condition updates on others' confidence) breaks the martingale limitation and allows beliefs to drift toward correctness.
 - **Mode collapse risk:** The critic reflexively agrees instead of naming genuine weaknesses → debate degenerates into expensive echoing.
@@ -403,6 +425,7 @@ This is an updated comprehensive research covering all patterns from the issue, 
 **Cost:** Very High (~15-30 LLM calls per report, 72+ retrievals)
 
 **Key learnings:**
+
 - Direct prompting leads to superficial questions — perspective-guided approach yields deeper coverage
 - Multi-perspective analysis reveals insights single-view approaches miss
 - **Major challenge:** source bias transfer and over-association of unrelated facts
@@ -419,6 +442,7 @@ This is an updated comprehensive research covering all patterns from the issue, 
 **Cost:** High
 
 **Key learnings:**
+
 - Fully label-free: no human annotations for tasks or rewards
 - Tasks automatically scale with capability
 - **Risk:** curriculum collapse — agent keeps generating tasks near its comfort zone
@@ -434,6 +458,7 @@ This is an updated comprehensive research covering all patterns from the issue, 
 **Cost:** High
 
 **Key learnings:**
+
 - **STO** discovers classical search patterns (beam search, simulated annealing) without human guidance by applying the improver to its own code recursively
 - **SICA** reports 17-53% performance improvements on coding tasks through self-edit loop
 - Agent treats its own implementation as editable state — improvements persist and accumulate
@@ -467,14 +492,14 @@ This is an updated comprehensive research covering all patterns from the issue, 
 
 ## What They Did Differently
 
-| Dimension | ReAct | Reflexion | LATS | REWOO | RISE | SEAL | Voyager | MAD | STORM |
-|-----------|-------|-----------|------|-------|------|------|---------|-----|-------|
-| **Exploration** | Single path | Sequential trials | Tree search | Plan upfront | Multi-turn MDP | Self-edit RL | Curriculum-driven | Multi-agent debate | Multi-perspective |
-| **Memory** | None | Verbal memory | Tree values | Placeholders | Trained weights | Self-edits | Skill library | Shared context | Retrieved sources |
-| **Feedback** | Tool observation | Self-critique | Value function | Tool results | Training reward | Downstream perf. | Environment | Cross-agent critique | Retrieval |
-| **Cost** | Medium | Very High | Very High | Low-Medium | High (training) | High (training) | Medium | High (3-6x) | Very High |
-| **Best for** | Tool interaction | Learning from failures | Complex reasoning | Cost-efficient workflows | Built-in self-correction | Model adaptation | Lifelong learning | High-stakes decisions | Research reports |
-| **Self-improvement** | None | Ephemeral | Via search | None | Trained into weights | Trained into weights | Persistent skills | Via debate | None |
+| Dimension            | ReAct            | Reflexion              | LATS              | REWOO                    | RISE                     | SEAL                 | Voyager           | MAD                   | STORM             |
+| -------------------- | ---------------- | ---------------------- | ----------------- | ------------------------ | ------------------------ | -------------------- | ----------------- | --------------------- | ----------------- |
+| **Exploration**      | Single path      | Sequential trials      | Tree search       | Plan upfront             | Multi-turn MDP           | Self-edit RL         | Curriculum-driven | Multi-agent debate    | Multi-perspective |
+| **Memory**           | None             | Verbal memory          | Tree values       | Placeholders             | Trained weights          | Self-edits           | Skill library     | Shared context        | Retrieved sources |
+| **Feedback**         | Tool observation | Self-critique          | Value function    | Tool results             | Training reward          | Downstream perf.     | Environment       | Cross-agent critique  | Retrieval         |
+| **Cost**             | Medium           | Very High              | Very High         | Low-Medium               | High (training)          | High (training)      | Medium            | High (3-6x)           | Very High         |
+| **Best for**         | Tool interaction | Learning from failures | Complex reasoning | Cost-efficient workflows | Built-in self-correction | Model adaptation     | Lifelong learning | High-stakes decisions | Research reports  |
+| **Self-improvement** | None             | Ephemeral              | Via search        | None                     | Trained into weights     | Trained into weights | Persistent skills | Via debate            | None              |
 
 ---
 
@@ -495,6 +520,7 @@ This is an updated comprehensive research covering all patterns from the issue, 
 ## Sources
 
 **Papers:**
+
 - Yao et al. — "ReAct: Synergizing Reasoning and Acting in Language Models" (ICLR 2023, arXiv:2210.03629)
 - Shinn et al. — "Reflexion: Language Agents with Verbal Reinforcement Learning" (2023, arXiv:2303.11366)
 - Huang et al. — "Large Language Models Cannot Self-Correct Reasoning Yet" (ICLR 2024, arXiv:2310.01798)
@@ -514,6 +540,7 @@ This is an updated comprehensive research covering all patterns from the issue, 
 - arXiv:2608.23029 — "Meta-Moderator: Empowering Multi-Agent Debate with Meta-Cognition"
 
 **Blog Posts & Resources:**
+
 - Yohei Nakajima — "Better Ways to Build Self-Improving AI Agents" (yoheinakajima.com, Dec 2025)
 - Agent Patterns Docs — Reflexion Agent Pattern (agent-patterns.readthedocs.io)
 - Zylos Research — "AI Agent Reflection and Self-Evaluation Patterns" (Mar 2026)
@@ -526,6 +553,7 @@ This is an updated comprehensive research covering all patterns from the issue, 
 - Blck Alpaca — "Multi-Agent Debate: Building Consensus Through Discussion" (Jun 2026)
 
 **GitHub Repos:**
+
 - Stanford-oval/storm — STORM project
 - Minedojo/voyager — Voyager project
 - cmu-mind/RISE — RISE implementation
@@ -535,7 +563,7 @@ This is an updated comprehensive research covering all patterns from the issue, 
 
 ---
 
-*Updated: September 7, 2026. This research covers all 12 patterns from the original issue with verified sources from the cited URLs.*
+_Updated: September 7, 2026. This research covers all 12 patterns from the original issue with verified sources from the cited URLs._
 
 **Archived comment 3/20** — @bacluc-agent — 2026-09-07T08:58:17Z — [original](https://github.com/bacluc-agent/agent-todo/issues/76#issuecomment-5568076408)
 
@@ -661,7 +689,6 @@ The inspectable examples consistently use explicit state-machine loops, bounded 
 
 Issue [#76](https://github.com/bacluc-agent/agent-todo/issues/76) remains open. URLs in this corrected comment were rechecked and returned HTTP 200 on September 7, 2026.
 
-
 ## Web-search queries and related terms used
 
 The following are the literal Google web-search queries used for the 12 numbered pattern entries. The terms after each query are related paper/implementation terms used to narrow interpretation and inspectable examples.
@@ -715,7 +742,7 @@ The following are the literal Google web-search queries used for the 12 numbered
     - Related terms: challenger executor, self-generated tasks, executable verification, label-free curriculum, tool-use benchmarks.
 
 **Additional related treatment retained from the original combined entry:** STO/SICA.
+
 - Related terms: self-taught optimizer, STOP, recursive self-editing, source-code self-modification, self-improving coding agent, benchmark overfitting.
 
 These searches were used to locate the papers and implementation links already cited above; no citation or existing link was replaced by this query inventory.
-

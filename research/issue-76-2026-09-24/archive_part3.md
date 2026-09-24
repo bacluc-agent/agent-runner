@@ -19,20 +19,20 @@ Read: AGENTS.md
 
 ### Comparative Table (12 patterns)
 
-| Pattern | Core Idea | Cost | Example Impl (1–2 lines) | Key Learning (1–2 lines) |
-|---|---|---|---|---|
-| **Reflection / Self-Refine** | Generate → critique → revise in fixed loop until convergence | Medium (2–3 LLM calls/iter) | [madaan/self-refine](https://github.com/madaan/self-refine) (accessed 2026-09-19): `generate() → feedback() → refine()` loop; [Thomaszhou22/self-refine-skill](https://github.com/Thomaszhou22/self-refine-skill) reusable skill template | Small reliable gains with no training; hallucinates critiques without external verifier. [AI Agent Reflection and Self-Evaluation Patterns](https://zylos.ai/research/2026-03-06-ai-agent-reflection-self-evaluation-patterns) (accessed 2026-09-19); [Reflection Agent — Emergent Mind](https://www.emergentmind.com/topics/reflection-agent) (accessed 2026-09-19) |
-| **Reflexion** | Multi-trial loop with persistent verbal memory (verbal RL, no weight update) | Very High (~4 calls/trial × N) | [noahshinn/reflexion](https://github.com/noahshinn/reflexion) (accessed 2026-09-19): actor → evaluator → self-reflection → mem store; [USD-AI-ResearchLab/reflexion](https://github.com/USD-AI-ResearchLab/reflexion) port | Ephemeral unless persisted; on HumanEval ~91% pass@1 with memory. [Reflexion Agent Pattern](https://agent-patterns.readthedocs.io/en/stable/patterns/reflexion.html) (accessed 2026-09-19); [Reflexive AI Agents](https://appropri8.com/blog/2025/11/10/reflexive-ai-agents/) (accessed 2026-09-19) |
-| **ReAct** | Interleave reasoning + tool use: Thought → Action → Observation | Medium (N+1 calls, quadratic history) | [silacode/agent](https://github.com/silacode/agent) (accessed 2026-09-19): regex-parsed `Thought/Action/Observation` loop; `ToolGateway` with allowlist + step cap | Explicit reasoning prevents random tool calls; needs hard caps or loops forever. [Memory for Autonomous LLM Agents arXiv:2603.07670](https://arxiv.org/html/2603.07670v1) (accessed 2026-09-19) |
-| **LATS** | Tree search with reflection + backtracking (MCTS + UCT) | Very High (40–80 calls) | [lapisrocks/LanguageAgentTreeSearch](https://github.com/lapisrocks/LanguageAgentTreeSearch) (accessed 2026-09-19): Node{value, visits, reflection} + `select(UCT) → expand → evaluate → backpropagate()` | Explores multiple branches and backtracks — outperforms single-chain ReAct; needs learned value fn. [Agent Self-Correction: Reflexion to PRM](https://zylos.ai/research/2026-05-12-agent-self-correction-reflexion-to-prm) (accessed 2026-09-19) |
-| **REWOO** | Plan all → execute → integrate (decouple reasoning from observations) | Low–Medium (2 LLM calls fixed) | [pywind/rewoo-agent](https://github.com/pywind/rewoo-agent) (accessed 2026-09-19): Planner emits `#E1…` placeholders, parallel exec, Solver integrates; [NVIDIA NeMo REWOO](https://github.com/NVIDIA/NeMo-Agent-Toolkit) variant | 64% fewer tokens, +4% accuracy vs ReAct; only when deps predictable upfront. [ReWOO paper Xu et al. 2023](https://arxiv.org/abs/2305.18323) via pywind impl (accessed 2026-09-19) |
-| **RISE / STaR** | Train model on self-correction traces (self-distillation, reasoning bootstrapping) | Training cost (offline) | [cmu-mind/RISE](https://github.com/cmu-mind/RISE) (accessed 2026-09-19); [ezelikman/STaR](https://github.com/ezelikman/STaR) (accessed 2026-09-19); [xyliu-cs/RISE](https://github.com/xyliu-cs/RISE) fine-tune on corrected traces | Bakes correction into weights — no runtime loop overhead; expensive upfront, cheap at inference. [Better Ways to Build Self-Improving AI Agents](https://yoheinakajima.com/better-ways-to-build-self-improving-ai-agents/) (accessed 2026-09-19) |
-| **Self-Challenging** | Agent generates own tasks + learns (challenger + executor) | High (curriculum generation) | Zhou et al. NeurIPS 2025 (no public repo; paper impl): challenger LLM creates verified tests, executor solves, RL on self-tasks | Label-free scaling; risks curriculum collapse (stays in comfort zone). [Self-Evolved Agents — Eigent.ai](https://www.eigent.ai/blog/self-evolved-agents) (accessed 2026-09-19); [Better Ways — Yohei Nakajima](https://yoheinakajima.com/better-ways-to-build-self-improving-ai-agents/) (accessed 2026-09-19) |
-| **SEAL** | Model generates own training edits (self-edits) | High (continual fine-tune) | [Continual-Intelligence/SEAL](https://github.com/Continual-Intelligence/SEAL) (accessed 2026-09-19): self-generated edits → filtered → LoRA update | Compounds but drifts without diversity filter; needs external verifier. [Self-Evolved Agents](https://www.eigent.ai/blog/self-evolved-agents) (accessed 2026-09-19) |
-| **STO / SICA** | Agent rewrites its own code (self-modifying) | High (edit + re-evaluate) | [MaximeRobeyns/self_improving_coding_agent](https://github.com/MaximeRobeyns/self_improving_coding_agent) (accessed 2026-09-19) SICA: edit own `agent.py` → run eval harness → keep if +Δ; [microsoft/STOP](https://github.com/microsoft/STOP) self-improvement via prompts | 17–53% gains reported; risks overfitting and disabling safety checks. [Better Ways — Yohei Nakajima](https://yoheinakajima.com/better-ways-to-build-self-improving-ai-agents/) (accessed 2026-09-19) |
-| **Voyager** | Skill library + auto-curriculum (code as action space) | Medium (skill retrieval + exec) | [MineDojo/Voyager](https://github.com/MineDojo/Voyager) (accessed 2026-09-19); [erlunlian/voyager-minecraft-ai](https://github.com/erlunlian/voyager-minecraft-ai) (accessed 2026-09-19): embed-indexed code skills, iterative refine → verify → commit | Without library plateaus; library transfers zero-shot across worlds. [A Practical Guide to Memory for Agents — TDS](https://towardsdatascience.com/a-practical-guide-to-memory-for-autonomous-llm-agents/) (accessed 2026-09-19); [Memory arXiv:2603.07670](https://arxiv.org/html/2603.07670v1) (accessed 2026-09-19) |
-| **Multi-Agent Debate** | Agents critique each other, judge picks answer | High (N agents × rounds) | [SpaceHunterInf/DMAD](https://github.com/SpaceHunterInf/DMAD) (accessed 2026-09-19): 3 debaters + judge, 2–3 rounds, majority/LLM judge | Reduces hallucination via adversarial critique; 3× cost for ~5–10% accuracy. [Self-Evolved Agents](https://www.eigent.ai/blog/self-evolved-agents) (accessed 2026-09-19) |
-| **STORM** | Multi-perspective research synthesis (pre-write + write) | High (15–30 calls + retrieval) | [stanford-oval/storm](https://github.com/stanford-oval/storm) (accessed 2026-09-19): Knowledge Curation → Outline → Article → Polish; perspective-guided questions + simulated conversations | Deeper coverage than direct prompting; challenge is source-bias transfer. [A Practical Guide to Memory — TDS](https://towardsdatascience.com/a-practical-guide-to-memory-for-autonomous-llm-agents/) (accessed 2026-09-19) |
+| Pattern                      | Core Idea                                                                          | Cost                                  | Example Impl (1–2 lines)                                                                                                                                                                                                                                                    | Key Learning (1–2 lines)                                                                                                                                                                                                                                                                                                                                             |
+| ---------------------------- | ---------------------------------------------------------------------------------- | ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Reflection / Self-Refine** | Generate → critique → revise in fixed loop until convergence                       | Medium (2–3 LLM calls/iter)           | [madaan/self-refine](https://github.com/madaan/self-refine) (accessed 2026-09-19): `generate() → feedback() → refine()` loop; [Thomaszhou22/self-refine-skill](https://github.com/Thomaszhou22/self-refine-skill) reusable skill template                                   | Small reliable gains with no training; hallucinates critiques without external verifier. [AI Agent Reflection and Self-Evaluation Patterns](https://zylos.ai/research/2026-03-06-ai-agent-reflection-self-evaluation-patterns) (accessed 2026-09-19); [Reflection Agent — Emergent Mind](https://www.emergentmind.com/topics/reflection-agent) (accessed 2026-09-19) |
+| **Reflexion**                | Multi-trial loop with persistent verbal memory (verbal RL, no weight update)       | Very High (~4 calls/trial × N)        | [noahshinn/reflexion](https://github.com/noahshinn/reflexion) (accessed 2026-09-19): actor → evaluator → self-reflection → mem store; [USD-AI-ResearchLab/reflexion](https://github.com/USD-AI-ResearchLab/reflexion) port                                                  | Ephemeral unless persisted; on HumanEval ~91% pass@1 with memory. [Reflexion Agent Pattern](https://agent-patterns.readthedocs.io/en/stable/patterns/reflexion.html) (accessed 2026-09-19); [Reflexive AI Agents](https://appropri8.com/blog/2025/11/10/reflexive-ai-agents/) (accessed 2026-09-19)                                                                  |
+| **ReAct**                    | Interleave reasoning + tool use: Thought → Action → Observation                    | Medium (N+1 calls, quadratic history) | [silacode/agent](https://github.com/silacode/agent) (accessed 2026-09-19): regex-parsed `Thought/Action/Observation` loop; `ToolGateway` with allowlist + step cap                                                                                                          | Explicit reasoning prevents random tool calls; needs hard caps or loops forever. [Memory for Autonomous LLM Agents arXiv:2603.07670](https://arxiv.org/html/2603.07670v1) (accessed 2026-09-19)                                                                                                                                                                      |
+| **LATS**                     | Tree search with reflection + backtracking (MCTS + UCT)                            | Very High (40–80 calls)               | [lapisrocks/LanguageAgentTreeSearch](https://github.com/lapisrocks/LanguageAgentTreeSearch) (accessed 2026-09-19): Node{value, visits, reflection} + `select(UCT) → expand → evaluate → backpropagate()`                                                                    | Explores multiple branches and backtracks — outperforms single-chain ReAct; needs learned value fn. [Agent Self-Correction: Reflexion to PRM](https://zylos.ai/research/2026-05-12-agent-self-correction-reflexion-to-prm) (accessed 2026-09-19)                                                                                                                     |
+| **REWOO**                    | Plan all → execute → integrate (decouple reasoning from observations)              | Low–Medium (2 LLM calls fixed)        | [pywind/rewoo-agent](https://github.com/pywind/rewoo-agent) (accessed 2026-09-19): Planner emits `#E1…` placeholders, parallel exec, Solver integrates; [NVIDIA NeMo REWOO](https://github.com/NVIDIA/NeMo-Agent-Toolkit) variant                                           | 64% fewer tokens, +4% accuracy vs ReAct; only when deps predictable upfront. [ReWOO paper Xu et al. 2023](https://arxiv.org/abs/2305.18323) via pywind impl (accessed 2026-09-19)                                                                                                                                                                                    |
+| **RISE / STaR**              | Train model on self-correction traces (self-distillation, reasoning bootstrapping) | Training cost (offline)               | [cmu-mind/RISE](https://github.com/cmu-mind/RISE) (accessed 2026-09-19); [ezelikman/STaR](https://github.com/ezelikman/STaR) (accessed 2026-09-19); [xyliu-cs/RISE](https://github.com/xyliu-cs/RISE) fine-tune on corrected traces                                         | Bakes correction into weights — no runtime loop overhead; expensive upfront, cheap at inference. [Better Ways to Build Self-Improving AI Agents](https://yoheinakajima.com/better-ways-to-build-self-improving-ai-agents/) (accessed 2026-09-19)                                                                                                                     |
+| **Self-Challenging**         | Agent generates own tasks + learns (challenger + executor)                         | High (curriculum generation)          | Zhou et al. NeurIPS 2025 (no public repo; paper impl): challenger LLM creates verified tests, executor solves, RL on self-tasks                                                                                                                                             | Label-free scaling; risks curriculum collapse (stays in comfort zone). [Self-Evolved Agents — Eigent.ai](https://www.eigent.ai/blog/self-evolved-agents) (accessed 2026-09-19); [Better Ways — Yohei Nakajima](https://yoheinakajima.com/better-ways-to-build-self-improving-ai-agents/) (accessed 2026-09-19)                                                       |
+| **SEAL**                     | Model generates own training edits (self-edits)                                    | High (continual fine-tune)            | [Continual-Intelligence/SEAL](https://github.com/Continual-Intelligence/SEAL) (accessed 2026-09-19): self-generated edits → filtered → LoRA update                                                                                                                          | Compounds but drifts without diversity filter; needs external verifier. [Self-Evolved Agents](https://www.eigent.ai/blog/self-evolved-agents) (accessed 2026-09-19)                                                                                                                                                                                                  |
+| **STO / SICA**               | Agent rewrites its own code (self-modifying)                                       | High (edit + re-evaluate)             | [MaximeRobeyns/self_improving_coding_agent](https://github.com/MaximeRobeyns/self_improving_coding_agent) (accessed 2026-09-19) SICA: edit own `agent.py` → run eval harness → keep if +Δ; [microsoft/STOP](https://github.com/microsoft/STOP) self-improvement via prompts | 17–53% gains reported; risks overfitting and disabling safety checks. [Better Ways — Yohei Nakajima](https://yoheinakajima.com/better-ways-to-build-self-improving-ai-agents/) (accessed 2026-09-19)                                                                                                                                                                 |
+| **Voyager**                  | Skill library + auto-curriculum (code as action space)                             | Medium (skill retrieval + exec)       | [MineDojo/Voyager](https://github.com/MineDojo/Voyager) (accessed 2026-09-19); [erlunlian/voyager-minecraft-ai](https://github.com/erlunlian/voyager-minecraft-ai) (accessed 2026-09-19): embed-indexed code skills, iterative refine → verify → commit                     | Without library plateaus; library transfers zero-shot across worlds. [A Practical Guide to Memory for Agents — TDS](https://towardsdatascience.com/a-practical-guide-to-memory-for-autonomous-llm-agents/) (accessed 2026-09-19); [Memory arXiv:2603.07670](https://arxiv.org/html/2603.07670v1) (accessed 2026-09-19)                                               |
+| **Multi-Agent Debate**       | Agents critique each other, judge picks answer                                     | High (N agents × rounds)              | [SpaceHunterInf/DMAD](https://github.com/SpaceHunterInf/DMAD) (accessed 2026-09-19): 3 debaters + judge, 2–3 rounds, majority/LLM judge                                                                                                                                     | Reduces hallucination via adversarial critique; 3× cost for ~5–10% accuracy. [Self-Evolved Agents](https://www.eigent.ai/blog/self-evolved-agents) (accessed 2026-09-19)                                                                                                                                                                                             |
+| **STORM**                    | Multi-perspective research synthesis (pre-write + write)                           | High (15–30 calls + retrieval)        | [stanford-oval/storm](https://github.com/stanford-oval/storm) (accessed 2026-09-19): Knowledge Curation → Outline → Article → Polish; perspective-guided questions + simulated conversations                                                                                | Deeper coverage than direct prompting; challenge is source-bias transfer. [A Practical Guide to Memory — TDS](https://towardsdatascience.com/a-practical-guide-to-memory-for-autonomous-llm-agents/) (accessed 2026-09-19)                                                                                                                                           |
 
 ### Commonalities (what ≥2 patterns share)
 
@@ -94,7 +94,7 @@ for _ in range(MAX_ITERS):
     relevant = retrieve(skills, curriculum)  # top-5 by keyword match
     code = llm(f"Write code using {relevant} for: {curriculum}")
     ok, out = exec(code)  # sandbox
-    if ok and verify(out): 
+    if ok and verify(out):
         write(f"skills/{slug(curriculum)}.py", code); break
     code = llm(f"Fix error:\n{out}\nCode:\n{code}")
 ```
@@ -102,6 +102,7 @@ for _ in range(MAX_ITERS):
 ### Sources
 
 **Required 9 (all accessed 2026-09-19):**
+
 - Better Ways to Build Self-Improving AI Agents — https://yoheinakajima.com/better-ways-to-build-self-improving-ai-agents/
 - Reflexion Agent Pattern — https://agent-patterns.readthedocs.io/en/stable/patterns/reflexion.html
 - AI Agent Reflection and Self-Evaluation Patterns — https://zylos.ai/research/2026-03-06-ai-agent-reflection-self-evaluation-patterns
@@ -113,6 +114,7 @@ for _ in range(MAX_ITERS):
 - Self-Evolved Agents: How AI Improves Itself — https://www.eigent.ai/blog/self-evolved-agents
 
 **Additional open-source implementations (all accessed 2026-09-19):**
+
 - noahshinn/reflexion — https://github.com/noahshinn/reflexion
 - pywind/rewoo-agent — https://github.com/pywind/rewoo-agent
 - Continual-Intelligence/SEAL — https://github.com/Continual-Intelligence/SEAL
@@ -124,7 +126,8 @@ for _ in range(MAX_ITERS):
 - lapisrocks/LanguageAgentTreeSearch (LATS) — https://github.com/lapisrocks/LanguageAgentTreeSearch
 
 ---
-*No PR required — research-only; issue [bacluc-agent/agent-todo#76](https://github.com/bacluc-agent/agent-todo/issues/76) stays OPEN. Branch `research/agent-patterns-76` holds traceability docs if needed.*
+
+_No PR required — research-only; issue [bacluc-agent/agent-todo#76](https://github.com/bacluc-agent/agent-todo/issues/76) stays OPEN. Branch `research/agent-patterns-76` holds traceability docs if needed._
 
 **Archived comment 13/20** — @bacluc-agent — 2026-09-19T02:46:12Z — [original](https://github.com/bacluc-agent/agent-todo/issues/76#issuecomment-5738711571)
 
@@ -135,19 +138,23 @@ Traceability: pushed empty commit `7ced46e9a47b3cee34df7a1c9794042505960a91` on 
 Run: https://github.com/bacluc-agent/agent-runner/actions/runs/35461814078 — model: openai/gpt-6-astra
 
 ### Setup agent — branch established
+
 Read: AGENTS.md (agent-runner); README.md read; no CLAUDE.md found.
 Read https://github.com/bacluc-agent/agent-todo/issues/76 and discovered its existing research branch: `research/agent-patterns-76` in https://github.com/bacluc-agent/agent-runner. Checked it out and configured tracking of `origin/research/agent-patterns-76`; preserved prior history at 7ced46e9a47b3cee34df7a1c9794042505960a91. No associated PR exists, so no PR review comments apply.
 
 ### Setup agent — verification and traceability complete
+
 Repository path: `/home/runner/work/agent-runner/agent-runner`.
 Explicitly authorized empty commit pushed: https://github.com/bacluc-agent/agent-runner/commit/7993000d36b686c345858cf733fc5e8e21fe629e . Remote SHA matches; tracked working tree clean. No code modifications, research findings, or PR created. Issue remains OPEN.
 `./scripts/completion-check` passed: formatting, actionlint, 14 plugin tests, 140 Python tests.
 Initial commit attempt failed with `Author identity unknown`; resolved using command-scoped GIT_AUTHOR/GIT_COMMITTER identity variables, without changing git config. No outstanding blockers.
 
 ### Shared progress contract
+
 Subsequent agents PATCH this same comment (ID 5744447498) with signed milestone sections, retaining accumulated progress; do not create separate research comments. This delegation performed setup only; research is left to subsequent agents.
 
 ### Refiner agent — discussion and implementation audit (openai/gpt-6-astra)
+
 Read: AGENTS.md. Read README.md; no root/nested CLAUDE.md exists. Verified branch research/agent-patterns-76 at 7993000d36b686c345858cf733fc5e8e21fe629e, clean. Read full issue body and all 15 comments, including the explicitly requested gh command; checked REST pagination with five comments per page. Human request: https://github.com/bacluc-agent/agent-todo/issues/76#issuecomment-5568648208. All four asks have prior substantive responses; remaining work is evidence quality and non-duplicate actionable opportunities, not another generic survey. Verified existing bounded refinement loop and validator tests in source, and read the human rejection of https://github.com/bacluc-agent/agent-todo/issues/121, https://github.com/bacluc-agent/agent-todo/issues/122 and https://github.com/bacluc-agent/agent-todo/issues/123. Live content spot-checks underway. No implementation, issue closure, new issue, PR, or repository modifications.
 
 ### Refiner agent — evidence audit and three bounded briefs (openai/gpt-6-astra; 2026-09-19)
@@ -158,12 +165,12 @@ Read: AGENTS.md. Research only. Full body and all 15 comments read, including th
 
 The authoritative request is https://github.com/bacluc-agent/agent-todo/issues/76#issuecomment-5568648208. All four asks have substantive prior answers; the remaining work is reliable curation, not another generic survey.
 
-| Ask | Linked evidence already present | Precise remaining gap |
-|---|---|---|
-| Implemented loop code | https://github.com/bacluc-agent/agent-todo/issues/76#issuecomment-5575486099 links pinned LangGraph notebooks and engine files; section 2 of https://github.com/bacluc-agent/agent-todo/issues/76#issuecomment-5720958731 adds concrete implementations and loop descriptions. | Separate real source from illustrative pseudocode; add verified function/state/termination explanations and prerequisites to a few pinned examples. No need to execute paid/GPU/Minecraft examples merely to supply inspectable code. |
-| Search keywords and related topics | The September 7 comment ends with literal claimed Google queries; sections 3–4 of the September 17 comment contain 13 pattern queries, 11 related-topic queries and sources for PRMs, checkpointers, memory, OTel, Temporal and others. | Historical queries are self-reported; this audit did not prove their execution from historical search logs. Do not call suggested queries newly executed searches. |
-| Direct inspectable links | Both comments already provide papers, notebooks and source files, including fixed commits. | Verify identity/content, not just HTTP status; use the source-level checks below. |
-| Actionable repository issues | September 7 links five actual issues; September 17 section 5 contains five further detailed proposals. | Refresh status and avoid implemented/rejected/previously proposed work. Latest synthesis adoption bullets are not substitutes for ready-to-file briefs. |
+| Ask                                | Linked evidence already present                                                                                                                                                                                                                                                | Precise remaining gap                                                                                                                                                                                                                 |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Implemented loop code              | https://github.com/bacluc-agent/agent-todo/issues/76#issuecomment-5575486099 links pinned LangGraph notebooks and engine files; section 2 of https://github.com/bacluc-agent/agent-todo/issues/76#issuecomment-5720958731 adds concrete implementations and loop descriptions. | Separate real source from illustrative pseudocode; add verified function/state/termination explanations and prerequisites to a few pinned examples. No need to execute paid/GPU/Minecraft examples merely to supply inspectable code. |
+| Search keywords and related topics | The September 7 comment ends with literal claimed Google queries; sections 3–4 of the September 17 comment contain 13 pattern queries, 11 related-topic queries and sources for PRMs, checkpointers, memory, OTel, Temporal and others.                                        | Historical queries are self-reported; this audit did not prove their execution from historical search logs. Do not call suggested queries newly executed searches.                                                                    |
+| Direct inspectable links           | Both comments already provide papers, notebooks and source files, including fixed commits.                                                                                                                                                                                     | Verify identity/content, not just HTTP status; use the source-level checks below.                                                                                                                                                     |
+| Actionable repository issues       | September 7 links five actual issues; September 17 section 5 contains five further detailed proposals.                                                                                                                                                                         | Refresh status and avoid implemented/rejected/previously proposed work. Latest synthesis adoption bullets are not substitutes for ready-to-file briefs.                                                                               |
 
 #### Representative live content/code checks — accessed 2026-09-19
 
@@ -245,7 +252,7 @@ Read: AGENTS.md. Refiner agent research only. Findings and accumulated milestone
 
 ### 2. Full Issue Read (bacluc-agent/agent-todo#76)
 
-Title: *Research new ai agent patterns*  
+Title: _Research new ai agent patterns_  
 Body: Requests loop examples, key learnings, commonalities/differences, blog posts/research papers, cited sources.  
 Labels: `ready-for-implementation`.  
 Comments: 15 (last human feedback: BacLuc 2026-09-07T09:38:16Z — asks for example code, search keywords, direct links, proposed issues).  
@@ -256,11 +263,13 @@ No new comments since 2026-09-19 (bacluc-agent synthesis + review). Issue stays 
 ### 3. Research Method & Search Keywords
 
 **Web sources fetched (all HTTP 200 verified 2026-09-20):**
+
 - arXiv papers: `2210.03629` (ReAct), `2303.11366` (Reflexion), `2310.04406` (LATS), `2305.16291` (Voyager), `2405.15793` (SWE-agent), `2407.01489` (Agentless — agentless baseline comparison).
-- Blogs/docs: Anthropic *Building Effective Agents* (2024-12-19, https://www.anthropic.com/research/building-effective-agents), LangGraph docs (https://docs.langchain.com/oss/python/langgraph/overview), Agent Patterns docs (https://agent-patterns.readthedocs.io/en/stable/patterns/reflexion.html).
+- Blogs/docs: Anthropic _Building Effective Agents_ (2024-12-19, https://www.anthropic.com/research/building-effective-agents), LangGraph docs (https://docs.langchain.com/oss/python/langgraph/overview), Agent Patterns docs (https://agent-patterns.readthedocs.io/en/stable/patterns/reflexion.html).
 - Code repos: `github.com/noahshinn/reflexion` (3.3k stars, MIT), `github.com/andyz245/LanguageAgentTreeSearch` (redirect from `lapisrocks`, 859 stars), `github.com/OpenHands/OpenHands` (88.5k stars, MIT), `github.com/All-Hands-AI/OpenHands` (same).
 
 **Search keywords used (explicit):**
+
 ```
 agent loop patterns ReAct Reflexion LATS Voyager
 language agent tree search MCTS reflection backtracking
@@ -275,13 +284,13 @@ Voyager skill library auto-curriculum Minecraft
 
 ### 4. Synthesis Table — 5 Concrete Implementations
 
-| Pattern | Loop Structure | Key Learnings | Source / Inspectable Code |
-|---|---|---|---|
-| **ReAct** (Yao et al., ICLR 2023) | `Thought → Action → Observation` interleaved loop; regex parser extracts actions; tool registry (dict); `while` loop with `max_steps` cap. | Each action motivated by explicit reasoning; failure modes = hallucinated tool names, infinite loops, quadratic token cost (full history re-sent each turn). Without hard step cap, loops forever. | Paper: https://arxiv.org/abs/2210.03629; Project site: https://react-lm.github.io |
-| **Reflexion** (Shinn et al., NeurIPS 2023) | `Actor → Evaluator → Self-Reflection → Memory Store`; multi-trial loop; verbal RL (no weight updates); persistent episodic memory conditions next trial. | Improvements are **ephemeral** unless reflections persisted; model can hallucinate bad reflections and reinforce them; on HumanEval ~91% pass@1 with memory vs 80% GPT-4 baseline. | Paper: https://arxiv.org/abs/2303.11366; Code: https://github.com/noahshinn/reflexion (MIT, 3.3k stars, notebooks for HotPotQA/AlfWorld/programming) |
-| **LATS** (Zhou et al., 2023/2024) | MCTS tree search: LM as agent + LM as world model; value functions + self-reflections guide exploration; environment provides external feedback; backtracking on low-reward paths. | Unifies reasoning, acting, planning; achieves 92.7% pass@1 on HumanEval (GPT-4); gradient-free web navigation comparable to fine-tuning. Key: deliberate exploration vs exploitation balance. | Paper: https://arxiv.org/abs/2310.04406; Code: https://github.com/andyz245/LanguageAgentTreeSearch (redirect from `lapisrocks`, 859 stars) |
-| **Voyager** (Wang et al., 2023) | Auto-curriculum (maximizes exploration) → Skill library (executable code storage/retrieval) → Iterative prompting (feedback + execution errors + self-verification) → Program improvement loop. | Skills are temporally extended, interpretable, compositional; compounds abilities rapidly; alleviates catastrophic forgetting; 3.3x more unique items, 15.3x faster tech-tree unlocks vs prior SOTA in Minecraft. | Paper: https://arxiv.org/abs/2305.16291; Site/code: https://voyager.minedojo.org |
-| **SWE-agent** (Yang et al., 2024) | Agent-Computer Interface (ACI): custom file-edit/navigation/test-execution interface; loop = observe repo state → plan edit → execute via ACI → observe test result → revise. | ACI design significantly impacts behavior; custom interface outperforms generic bash; 12.5% pass@1 on SWE-bench, 87.7% on HumanEvalFix; key insight: interface = part of the agent, not just a wrapper. | Paper: https://arxiv.org/abs/2405.15793; Site: https://swe-agent.com |
+| Pattern                                    | Loop Structure                                                                                                                                                                                  | Key Learnings                                                                                                                                                                                                     | Source / Inspectable Code                                                                                                                            |
+| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **ReAct** (Yao et al., ICLR 2023)          | `Thought → Action → Observation` interleaved loop; regex parser extracts actions; tool registry (dict); `while` loop with `max_steps` cap.                                                      | Each action motivated by explicit reasoning; failure modes = hallucinated tool names, infinite loops, quadratic token cost (full history re-sent each turn). Without hard step cap, loops forever.                | Paper: https://arxiv.org/abs/2210.03629; Project site: https://react-lm.github.io                                                                    |
+| **Reflexion** (Shinn et al., NeurIPS 2023) | `Actor → Evaluator → Self-Reflection → Memory Store`; multi-trial loop; verbal RL (no weight updates); persistent episodic memory conditions next trial.                                        | Improvements are **ephemeral** unless reflections persisted; model can hallucinate bad reflections and reinforce them; on HumanEval ~91% pass@1 with memory vs 80% GPT-4 baseline.                                | Paper: https://arxiv.org/abs/2303.11366; Code: https://github.com/noahshinn/reflexion (MIT, 3.3k stars, notebooks for HotPotQA/AlfWorld/programming) |
+| **LATS** (Zhou et al., 2023/2024)          | MCTS tree search: LM as agent + LM as world model; value functions + self-reflections guide exploration; environment provides external feedback; backtracking on low-reward paths.              | Unifies reasoning, acting, planning; achieves 92.7% pass@1 on HumanEval (GPT-4); gradient-free web navigation comparable to fine-tuning. Key: deliberate exploration vs exploitation balance.                     | Paper: https://arxiv.org/abs/2310.04406; Code: https://github.com/andyz245/LanguageAgentTreeSearch (redirect from `lapisrocks`, 859 stars)           |
+| **Voyager** (Wang et al., 2023)            | Auto-curriculum (maximizes exploration) → Skill library (executable code storage/retrieval) → Iterative prompting (feedback + execution errors + self-verification) → Program improvement loop. | Skills are temporally extended, interpretable, compositional; compounds abilities rapidly; alleviates catastrophic forgetting; 3.3x more unique items, 15.3x faster tech-tree unlocks vs prior SOTA in Minecraft. | Paper: https://arxiv.org/abs/2305.16291; Site/code: https://voyager.minedojo.org                                                                     |
+| **SWE-agent** (Yang et al., 2024)          | Agent-Computer Interface (ACI): custom file-edit/navigation/test-execution interface; loop = observe repo state → plan edit → execute via ACI → observe test result → revise.                   | ACI design significantly impacts behavior; custom interface outperforms generic bash; 12.5% pass@1 on SWE-bench, 87.7% on HumanEvalFix; key insight: interface = part of the agent, not just a wrapper.           | Paper: https://arxiv.org/abs/2405.15793; Site: https://swe-agent.com                                                                                 |
 
 ---
 
@@ -316,9 +325,9 @@ Voyager skill library auto-curriculum Minecraft
 
 ### 8. Blog Posts & Research Papers (Cited with Absolute URLs)
 
-- Anthropic — *Building Effective Agents* (2024-12-19): https://www.anthropic.com/research/building-effective-agents — defines workflows vs agents, evaluator-optimizer loop, ACI design.
-- LangGraph docs — *Overview* (current): https://docs.langchain.com/oss/python/langgraph/overview — low-level orchestration, persistence, human-in-the-loop, memory.
-- Agent Patterns docs — *Reflexion Agent Pattern*: https://agent-patterns.readthedocs.io/en/stable/patterns/reflexion.html — bounded generate → evaluate → revise loop.
+- Anthropic — _Building Effective Agents_ (2024-12-19): https://www.anthropic.com/research/building-effective-agents — defines workflows vs agents, evaluator-optimizer loop, ACI design.
+- LangGraph docs — _Overview_ (current): https://docs.langchain.com/oss/python/langgraph/overview — low-level orchestration, persistence, human-in-the-loop, memory.
+- Agent Patterns docs — _Reflexion Agent Pattern_: https://agent-patterns.readthedocs.io/en/stable/patterns/reflexion.html — bounded generate → evaluate → revise loop.
 - arXiv papers (all verified 2026-09-20):
   - ReAct: https://arxiv.org/abs/2210.03629
   - Reflexion: https://arxiv.org/abs/2303.11366
@@ -337,7 +346,7 @@ Based on the loop patterns above and the repo's focus (agent workflow, GitHub Ac
 2. **Reflection evaluator-optimizer loop** (`agent-todo` or `agent-runner`): Use LangGraph's reflection graph (`docs.langchain.com`) to build a `generate → critique → revise` loop with a fixed revision budget (`max_retries=3`). Include convergence check.
 3. **SWE-agent-style ACI tool definitions** (`agent-runner`): Define agent-computer interface tools for file edit (`edit_file`), repo navigation (`navigate_repo`), and test execution (`run_tests`). Measure loop performance by pass rate and edit attempts.
 4. **Voyager-style skill-library persistence** (`agent-todo`): Create a persistent skill library (executable Python functions) that agents can retrieve and compose. Add auto-curriculum logic (select next skill based on exploration progress).
-5. **Loop-termination metrics** (`agent-runner` evaluation): Add evaluation metrics for agent loops: step count, token cost per step, convergence rate, failure mode classification (infinite loop, hallucinated tool, bad reflection). Reference: Anthropic *Building Effective Agents* (transparency principle).
+5. **Loop-termination metrics** (`agent-runner` evaluation): Add evaluation metrics for agent loops: step count, token cost per step, convergence rate, failure mode classification (infinite loop, hallucinated tool, bad reflection). Reference: Anthropic _Building Effective Agents_ (transparency principle).
 
 ---
 
@@ -359,7 +368,7 @@ Based on the loop patterns above and the repo's focus (agent workflow, GitHub Ac
 
 ---
 
-*Posted by agent-runner (research delegation) — model: openrouter/thinkingmachines/inkling:free — 2026-09-20.*
+_Posted by agent-runner (research delegation) — model: openrouter/thinkingmachines/inkling:free — 2026-09-20._
 
 **Archived comment 17/20** — @bacluc-agent — 2026-09-20T02:16:18Z — [original](https://github.com/bacluc-agent/agent-todo/issues/76#issuecomment-5746980037)
 
@@ -372,6 +381,7 @@ Read: AGENTS.md
 State assessment: prior runs delivered the full 12-pattern survey, corrections, concrete implementations + code links + search keywords (#issuecomment-5746360434), consolidation, tester PASS, review APPROVED. Remaining gap: BacLuc's 2026-09-07 request 'propose some issues' was answered only in a comment — no issues existed.
 
 This run:
+
 1. Build: created 5 proposal issues (unlabeled → refine pipeline, not auto-implementation):
    - https://github.com/bacluc-agent/agent-todo/issues/227 — bounded ReAct loop demo (already refined by refine-issues.yml pipeline)
    - https://github.com/bacluc-agent/agent-todo/issues/228 — reflection evaluator-optimizer loop
@@ -393,7 +403,9 @@ Run: https://github.com/bacluc-agent/agent-runner/actions/runs/35483105232 — m
 Read: AGENTS.md
 
 ### Proposed issues (requested by @BacLuc 2026-09-07)
+
 Created unlabeled in bacluc-agent/agent-todo — they enter the refine pipeline (refine-issues.yml), not auto-implementation:
+
 1. https://github.com/bacluc-agent/agent-todo/issues/227 — bounded ReAct loop demo
 2. https://github.com/bacluc-agent/agent-todo/issues/228 — reflection evaluator-optimizer loop
 3. https://github.com/bacluc-agent/agent-todo/issues/229 — SWE-agent-style ACI tool definitions
@@ -401,6 +413,7 @@ Created unlabeled in bacluc-agent/agent-todo — they enter the refine pipeline 
 5. https://github.com/bacluc-agent/agent-todo/issues/231 — loop-termination metrics
 
 ### Deliverables map (issue requirement → where satisfied)
+
 - 12-pattern survey w/ core idea + cost → comment 2026-09-06/07 (survey + corrections)
 - Example code, search keywords, direct links, commonalities/differences, key learnings → https://github.com/bacluc-agent/agent-todo/issues/76#issuecomment-5746360434
 - Consolidated synthesis → comment 2026-09-19
@@ -408,20 +421,21 @@ Created unlabeled in bacluc-agent/agent-todo — they enter the refine pipeline 
 
 ### Link spot-check (2026-09-20)
 
-| URL | HTTP status |
-|---|---|
-| https://arxiv.org/abs/2210.03629 | 200 |
-| https://arxiv.org/abs/2303.11366 | 200 |
-| https://arxiv.org/abs/2310.04406 | 200 |
-| https://arxiv.org/abs/2305.16291 | 200 |
-| https://arxiv.org/abs/2405.15793 | 200 |
-| https://www.anthropic.com/research/building-effective-agents | 200 |
-| https://github.com/noahshinn/reflexion | 200 |
-| https://github.com/andyz245/LanguageAgentTreeSearch | 200 |
-| https://voyager.minedojo.org | 200 |
-| https://swe-agent.com | 200 |
+| URL                                                          | HTTP status |
+| ------------------------------------------------------------ | ----------- |
+| https://arxiv.org/abs/2210.03629                             | 200         |
+| https://arxiv.org/abs/2303.11366                             | 200         |
+| https://arxiv.org/abs/2310.04406                             | 200         |
+| https://arxiv.org/abs/2305.16291                             | 200         |
+| https://arxiv.org/abs/2405.15793                             | 200         |
+| https://www.anthropic.com/research/building-effective-agents | 200         |
+| https://github.com/noahshinn/reflexion                       | 200         |
+| https://github.com/andyz245/LanguageAgentTreeSearch          | 200         |
+| https://voyager.minedojo.org                                 | 200         |
+| https://swe-agent.com                                        | 200         |
 
 ### Recommendation for this repo's own agent workflow
+
 The single most transferable pattern from the survey: **every production agent loop has a hard termination guard** (max_steps / budget / convergence check). The hourly-issue.yml loop already bounds work by selecting one issue per run — keeping that invariant explicit in any future loop additions (issues #227–#231) is the cheap win.
 
 No code changes, no PR (research-only issue). #76 stays open for @BacLuc to review/triage the new proposals.
@@ -440,10 +454,10 @@ Read: AGENTS.md (agent-runner)
 Task: implement https://github.com/bacluc-agent/agent-todo/issues/76#issuecomment-5818668536 — (1) find up-to-date research on AI agent patterns, (2) summarize everything found so far, (3) copy existing comments into closed archive issue(s) to free agent context on #76.
 
 Progress:
+
 - [x] Issue context gathered: 20 comments (~144KB) on bacluc-agent/agent-todo#76; related issues #227 (ReAct), #228 (reflection/evaluator-optimizer), #230 (Voyager skill-library) exist.
 - [x] Refine phase: full inventory of 20 comments (numeric IDs), archive precedent found (#188/#216 for issue #16: CLOSED issues with bodies), citation traps identified, agent-todo has no AGENTS.md/CLAUDE.md.
 - [x] Plan phase: 3 closed archive issues (5/6/9 comment split, bodies < 60KB), fresh 2026 research queries, summary comment structure, delete 17 bot comments after archive verification, keep 2 BacLuc comments + run-tracking comment.
 - [ ] Build phase (research + summary + archive + cleanup)
 - [ ] Test phase
 - [ ] Review phase
-

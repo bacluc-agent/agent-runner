@@ -36,52 +36,64 @@ One dead link found outside the list: the OpenAI cookbook example `cookbook.open
 For each pattern, 1–2 additional real implementations beyond the prior list, with a note on how the loop is built (state, termination, memory, backtracking).
 
 ### Reflection / Self-Refine
+
 - **https://github.com/langchain-ai/langgraph-reflection** — Official LangChain prebuilt reflection graph (185 stars). Loop: a "main" agent solves the task → a "critique" agent checks the work → if the critique returns a message, the main agent runs again; if it returns nothing, the graph finishes. State is a `MessagesState` list; termination = critique agent returns no critique. Runnable examples: `examples/llm_as_a_judge.py` (separate judge model with a `Finish` tool) and `examples/coding.py` (Pyright static analysis as the external evaluator).
 - **https://www.langchain.com/blog/reflection-agents** — LangChain blog (2024-02-21) with three runnable Python implementations on one page: Simple Reflection (generate → critique → revise with a max-iteration guard), Reflexion, and LATS. Best for comparing the three loops side by side.
 
 ### Reflexion
+
 - **https://github.com/emarco177/reflexion** — LangGraph implementation. Nodes: `draft` → `execute_tools` (Tavily search) → `revise`, with configurable max iterations (default 2). State = LangGraph message list; termination = iteration budget.
 - **https://github.com/kargarisaac/reflexion** — smolagents-based implementation. `ReflexionAgent` wraps a `CodeAgent` with explicit trial-loop parameters: `max_trials` (termination), `max_reflections` (episodic memory — keeps the N most recent verbal reflections and injects them into the next trial's system prompt), `max_steps` per trial, and a user-supplied `success_criteria` string as the external success signal.
 
 ### ReAct
+
 - **https://github.com/huggingface/smolagents** — Hugging Face's official agent library; `CodeAgent`/`ReactAgent` implement the ReAct loop with code as the action space. Loop: model emits thought + action (code), the tool executor runs it, the observation is appended to the message history, repeat until a final-answer marker or step cap.
 - **https://til.simonwillison.net/llms/python-react-pattern** — Simon Willison's classic from-scratch ReAct (~50 lines): system prompt locking the Thought/Action/Observation grammar, a regex to extract `Action: tool: input`, a Python `dict` tool registry, and a `while` loop that stops when the model emits `Answer:`. The clearest minimal reference for how the loop is actually built.
 - Also verified: **https://github.com/PeymanKh/react-agent-from-scratch** — zero-dependency OOP version.
 
 ### LATS
+
 - **https://github.com/weill-labs/lats** — Clean-room reproduction. Domain-agnostic core in `lats/node.py` (UCT selection + backprop); two domains: HumanEval (MCTS over code, reward = fraction of self-generated unit tests passed) and HotPotQA (MCTS over ReAct trajectories with an LM value function). Termination = hidden-test pass or `max_iters` budget. Includes 44 API-free tests.
 - **https://pypi.org/project/llama-index-agent-lats** — Official LlamaIndex integration (`llama-index-agent-lats`). `LATSAgentWorker` plugs into `AgentRunner` and implements the paper's select/expand/evaluate/backprop loop over tool-calling trajectories. The official LATS repo README points to this as the "general implementation for your AI applications."
 
 ### REWOO
+
 - **https://github.com/pywind/rewoo-agent** — Modern async implementation. Planner emits a plan with `#E1`-style placeholders, an executor service runs tools (dependency-aware), a solver integrates results. State = plan + task models (`src/models/plan.py`, `task.py`); termination = solver produces the final answer after all placeholders are resolved.
 - The LangGraph rewoo notebook (already in the prior list) remains the canonical reference; NVIDIA NeMo Agent Toolkit also ships a ReWOO agent: https://docs.nvidia.com/nemo/agent-toolkit/1.2/workflows/about/rewoo-agent.html
 
 ### RISE / STaR (training-time)
+
 - **https://github.com/cmu-mind/RISE** — Official RISE codebase (34 stars). Built on FastChat; adds reward-weighted regression finetuning and multi-turn GSM8K/MATH evaluation. Loop: unroll the current model k-1 turns, sample an "improved" final turn (self-distillation or distillation from a stronger model), train on the multi-turn traces with reward-weighted regression, repeat. Termination = fixed number of iterations.
 - **https://github.com/ezelikman/STaR** — Official STaR code (232 stars, NeurIPS 2022). `iteration_train.py` implements the bootstrap loop on mesh-transformer-jax: generate rationales → keep only those yielding correct answers (rationalize the rest given the correct answer) → finetune → repeat.
 - Also verified: **https://github.com/raj-chinagundi/STaR-Self-Taught-Reasoner** — a modern GSM8k implementation comparing zero-shot CoT / vanilla SFT / STaR (the official repo is JAX-era).
 
 ### Self-Challenging
+
 - **No public implementation exists.** Verified via the first author's GitHub (`yf-zhou`), a GitHub repo search, and a facebookresearch check. The paper (NeurIPS 2025, arXiv:2506.01716) describes the Code-as-Task (CaT) format — instruction + verification function + solution/failure cases — but the code was never released. Anyone implementing it must work from the paper.
 - Closest related released code: **https://github.com/shenao-zhang/SELM** (Self-Exploring Language Models) — an online-alignment RL loop where the model generates its own preference data; same "self-generated training signal" family, but not the challenger/executor loop.
 
 ### SEAL
+
 - **https://github.com/Continual-Intelligence/SEAL** — **Official MIT CSAIL repo for Self-Adapting Language Models** (1860 stars). Two domains (`knowledge-incorporation/`, `few-shot/`), each with code + data + docs. Loop (Algorithm 1 in the paper): sample (context, task) → model generates a self-edit (training data + update directives) → inner SFT/LoRA update → evaluate on the task → reward feeds an outer RL loop that improves self-edit generation. Termination = outer RL convergence.
-- ⚠️ Name collision: **https://github.com/yihaohu0118/SEAL** is a *different* paper ("Synergistic Co-Evolution of Agents and Learning Environments") — do not cite it as Self-Adapting LMs.
+- ⚠️ Name collision: **https://github.com/yihaohu0118/SEAL** is a _different_ paper ("Synergistic Co-Evolution of Agents and Learning Environments") — do not cite it as Self-Adapting LMs.
 
 ### Voyager
+
 - **https://github.com/erlunlian/voyager-minecraft-ai** — LangGraph reimplementation. Explicit graph orchestration (`src/graph/voyager_graph.py`): Curriculum Agent proposes a task → Action Agent retrieves skills and writes JS code → Mineflayer bot executes → Critic Agent evaluates → successful code is stored in a ChromaDB skill library (semantic retrieval) → session state persisted to PostgreSQL. The clearest modern re-read of the Voyager loop.
 - **https://github.com/anassee15/vision-voyager** — VLM-based reimplementation that adds vision to the Voyager agents (`voyager/agents/action.py`, `critic.py`, `curriculum.py`, `skill.py`), keeping the same skill-library + auto-curriculum structure.
 
 ### Multi-Agent Debate
-- **https://github.com/HKUST-KnowComp/LLM-discussion** — Official code for the ACL 2024 paper "Rethinking the Bounds of LLM Reasoning: Are Multi-Agent Discussions the Key?" Pluggable discussion protocols in `src/rules/Debate/` (DebateLauncher, DebateRule — propose/critique rounds). Notable because it is the paper that *skeptically* evaluated debate and found single-agent with strong prompts ≈ debate — worth reading before building a debate loop.
+
+- **https://github.com/HKUST-KnowComp/LLM-discussion** — Official code for the ACL 2024 paper "Rethinking the Bounds of LLM Reasoning: Are Multi-Agent Discussions the Key?" Pluggable discussion protocols in `src/rules/Debate/` (DebateLauncher, DebateRule — propose/critique rounds). Notable because it is the paper that _skeptically_ evaluated debate and found single-agent with strong prompts ≈ debate — worth reading before building a debate loop.
 - **https://github.com/teddytennant/FUSION** — Multi-model debate CLI. Three phases: independent initial answers → N review rounds where each agent critiques the others' latest answers and emits a refined answer → a synthesizer agent merges final answers. Termination = fixed review-round count.
 
 ### STORM
+
 - **https://github.com/stanford-oval/storm/blob/main/knowledge_storm/collaborative_storm/modules/co_storm_agents.py** — The Co-STORM agent code, now integrated into the main storm repo (EMNLP 2024). `CoStormExpert` (answers grounded in retrieval and/or raises follow-up questions), `SimulatedUser`, plus a Moderator that asks questions from undiscovered retrieved info; a dynamic mind map is the shared state. This is the multi-agent discourse loop on top of the STORM pipeline.
 - Co-STORM paper: **https://arxiv.org/abs/2408.15232** — "Into the Unknown Unknowns: Engaged Human Learning through Participation in Language Model Agent Conversations".
 
 ### STO / SICA
+
 - **https://github.com/MaximeRobeyns/self_improving_coding_agent** — **The official SICA implementation** (397 stars, ICLR 2025 SSI-FM workshop paper). This was missing from the prior comments (which said "no reliable repository for SICA"). Loop: evaluate current agent version on benchmark tasks → store results in an archive → run the agent on its own codebase to implement an improvement → re-benchmark, repeat. Meta-agent and target agent are the same system; observability via event bus + callgraph (`base_agent/src/events/`, `callgraph/`).
 - **https://github.com/MrTsepa/micro-sica** — Minimal SICA. `sica_loop.py`: execute task → log outcome to `memory/study_log.json` → read own source + memory → ask the LLM "how can I improve?" → validate proposed code (ast.parse, py_compile, structural check, canary test) → human-in-the-loop approval gate → overwrite its own file. The smallest readable example of the self-rewrite loop with explicit safety gates.
 
@@ -90,6 +102,7 @@ For each pattern, 1–2 additional real implementations beyond the prior list, w
 ## 3. Web search keywords used
 
 ### The 12 patterns (exact queries)
+
 1. Reflection: `LangGraph evaluator-optimizer tutorial reflection agent implementation code`
 2. Reflexion: `Reflexion agent implementation GitHub langchain reflexion agent notebook`
 3. ReAct: `ReAct agent from scratch implementation GitHub thought action observation loop code`
@@ -105,6 +118,7 @@ For each pattern, 1–2 additional real implementations beyond the prior list, w
 13. STO/SICA: `SICA self-improving coding agent implementation code GitHub`
 
 ### Related topics (exact queries)
+
 - Process reward models: `process reward models PRM LLM agents arXiv Let's Verify Step by Step`
 - Evaluator-optimizer: `Anthropic Building Effective Agents evaluator-optimizer pattern`
 - Agent memory: `memory mechanisms LLM agents survey episodic semantic short-term long-term arXiv`
@@ -134,6 +148,7 @@ For each pattern, 1–2 additional real implementations beyond the prior list, w
 - **Temporal durable execution** — https://docs.temporal.io/ai. Durable retries/resume for LLM workflows; the "retry loop with persistent state" pattern at infrastructure level.
 
 ### Cross-links between patterns
+
 - **STaR → STO → SEAL/RISE/Self-Challenging are one lineage**: STO is by Zelikman (the STaR author), and SEAL/RISE/Self-Challenging all fine-tune on self-generated traces.
 - **LATS is now a framework feature**: the official repo points to LangGraph/LlamaIndex implementations — tree-search agents are no longer custom code.
 - **Evaluator-optimizer (Anthropic) is Self-Refine in production form** — the research pattern and the engineering pattern are the same loop.
@@ -144,34 +159,40 @@ For each pattern, 1–2 additional real implementations beyond the prior list, w
 
 ## 5. Proposed issues (new — beyond the previously proposed #120–#124)
 
-Status check on the prior proposals: **#120 and #124 were implemented** (bounded evaluator loop + regression harness, via agent-todo PR #132 and agent-runner PR #5 / agent-todo PR #159). **#121, #122, #123 were explicitly rejected by the human** ("too complicated", "leave as is", "we don't need that") — do not re-propose them. The implemented pattern to build on is: *a deterministic validator script + a bounded retry loop + offline tests wired into `completion-check`*.
+Status check on the prior proposals: **#120 and #124 were implemented** (bounded evaluator loop + regression harness, via agent-todo PR #132 and agent-runner PR #5 / agent-todo PR #159). **#121, #122, #123 were explicitly rejected by the human** ("too complicated", "leave as is", "we don't need that") — do not re-propose them. The implemented pattern to build on is: _a deterministic validator script + a bounded retry loop + offline tests wired into `completion-check`_.
 
 ### Proposal 1 — PR-description evaluator-optimizer loop (Self-Refine)
+
 **Problem.** `AGENTS.md` requires every PR description to link action runs that prove the change works and cover all changed code paths. The coordinator opens the PR itself, and `.github/workflows/opencode.yml` only posts run-result comments — nothing machine-checkable validates the PR description. Open issue #210 documents the symptom: agents "always proudly tell that CI ran" instead of linking their own evidence runs. #120 proved the validator + bounded-retry pattern for issue bodies; PR descriptions have no equivalent contract.
 **Proposed change.** New `scripts/validate_pr_description.py` mirroring `scripts/validate_refined_issue.py` (prints a validation token, exits non-zero on rejection): checks at least one absolute action-run link, rejects bare "CI ran/passed" claims without a linked run, requires the AGENTS.md sections, reuses the hostile-text rejection pattern. In `.github/workflows/opencode.yml`, add a "Validate PR description" step after the coordinator succeeds; on rejection, re-invoke the coordinator with the rejection token (bounded to max 2 attempts, mirroring the retry loop in `refine-issues.yml`), then re-validate. New `scripts/test_validate_pr_description.py` (pytest), picked up by `completion-check`.
 **How to verify.** pytest covers valid/invalid descriptions; a manual dispatch with a deliberately non-compliant description shows the retry loop firing; `./scripts/completion-check` passes.
 
 ### Proposal 2 — Reflexion-style retry for failed coordinator runs (persistent failure memory)
+
 **Problem.** `.github/workflows/hourly-issue.yml` carries a `ponytail:` comment documenting that "the agent-running claim label is never removed by these workflows, so issues that fail, or succeed without closing, are permanently retired from selection". The coordinator runs once under a 120-min timeout; when it fails or times out, the issue stays `agent-running` forever and is never re-attempted. There is no mechanism to re-attempt a failed issue with knowledge of the previous attempt (Reflexion's multi-trial loop with persistent verbal memory).
 **Proposed change.** In `.github/workflows/opencode.yml`, add a "Release claim on failure" step (when the coordinator outcome is not success): remove the `agent-running` label and post a structured failure-summary comment (issue number, run URL, exit status, branch pushed, what remained). The hourly candidate query already excludes `-label:agent-running`, so unlabeling makes failed issues re-selectable; extend the candidate prompt to include the failure-summary comment so the selector and coordinator carry the previous attempt's context. Instruct the selector (`.opencode/agent/issue-selector.md`, `scripts/issue-selection-tail.txt`) to prefer retrying a failed issue with a summary, bounded (e.g. at most one retry per issue per day).
 **How to verify.** Dispatch a run that fails; check the issue is unlabeled and the failure summary is posted; the next hourly selection includes the summary in the prompt.
 
 ### Proposal 3 — Bounded self-critique step before reporting "completed" (Reflection)
+
 **Problem.** The run-result comment in `.github/workflows/opencode.yml` reports "✅ completed" based solely on the coordinator process exit code. There is no critique pass between "the agent says done" and "the workflow reports completed" — the Reflection/Self-Refine pattern (generate → critique → revise) is absent at the workflow level.
 **Proposed change.** After the coordinator step succeeds, add a bounded reflection step: run a second opencode invocation with a new `critic` agent (defined in `.opencode/agent/critic.md` in this repo, or in `bacluc/provision-machines`) that reviews the pushed diff and the coordinator's final comment against the issue's `## Goal`/`## How to implement` and AGENTS.md requirements. If the critique finds violations, re-invoke the coordinator with the critique text (bounded to max 2 revision rounds); only after a clean critique does the run-result comment say "completed". Record the critique result (e.g. a `critique.json` artifact) so the comment can state "completed after N revision rounds".
 **How to verify.** A run where the coordinator omits evidence links → the critique catches it and the revision round adds them; the run-result comment reflects the revision.
 
 ### Proposal 4 — Voyager-style lessons-learned cache (persistent cross-run memory)
+
 **Problem.** The repo has exactly one persistent cross-run memory: the model-availability cache issue. Everything else is forgotten between runs. The standing analysis task #206 repeatedly finds the same failure patterns (agents not testing `.github` changes, agents claiming CI ran, duplicate PRs). The research is explicit: Reflexion's key learning is "improvements are ephemeral unless reflections are persisted and reused".
 **Proposed change.** A new cache issue in the todo repo (e.g. "agent lessons learned"), managed like the model-availability cache (auto-detected or via a new `AGENT_LESSONS_CACHE_ISSUE` variable). In `.github/workflows/opencode.yml`, a step appends a short structured lesson entry after each run (issue number, outcome, one-line lesson), trimmed to the last N entries. In `.github/workflows/hourly-issue.yml`, include the recent lessons in the selection prompt so the selector and coordinator condition on them (Voyager's "retrieve relevant skills"). Small script `scripts/append-lesson.py` + pytest tests.
 **How to verify.** Two consecutive runs; the second run's selection prompt contains the first run's lesson; a test covers the append/trim logic.
 
 ### Proposal 5 — Checkpoint/resume for timed-out runs
+
 **Problem.** The coordinator runs under `timeout "${COORDINATOR_TIMEOUT}m"` (default 120 min) in `.github/workflows/opencode.yml`. #206 asks why runs get stuck with zero output for 2 hours and why the agent doesn't push preliminary results so another agent or human could continue. A timed-out run's issue stays `agent-running` and any re-attempt starts from scratch.
 **Proposed change.** On timeout/failure, the existing "Ensure work is pushed" step already pushes the branch; add a step that writes a machine-readable checkpoint (branch name, last milestone from the progress comment, remaining steps) into the issue comment or an `agent-run-state.json` committed on the branch. Add a resume path: when the coordinator prompt is generated, detect an existing checkpoint for the issue and build a "continue from checkpoint" prompt (checkout the branch, read the state, continue) instead of "implement from scratch". Depends on Proposal 2's unlabeling to make the issue re-selectable.
 **How to verify.** A run with a short timeout override leaves a checkpoint; a re-dispatch with the resume prompt continues from the branch and completes.
 
 ### Priority ranking
+
 1. **Proposal 1** — directly enforces AGENTS.md's core testing requirement, addresses the documented #210 symptom, follows the proven #120 validator+retry pattern; deterministic and cheap.
 2. **Proposal 2** — fixes the documented "issues permanently retired" bug (the `ponytail:` comment in `hourly-issue.yml`) and answers #206's recurring "why didn't the agent continue" questions; small diff.
 3. **Proposal 3** — makes "✅ completed" mean something; model-based, moderate cost.
@@ -236,6 +257,7 @@ Run: https://github.com/bacluc-agent/agent-runner/actions/runs/35413028657 — m
 Read: AGENTS.md
 
 Research complement for bacluc-agent/agent-todo#76: DONE.
+
 - Verified all 18 seed+repo URLs alive (curl -I 200, 2026-09-19).
 - Posted complementing comment (15.5k chars, no dup of 2026-09-06/07 or 2026-09-17): https://github.com/bacluc-agent/agent-todo/issues/76#issuecomment-5738362214
 - Covers PreFlect, REWOO, Voyager, DMAD-2026 disambiguation, STORM, RISE-2024 vs 2026, SEAL, SICA vs STO + 3 pseudo-code blocks.
@@ -253,35 +275,35 @@ This comment complements bacluc-agent/agent-todo#76 without repeating the 2026-0
 
 ## Table: Pattern | Core Idea | Cost | How built (1-2 lines) | Key learning | Source
 
-| Pattern | Core Idea | Cost | How built | Key learning | Source |
-|---|---|---|---|---|---|
-| PreFlect | Critique and fix the *plan before executing* it, using distilled planning errors; re-plan at runtime on stall | Low-Med (+17.64% tokens vs base) | Plan → reflector checks plan against 3–5 distilled error patterns → revise → think-act-observe loop with re-plan trigger | Retrospective reflection wastes cost on irreversible actions; pre-execution critique gained +12pp GAIA pass@1 (46.06→58.18, GPT-4.1) and transfers across backbones (Gemini-2.5-pro 50.30→59.39) | Wang et al. (2026), arXiv:2602.07187 |
-| REWOO | Decouple reasoning from observations: plan all tool calls with `#E` placeholders, execute, then solve | Low-Med (2 LLM calls regardless of tool count) | Planner emits plan + workers (`Plan#E1…`) → dependency-aware executor substitutes results → Solver integrates | Separation cuts tokens (~64% vs ReAct per prior survey) but only when tool dependencies are predictable upfront; official repo is `AI-Natural-Language-Processing-Lab/ReWOO-…`, community fork `ayush9h/ReWOO` | Xu et al. (2023), arXiv:2305.07372 |
-| Voyager | Lifelong embodied agent: auto-curriculum + code-skill library + iterative self-repair | Medium (GPT-4 code gen per task, amortized by reuse) | Curriculum proposes task → Action writes JS skill → Mineflayer executes → Critic judges → success stored as `skill/{code,description,skills.json,vectordb}`; only the `skill/` dir is the shareable library | Skills as versioned code compose and transfer; community checkpoints are resumed via `skill_library_dir=<ckpt>`; prior 09-17 reimplementations (LangGraph/ChromaDB+Postgres, vision variant) confirm the pattern ports off Minecraft | Wang et al. (2023), arXiv:2305.16291; https://github.com/MineDojo/Voyager |
-| DMAD-2026 | Debate fails from correlated errors; fix with diverse seeding + calibrated confidence | High (oversample N + GRPO training + debate rounds) | Oversample N answers → greedily keep K most diverse by embedding distance → debate with GRPO-trained confidence scores that weight belief updates | Theory: vanilla debate is a martingale (expected correctness preserved); confidence-weighting makes it a submartingale (drifts toward correct); beats vanilla MAD and majority vote on 6 QA benchmarks | Zhu et al. (2026), arXiv:2601.19921; https://github.com/SpaceHunterInf/DMAD |
-| STORM | Multi-perspective research synthesis: outline → retrieve → write with discourse | High (many retrieval+gen rounds) | Topic → perspective agents ask questions → retrieval → outline → section drafting with citations; Co-STORM adds Expert/SimulatedUser/Moderator + shared mind map | Grounding every claim in retrieved sources is what separates it from free-form writing; ships as `pip install knowledge-storm` with live demo; Co-STORM discourse loop is the reusable part | Shao et al. (2024); https://pypi.org/project/knowledge-storm; https://storm.genie.stanford.edu/ |
-| RISE-2024 vs RISE-2026 (footnote) | Same acronym, different loops — do not conflate | Training cost (both) | 2024: finetune on mistake→feedback→fix multi-turn traces so self-correction becomes internal. 2026: online RL (PPO/verl) jointly training solving + self-verification with verifiable rewards on-policy | Rent-vs-buy applies: 2024 buys introspection into weights via traces; 2026 buys a verifier alongside the solver (+2.8× verification accuracy, Qwen2.5). Check the README before citing | Qu et al. (2024), https://github.com/cmu-mind/RISE vs Liu et al. (2025), arXiv:2505.13445, https://github.com/xyliu-cs/RISE |
-| SEAL | Model authors its own training edits (data + update directives), outer RL rewards edits that help | High (inner SFT/LoRA + outer RL) | Sample (context, task) → generate self-edit → inner update → evaluate → reward feeds outer loop (Algorithm 1) | Edits as natural language stay interpretable; 33.5→47% factual QA, 0→72.5% few-shot in paper; name collision with `yihaohu0118/SEAL` (co-evolution, unrelated) | Zweiger et al., NeurIPS 2025; https://github.com/Continual-Intelligence/SEAL |
-| SICA vs STO (split) | STO: the *optimizer program* improves itself. SICA: the *agent* edits its own source gated by benchmarks | High (repeated LLM + full re-eval loops) | STO: seed improver → apply to downstream code → apply to itself, keep metric wins (rediscovers beam search/SA). SICA: benchmark → archive → self-edit own code → re-benchmark, keep wins; micro-SICA adds `ast.parse` + canary + human gate | Both need sandboxing + conservative acceptance (keep edit only on measured win) or they overfit/disable guards; STO improves the tool, SICA improves the agent — different blast radius | STO: Zelikman et al., COLM 2024, arXiv:2310.02304. SICA: Robeyns et al. 2025, https://github.com/MaximeRobeyns/self_improving_coding_agent |
+| Pattern                           | Core Idea                                                                                                     | Cost                                                 | How built                                                                                                                                                                                                                                   | Key learning                                                                                                                                                                                                                         | Source                                                                                                                                     |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| PreFlect                          | Critique and fix the _plan before executing_ it, using distilled planning errors; re-plan at runtime on stall | Low-Med (+17.64% tokens vs base)                     | Plan → reflector checks plan against 3–5 distilled error patterns → revise → think-act-observe loop with re-plan trigger                                                                                                                    | Retrospective reflection wastes cost on irreversible actions; pre-execution critique gained +12pp GAIA pass@1 (46.06→58.18, GPT-4.1) and transfers across backbones (Gemini-2.5-pro 50.30→59.39)                                     | Wang et al. (2026), arXiv:2602.07187                                                                                                       |
+| REWOO                             | Decouple reasoning from observations: plan all tool calls with `#E` placeholders, execute, then solve         | Low-Med (2 LLM calls regardless of tool count)       | Planner emits plan + workers (`Plan#E1…`) → dependency-aware executor substitutes results → Solver integrates                                                                                                                               | Separation cuts tokens (~64% vs ReAct per prior survey) but only when tool dependencies are predictable upfront; official repo is `AI-Natural-Language-Processing-Lab/ReWOO-…`, community fork `ayush9h/ReWOO`                       | Xu et al. (2023), arXiv:2305.07372                                                                                                         |
+| Voyager                           | Lifelong embodied agent: auto-curriculum + code-skill library + iterative self-repair                         | Medium (GPT-4 code gen per task, amortized by reuse) | Curriculum proposes task → Action writes JS skill → Mineflayer executes → Critic judges → success stored as `skill/{code,description,skills.json,vectordb}`; only the `skill/` dir is the shareable library                                 | Skills as versioned code compose and transfer; community checkpoints are resumed via `skill_library_dir=<ckpt>`; prior 09-17 reimplementations (LangGraph/ChromaDB+Postgres, vision variant) confirm the pattern ports off Minecraft | Wang et al. (2023), arXiv:2305.16291; https://github.com/MineDojo/Voyager                                                                  |
+| DMAD-2026                         | Debate fails from correlated errors; fix with diverse seeding + calibrated confidence                         | High (oversample N + GRPO training + debate rounds)  | Oversample N answers → greedily keep K most diverse by embedding distance → debate with GRPO-trained confidence scores that weight belief updates                                                                                           | Theory: vanilla debate is a martingale (expected correctness preserved); confidence-weighting makes it a submartingale (drifts toward correct); beats vanilla MAD and majority vote on 6 QA benchmarks                               | Zhu et al. (2026), arXiv:2601.19921; https://github.com/SpaceHunterInf/DMAD                                                                |
+| STORM                             | Multi-perspective research synthesis: outline → retrieve → write with discourse                               | High (many retrieval+gen rounds)                     | Topic → perspective agents ask questions → retrieval → outline → section drafting with citations; Co-STORM adds Expert/SimulatedUser/Moderator + shared mind map                                                                            | Grounding every claim in retrieved sources is what separates it from free-form writing; ships as `pip install knowledge-storm` with live demo; Co-STORM discourse loop is the reusable part                                          | Shao et al. (2024); https://pypi.org/project/knowledge-storm; https://storm.genie.stanford.edu/                                            |
+| RISE-2024 vs RISE-2026 (footnote) | Same acronym, different loops — do not conflate                                                               | Training cost (both)                                 | 2024: finetune on mistake→feedback→fix multi-turn traces so self-correction becomes internal. 2026: online RL (PPO/verl) jointly training solving + self-verification with verifiable rewards on-policy                                     | Rent-vs-buy applies: 2024 buys introspection into weights via traces; 2026 buys a verifier alongside the solver (+2.8× verification accuracy, Qwen2.5). Check the README before citing                                               | Qu et al. (2024), https://github.com/cmu-mind/RISE vs Liu et al. (2025), arXiv:2505.13445, https://github.com/xyliu-cs/RISE                |
+| SEAL                              | Model authors its own training edits (data + update directives), outer RL rewards edits that help             | High (inner SFT/LoRA + outer RL)                     | Sample (context, task) → generate self-edit → inner update → evaluate → reward feeds outer loop (Algorithm 1)                                                                                                                               | Edits as natural language stay interpretable; 33.5→47% factual QA, 0→72.5% few-shot in paper; name collision with `yihaohu0118/SEAL` (co-evolution, unrelated)                                                                       | Zweiger et al., NeurIPS 2025; https://github.com/Continual-Intelligence/SEAL                                                               |
+| SICA vs STO (split)               | STO: the _optimizer program_ improves itself. SICA: the _agent_ edits its own source gated by benchmarks      | High (repeated LLM + full re-eval loops)             | STO: seed improver → apply to downstream code → apply to itself, keep metric wins (rediscovers beam search/SA). SICA: benchmark → archive → self-edit own code → re-benchmark, keep wins; micro-SICA adds `ast.parse` + canary + human gate | Both need sandboxing + conservative acceptance (keep edit only on measured win) or they overfit/disable guards; STO improves the tool, SICA improves the agent — different blast radius                                              | STO: Zelikman et al., COLM 2024, arXiv:2310.02304. SICA: Robeyns et al. 2025, https://github.com/MaximeRobeyns/self_improving_coding_agent |
 
 Footnotes: (a) DMAD-2026 (Zhu et al., diversity+confidence, `SpaceHunterInf/DMAD`) ≠ DMAD-ICLR2025 (Diverse MAD, distinct reasoning styles per agent, `MraDonkey/DMAD`) — same acronym, different fix for debate failure. (b) STO venue is COLM 2024 per the 09-07 correction — retained here.
 
 ## Commonalities (generate-critique-revise, persistent memory write-manage-read, tool-use loop)
 
-1. **Generate-critique-revise is the shared skeleton.** PreFlect (plan critic), Reflexion (post-trial critic), STORM (perspective Q&A + drafting), DMAD-2026 (cross-agent critique), critic-in-the-loop — all instantiate draft → evaluate → revise with a budget. Zylos (2026-05-12) makes the mechanism precise: the loop only helps when the critique signal is *decorrelated* from the generator (execution results, retrieval, a trained PRM, or a differently-prompted role).
+1. **Generate-critique-revise is the shared skeleton.** PreFlect (plan critic), Reflexion (post-trial critic), STORM (perspective Q&A + drafting), DMAD-2026 (cross-agent critique), critic-in-the-loop — all instantiate draft → evaluate → revise with a budget. Zylos (2026-05-12) makes the mechanism precise: the loop only helps when the critique signal is _decorrelated_ from the generator (execution results, retrieval, a trained PRM, or a differently-prompted role).
 2. **Persistent memory is write-manage-read, not just a log.** Voyager curates skills (`skills.json` + embeddings, community sharing), Reflexion keeps 1–3 verbal reflections, STORM keeps a mind map, SEAL distills edits into weights. The Towards-Data-Science memory guide and arXiv:2603.07670v1 agree: retention policy and retrieval beat raw accumulation.
 3. **The tool-use loop grounds the critique.** Code execution (HumanEval 80→91% in Reflexion), test-shaped tasks (Self-Challenging CaT), retrieval grounding (Self-RAG tokens, STORM citations), verifier rewards (RISE-2026) — every reliable loop anchors judgment in something outside model priors. Intrinsic-only self-correction degrades reasoning (Huang et al., ICLR 2024).
 
 ## Differences (search vs linear, training vs prompting rent-vs-buy one-liner, intrinsic vs grounded, retrospective vs prospective)
 
 - **Search vs linear:** LATS/DMAD fan out (tree, debate pool) then prune; REWOO/Reflexion follow one trajectory and repair it. Search costs 5–10× but recovers from early mistakes; linear is cheaper and wins when the first attempt is usually close.
-- **Training vs prompting — rent-vs-buy one-liner:** prompting loops (PreFlect, Reflexion, critic-in-the-loop) *rent* improvement per task with zero weight changes; training loops (RISE-2024/2026, STaR, SEAL, STO/SICA) *buy* improvement into weights or code at high upfront cost that amortizes over many tasks.
+- **Training vs prompting — rent-vs-buy one-liner:** prompting loops (PreFlect, Reflexion, critic-in-the-loop) _rent_ improvement per task with zero weight changes; training loops (RISE-2024/2026, STaR, SEAL, STO/SICA) _buy_ improvement into weights or code at high upfront cost that amortizes over many tasks.
 - **Intrinsic vs grounded:** surface errors (format, style) yield to intrinsic critique; reasoning errors need grounded signals (tests, tools, PRMs) — the single most replicated finding across the seed sources.
-- **Retrospective vs prospective:** everything before PreFlect reflects *after* failure; PreFlect reflects *before* acting, which matters exactly when actions are costly or irreversible (tool side effects, robot acts, published writes). Complement with runtime re-planning — foresight alone misses runtime-only constraints.
+- **Retrospective vs prospective:** everything before PreFlect reflects _after_ failure; PreFlect reflects _before_ acting, which matters exactly when actions are costly or irreversible (tool side effects, robot acts, published writes). Complement with runtime re-planning — foresight alone misses runtime-only constraints.
 
 ## Examples of loops in the wild (2-3 repo links + takeaways)
 
-- **https://github.com/MineDojo/Voyager** (7.2k stars) — the skill-library README shows the durable artifact is just `skill/` (code + description + `skills.json` + vectordb); curriculum/qa/event dirs are session state. Takeaway: separate *shareable library* from *ephemeral run state*; community checkpoints resume via one path variable.
+- **https://github.com/MineDojo/Voyager** (7.2k stars) — the skill-library README shows the durable artifact is just `skill/` (code + description + `skills.json` + vectordb); curriculum/qa/event dirs are session state. Takeaway: separate _shareable library_ from _ephemeral run state_; community checkpoints resume via one path variable.
 - **https://github.com/SpaceHunterInf/DMAD** — debate bootstrapped from `data/example_debate_data.json` with `low_diversity`/`random`/`high_diversity` subsets, GRPO+LoRA in two stages (express confidence, then use others'). Takeaway: diversity is engineered at seeding time (embedding-distance selection), not hoped for at debate time.
 - **https://github.com/MaximeRobeyns/self_improving_coding_agent** — evaluate → archive → self-edit → re-benchmark with event-bus/callgraph observability. Takeaway: the loop is only as trustworthy as its acceptance gate (benchmark delta) and its trace (what changed, why, measured effect).
 
@@ -383,6 +405,7 @@ Run: https://github.com/agent-runner/agent-runner/actions/runs/35413028657 — m
 Read: AGENTS.md
 
 TEST RESULT: PASS — bacluc-agent/agent-todo#76 comment 5738362214 verified 2026-09-19.
+
 - Comment exists (id 5738362214, 15372 chars / 15499 bytes, <65000), issue state OPEN (closed=false).
 - Table: 8 data rows x 6 cols (PreFlect, REWOO, Voyager, DMAD-2026, STORM, RISE-2024/2026, SEAL, SICA/STO).
 - Sections present: Scope, Table, Commonalities, Differences, 3 wild repos, 3 python pseudo-code blocks (REWOO/Voyager/critic max_retries=2+escalate), APA sources (19 URLs), Explicitly-skipped.
@@ -409,4 +432,3 @@ Branch: research/agent-patterns-76 — DONE (bacluc-agent/agent-todo#76)
 ✅ Synthesis posted: https://github.com/bacluc-agent/agent-todo/issues/76#issuecomment-5738708305 (13628 bytes, 12-row table, all 9 required URLs + 9 additional repos, accessed 2026-09-19)
 ✅ Traceability: https://github.com/bacluc-agent/agent-todo/issues/76#issuecomment-5738711571 — empty commit 7ced46e on bacluc-agent/agent-runner@research/agent-patterns-76
 ✅ State: OPEN (no PR, research-only) — git status clean, /tmp/findings.md only, no new deps
-

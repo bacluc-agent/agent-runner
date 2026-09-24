@@ -5,6 +5,7 @@ Read: AGENTS.md (agent-runner)
 Task: implement https://github.com/bacluc-agent/agent-todo/issues/76#issuecomment-5818668536 — (1) find up-to-date research on AI agent patterns, (2) summarize everything found so far, (3) copy existing comments into closed archive issue(s) to free agent context on #76.
 
 Progress:
+
 - [x] Issue context gathered: 20 comments (~144KB) on bacluc-agent/agent-todo#76; related issues #227 (ReAct), #228 (reflection/evaluator-optimizer), #230 (Voyager skill-library) exist.
 - [x] Refine phase: full inventory of 20 comments (numeric IDs), archive precedent found (#188/#216 for issue #16: CLOSED issues with bodies), citation traps identified, agent-todo has no AGENTS.md/CLAUDE.md.
 - [x] Plan phase: 3 closed archive issues (5/6/9 comment split, bodies < 60KB), fresh 2026 research queries, summary comment structure, delete 17 bot comments after archive verification, keep 2 BacLuc comments + run-tracking comment.
