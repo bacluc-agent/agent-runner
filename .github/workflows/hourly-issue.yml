@@ -25,13 +25,15 @@ permissions:
 
 jobs:
   select:
-    # ponytail: the agent-running claim label is never removed by these workflows, so issues that
-    # fail, or succeed without closing, are permanently retired from selection; upgrade path is
-    # unlabeling on completion/failure or timeout-based claims.
+    # ponytail: the release step does not run if the job is killed at timeout-minutes, so the
+    # claim leaks and the issue stays out of selection until a human unlabels it. Upgrade path:
+    # timeout-based claims — encode the run id in the claim (agent-running:<run_id>) and treat a
+    # claim whose run is no longer in-progress as expired at selection time.
     runs-on: ubuntu-latest
     timeout-minutes: 120
     outputs:
       prompt: ${{ steps.pick.outputs.prompt }}
+      issue_number: ${{ steps.pick.outputs.issue_number }}
     env:
       GITHUB_TOKEN: ${{ secrets.BACLUC_AGENT_GITHUB_TOKEN }}
       OPENCODE_GO_API_KEY: ${{ secrets.OPENCODE_GO_API_KEY }}
@@ -77,8 +79,10 @@ jobs:
           printf '::add-mask::%s\n' "$OPENCODE_GO_2_API_KEY"
           printf '::add-mask::%s\n' "$OPENCODE_AUTH_CONTENT"
 
-          gh label create agent-running -R "$ISSUE_REPOSITORY" \
-            --color 0E8A16 --description 'Selected by the hourly issue runner' --force
+          if ! gh label create agent-running -R "$ISSUE_REPOSITORY" \
+            --color 0E8A16 --description 'Selected by the hourly issue runner' --force; then
+            printf '::warning::could not ensure the agent-running label exists; the claim may not apply\n'
+          fi
 
           printf '\n\n\n\n\n\n'
           printf 'Fetching github issues...\n'
@@ -262,6 +266,17 @@ jobs:
             printf '%s\n' 'Selection output contained the output delimiter; not dispatching.' >&2
             exit 1
           fi
+          # `|| true` is required: under `set -Eeuo pipefail` a non-matching grep fails the whole
+          # pipeline, and the assignment would abort the step before the dispatch happens.
+          issue_number="$(grep -E '^SELECTED_ISSUE:[[:space:]]*[0-9]+[[:space:]]*$' "$selection" | tail -1 | grep -oE '[0-9]+' || true)"
+          if [[ -z "$issue_number" ]] || ! grep -qxF "$issue_number" "$candidates"; then
+            printf '::warning::could not determine selected issue; dispatching without a claim\n'
+          else
+            printf 'issue_number=%s\n' "$issue_number" >> "$GITHUB_OUTPUT"
+            if ! gh issue edit "$issue_number" -R "$ISSUE_REPOSITORY" --add-label agent-running; then
+              printf '::warning::could not claim issue %s; dispatching unclaimed\n' "$issue_number"
+            fi
+          fi
           {
             printf 'prompt<<%s\n' "$eof"
             printf '%s\n' "$(< "$selection")"
@@ -321,3 +336,24 @@ jobs:
     with:
       prompt: ${{ needs.select.outputs.prompt }}
     secrets: inherit
+
+  release:
+    needs: [select, run]
+    if: always() && needs.select.outputs.issue_number != ''
+    permissions:
+      issues: write
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_TOKEN: ${{ secrets.BACLUC_AGENT_GITHUB_TOKEN }}
+      ISSUE_REPOSITORY: ${{ vars.ISSUE_REPOSITORY || github.repository }}
+    steps:
+      - name: Release the issue claim
+        shell: bash
+        env:
+          ISSUE_NUMBER: ${{ needs.select.outputs.issue_number }}
+        run: |
+          set -Eeuo pipefail
+          printf '::add-mask::%s\n' "$GITHUB_TOKEN"
+          if ! gh issue edit "$ISSUE_NUMBER" -R "$ISSUE_REPOSITORY" --remove-label agent-running; then
+            printf '::warning::could not remove agent-running from #%s; it stays claimed until unlabelled by hand\n' "$ISSUE_NUMBER"
+          fi

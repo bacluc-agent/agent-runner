@@ -32,8 +32,9 @@ anything.
    rewrites the issue body into two clear sections — `## Goal` and
    `## How to implement` — and labels it `ready-for-implementation`.
 3. **An issue is selected** (hourly, at minute 24). The _issue-selector_
-   agent picks one ready issue, labels it `agent-running`, and writes the
-   implementation prompt for the next step.
+   agent picks one ready issue, claims it with `agent-running` for the run, and
+   writes the implementation prompt for the next step. The claim is removed
+   when the run ends.
 4. **The issue is implemented** (right after selection). The _coordinator_
    agent checks which AI models are currently available (using a cache so it
    stays fast), picks a model, implements the issue, and pushes the work to a
@@ -66,7 +67,7 @@ idea (issue in agent-todo)
 | ------------------------------ | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
 | `ci.yml`                       | every push to `main` and every pull request | Quality gate: runs the completion check (formatting, workflow lint, tests). Nothing merges if this fails.                            |
 | `refine-issues.yml`            | hourly at minute 7                          | Rewrites vague issues into `## Goal` + `## How to implement` and labels them `ready-for-implementation`.                             |
-| `hourly-issue.yml`             | hourly at minute 24                         | Picks one ready issue, labels it `agent-running`, and starts the implementation.                                                     |
+| `hourly-issue.yml`             | hourly at minute 24                         | Picks one ready issue, claims it with `agent-running` for the run, and starts the implementation.                                    |
 | `opencode.yml`                 | called by the other workflows               | The core runner: checks model availability, selects a model, runs the coordinator agent, pushes the work, and comments on the issue. |
 | `review-fixes.yml`             | every 4 hours at minute 32                  | Finds open pull requests with review comments and re-dispatches the agent to apply them.                                             |
 | `refresh-chatgpt-auth.yml`     | 1st and 15th of each month                  | Keeps the OpenAI login working by refreshing the OAuth token (browser login as fallback).                                            |
