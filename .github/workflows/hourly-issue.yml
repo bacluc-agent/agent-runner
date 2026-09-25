@@ -114,7 +114,7 @@ jobs:
           # probe but fail as coordinator/selector in 10+ runs (e.g. 34029380869, 34042660858).
           mapfile -t free_models < <(grep -E '^(opencode|openrouter)/[^[:space:]]+(-free|:free)$' "$available_models_file" | grep -Ev '/(ling-3\.0-flash-fin|mimo-v2\.5)(-free|:free)$|/nemotron-|/muse-spark-' | awk '!seen[$0]++')
           for candidate in \
-            'openrouter/thinkingmachines/inkling:free' \
+            'opencode/mimo-v2.6-flash-free' \
             'opencode-go-openai/qwen3.8-flash' \
             'opencode-go-openai-2/qwen3.8-flash' \
             'opencode/big-pickle' \
