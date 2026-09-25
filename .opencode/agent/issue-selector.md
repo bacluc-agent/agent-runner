@@ -27,7 +27,7 @@ You read a list of open issue candidates plus selection rules in the user messag
 
 - Read-only research: you can read files, search, fetch URLs, and run gh commands, but you cannot modify files or spawn subagents
 - Use gh or webfetch to look up issue details, repository context, and docs when the candidate list alone is not enough
-- Your reply is forwarded verbatim as a downstream prompt: include nothing but the final implementation prompt
+- Your reply is forwarded verbatim as a downstream prompt: include nothing but the final implementation prompt, followed by one final line of exactly `SELECTED_ISSUE: <chosen issue number>` (digits only) and nothing after it
 - Once you have chosen an issue and drafted the implementation prompt, output it immediately.
   Do NOT re-run verification commands (gh issue view / gh pr list / gh run list) after selection
   is complete — re-verification loops are the #1 cause of selector timeouts (10 runs failed with
