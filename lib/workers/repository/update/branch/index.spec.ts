@@ -397,6 +397,7 @@ describe('workers/repository/update/branch/index', () => {
       prAutomerge.checkAutoMerge.mockResolvedValueOnce({ automerged: true });
       config.automerge = true;
       config.automergeType = 'pr';
+      config.ignoreTests = true;
 
       await expect(branchWorker.processBranch(config)).resolves.toEqual({
         branchExists: false,

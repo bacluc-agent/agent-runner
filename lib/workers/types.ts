@@ -162,7 +162,6 @@ export type CacheFingerprintMatchResult =
 export interface BranchConfig
   extends BranchUpgradeConfig, LegacyAdminConfig, PlatformPrOptions {
   automergeComment?: string;
-  automergedPreviously?: boolean;
   baseBranch: string;
   branchAutomergeFailureMessage?: string;
 

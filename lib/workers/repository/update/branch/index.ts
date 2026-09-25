@@ -199,11 +199,6 @@ export async function processBranch(
         : undefined;
     if (existingPr?.state === 'merged') {
       logger.debug(`Matching PR #${existingPr.number} was merged previously`);
-      if (config.automerge) {
-        logger.debug('Disabling automerge because PR was merged previously');
-        config.automerge = false;
-        config.automergedPreviously = true;
-      }
     } else if (!branchPr && existingPr && !dependencyDashboardCheck) {
       logger.debug(
         { prTitle: config.prTitle },
