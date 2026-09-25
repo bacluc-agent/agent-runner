@@ -271,6 +271,13 @@ You must select at least one status check in the _Require status checks to pass 
 
 If you don't select any status check, and you use platform automerge, then GitHub might automerge PRs with failing tests!
 
+## `automergeAfterPreviousMerge`
+
+By default, Renovate disables automerge when it finds a matching PR that was merged previously.
+This happens even if that update was later reverted on your base branch, which leaves the re-raised PR unmerged until someone merges it manually.
+
+Set this option to `true` if you want automerge to stay enabled in that situation.
+
 ## `automergeComment`
 
 Use this only if you configure `automergeType="pr-comment"`.
