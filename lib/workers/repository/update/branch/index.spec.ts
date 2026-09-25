@@ -380,19 +380,29 @@ describe('workers/repository/update/branch/index', () => {
       expect(scm.deleteBranch).toHaveBeenCalledTimes(1);
     });
 
-    it('allows branch but disables automerge if merged PR found', async () => {
-      schedule.isScheduledNow.mockReturnValueOnce(false);
-      scm.branchExists.mockResolvedValue(true);
-      config.automerge = true;
-      config.updateType = 'digest';
+    it('automerges PR when matching PR was merged previously', async () => {
+      getUpdated.getUpdatedPackageFiles.mockResolvedValueOnce({
+        ...updatedPackageFiles,
+      });
+      npmPostExtract.getAdditionalFiles.mockResolvedValueOnce({
+        artifactErrors: [],
+        updatedArtifacts: [],
+      });
       checkExisting.prAlreadyExisted.mockResolvedValueOnce(
         partial<Pr>({
           number: 13,
           state: 'merged',
         }),
       );
-      await branchWorker.processBranch(config);
-      expect(reuse.shouldReuseExistingBranch).toHaveBeenCalledTimes(0);
+      prAutomerge.checkAutoMerge.mockResolvedValueOnce({ automerged: true });
+      config.automerge = true;
+      config.automergeType = 'pr';
+
+      await expect(branchWorker.processBranch(config)).resolves.toEqual({
+        branchExists: false,
+        commitSha,
+        result: 'automerged',
+      });
     });
 
     it('skips branch if closed minor PR found', async () => {
@@ -407,22 +417,6 @@ describe('workers/repository/update/branch/index', () => {
       await branchWorker.processBranch(config);
       expect(reuse.shouldReuseExistingBranch).toHaveBeenCalledTimes(0);
       expect(scm.deleteBranch).toHaveBeenCalledTimes(1);
-    });
-
-    it('allows branch even if merged PR found', async () => {
-      const pr = partial<Pr>({
-        number: 13,
-        state: 'merged',
-      });
-      schedule.isScheduledNow.mockReturnValueOnce(false);
-      scm.branchExists.mockResolvedValue(true);
-      checkExisting.prAlreadyExisted.mockResolvedValueOnce(pr);
-      await branchWorker.processBranch(config);
-      expect(reuse.shouldReuseExistingBranch).toHaveBeenCalledTimes(0);
-
-      expect(logger.debug).toHaveBeenCalledWith(
-        `Matching PR #${pr.number} was merged previously`,
-      );
     });
 
     it('throws error if closed PR found', async () => {
