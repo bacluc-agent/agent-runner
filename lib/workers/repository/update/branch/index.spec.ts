@@ -420,6 +420,22 @@ describe('workers/repository/update/branch/index', () => {
       expect(scm.deleteBranch).toHaveBeenCalledTimes(1);
     });
 
+    it('allows branch even if merged PR found', async () => {
+      const pr = partial<Pr>({
+        number: 13,
+        state: 'merged',
+      });
+      schedule.isScheduledNow.mockReturnValueOnce(false);
+      scm.branchExists.mockResolvedValue(true);
+      checkExisting.prAlreadyExisted.mockResolvedValueOnce(pr);
+      await branchWorker.processBranch(config);
+      expect(reuse.shouldReuseExistingBranch).toHaveBeenCalledTimes(0);
+
+      expect(logger.debug).toHaveBeenCalledWith(
+        `Matching PR #${pr.number} was merged previously`,
+      );
+    });
+
     it('throws error if closed PR found', async () => {
       schedule.isScheduledNow.mockReturnValueOnce(false);
       scm.branchExists.mockResolvedValue(true);
