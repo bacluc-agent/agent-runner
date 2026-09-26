@@ -3,7 +3,11 @@ description: Selects one issue from a candidate list and writes its implementati
 mode: primary
 temperature: 0.1
 permission:
-  "*": allow
+  "*": deny
+  read: allow
+  glob: allow
+  grep: allow
+  webfetch: allow
 ---
 
 # Issue Selector Agent
