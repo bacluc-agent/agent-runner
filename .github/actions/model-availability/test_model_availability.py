@@ -1428,13 +1428,30 @@ def run_workflow_selector(path, cache, tmp_path, requested="", model=None):
 
     `requested` and `model` are the inputs the model slot is resolved from, so the
     degradation announcement can be replayed for a fallback that is never dispatched.
+
+    The block is located by shape, not by fixed indentation, and bash never inherits
+    stdin: anchoring the give-up on one exact `exit 1` string silently extended the
+    block across the rest of the workflow, and a swallowed `done < <(shuf "$candidates")`
+    then blocked forever on an unset variable instead of failing the suite
+    (bacluc-agent/agent-todo#283).
     """
     lines = Path(path).read_text().splitlines()
     start = next(i for i, line in enumerate(lines) if SELECTOR_START.match(line))
     variable = SELECTOR_START.match(lines[start]).group(1)
     loop_end = next(i for i, line in enumerate(lines[start:], start) if line == "          done")
-    give_up = next(i for i, line in enumerate(lines[loop_end:], loop_end) if line == "            exit 1")
-    end = next(i for i, line in enumerate(lines[give_up:], give_up) if line == "          fi")
+    give_up = next(i for i, line in enumerate(lines[loop_end:], loop_end) if line.strip() == "exit 1")
+    depth = len(lines[give_up]) - len(lines[give_up].lstrip())
+    opener = next(
+        i
+        for i in range(give_up - 1, -1, -1)
+        if lines[i].strip().startswith("if ") and len(lines[i]) - len(lines[i].lstrip()) < depth
+    )
+    depth = len(lines[opener]) - len(lines[opener].lstrip())
+    end = next(
+        i
+        for i in range(opener + 1, len(lines))
+        if lines[i].strip() == "fi" and len(lines[i]) - len(lines[i].lstrip()) == depth
+    )
     announced = next(i for i, line in enumerate(lines) if "Using fallback model:" in line)
     block = [
         f"requested={shlex.quote(requested)}",
@@ -1464,6 +1481,8 @@ def run_workflow_selector(path, cache, tmp_path, requested="", model=None):
         ],
         capture_output=True,
         text=True,
+        stdin=subprocess.DEVNULL,
+        timeout=30,
     )
     selection = selection_file.read_text() if selection_file.exists() else ""
     return selection, result.returncode, result.stderr
@@ -1548,4 +1567,45 @@ def test_a_requested_model_outlives_an_empty_cache(monkeypatch, tmp_path):
     )
     assert (selection, status) == ("", 0), (
         f"an empty cache gave up on an explicitly requested model: {selection!r}/{status} {stderr!r}"
+    )
+
+
+BLOCKING_WORKFLOW = """\
+          selection_model=''
+          for candidate in 'opencode/keep-free'; do
+            grep -Fxq "$candidate" "$available_models_file" || continue
+            selection_model="$candidate"
+            break
+          done
+          if [[ -z "$selection_model" && -z "${requested:-}" ]]; then
+            printf '%s\\n' "Using fallback model: $selection_model" >&2
+            printf '%s\\n' 'No fallback model is available; not dispatching.' >&2
+              exit 1
+          fi
+          printf '%s\\n' 'Candidate enrichment:'
+          while read -r num; do
+            printf '%s\\n' "$num"
+          done < <(shuf "$candidates")
+          if ! grep -q '[^[:space:]]' "$selection"; then
+            printf '%s\\n' 'the selection is empty' >&2
+            exit 1
+          fi
+"""
+
+
+def test_a_give_up_at_another_indentation_cannot_swallow_a_blocking_loop(tmp_path):
+    """The block must end at the give-up's own `fi`, whatever the give-up is indented to.
+
+    Give the give-up an indentation the harness did not expect and the block ran on into
+    the workflow, where `done < <(shuf "$candidates")` read stdin forever on an unset
+    variable and hung the whole suite instead of failing it (bacluc-agent/agent-todo#283).
+    """
+    workflow = tmp_path / "blocking.yml"
+    workflow.write_text(BLOCKING_WORKFLOW)
+    selection, status, stderr = run_workflow_selector(
+        workflow, ["opencode/keep-free"], tmp_path
+    )
+    assert (selection, status) == ("opencode/keep-free", 0), f"{selection!r}/{status} {stderr!r}"
+    assert "Candidate enrichment:" not in stderr, (
+        f"the block ran past the give-up into a stdin-reading loop: {stderr!r}"
     )
