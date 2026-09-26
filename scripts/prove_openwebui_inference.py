@@ -111,7 +111,7 @@ def main() -> int:
         return 2
     if not prove(caller_key, label):
         return 1
-    print("BOTH_PROOF_OK", flush=True)
+    print("BOTH_PROOFS_OK", flush=True)
     return 0
 
 
