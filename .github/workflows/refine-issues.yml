@@ -126,7 +126,7 @@ jobs:
           fi
           if [[ -z "$selection_model" ]]; then
             printf '%s\n' 'No refinement model is available; not dispatching.' >&2
-            printf '::error::no refinement model is available; the model-availability cache returned no models\n'
+            printf '::error::no dispatchable refinement model: every available model is key-gated or denied\n'
             exit 1
           fi
           printf 'Refinement model: %s\n' "$selection_model"

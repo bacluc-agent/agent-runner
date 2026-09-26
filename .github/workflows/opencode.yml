@@ -206,7 +206,7 @@ jobs:
           fi
           if [[ -z "$fallback_model" && -z "${requested:-}" ]]; then
             printf '%s\n' 'No coordinator fallback model is available; not dispatching.' >&2
-            printf '::error::no coordinator fallback model is available; the model-availability cache returned no models\n'
+            printf '::error::no dispatchable coordinator model: every available model is key-gated or denied\n'
             exit 1
           fi
 

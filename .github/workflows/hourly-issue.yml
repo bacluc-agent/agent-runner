@@ -146,7 +146,7 @@ jobs:
           fi
           if [[ -z "$selection_model" ]]; then
             printf '%s\n' 'No issue-selection model is available; not dispatching.' >&2
-            printf '::error::no issue-selection model is available; the model-availability cache returned no models\n'
+            printf '::error::no dispatchable issue-selection model: every available model is key-gated or denied\n'
             exit 1
           fi
           printf 'Issue selection model: %s\n' "$selection_model"

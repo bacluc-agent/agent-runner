@@ -1242,6 +1242,12 @@ class TestWorkflowLastResortModel:
             at = content.index(give_up_message)
             tail = content[at : content.index("exit 1", at)]
             assert "::error::" in tail, f"{path}: the give-up is still plain text"
+            # The cache is not necessarily empty here: the unfiltered tail is inside the
+            # loop, so every entry can be key-gated or fall through to `*) continue`
+            # (bacluc-agent/agent-todo#283).
+            assert "cache returned no models" not in content, (
+                f"{path}: the annotation claims an empty cache, one of three ways to get here"
+            )
 
     def test_deny_pattern_is_identical_in_every_selector(self):
         patterns = set()
