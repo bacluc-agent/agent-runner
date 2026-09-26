@@ -2,6 +2,11 @@
 
 This repo allows to run agents in github actions. The issues to implement are in a todo repository.
 
+The ecamp3 agent workflow lives in
+[`bacluc-agent/ecamp3-agent`](https://github.com/bacluc-agent/ecamp3-agent) and pushes to
+its fork [`bacluc-agent/ecamp3`](https://github.com/bacluc-agent/ecamp3); reference its
+issues, pull requests and action runs with absolute paths too.
+
 ## Referencing issues and PR
 
 ALWAYS REFERENCE ISSUES, PR AND ACTION RUNS WITH THEIR ABSOLUTE PATH.
