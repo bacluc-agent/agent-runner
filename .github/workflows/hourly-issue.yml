@@ -26,9 +26,10 @@ permissions:
 jobs:
   select:
     # ponytail: the release step does not run if the job is killed at timeout-minutes, so the
-    # claim leaks and the issue stays out of selection until a human unlabels it. Upgrade path:
-    # timeout-based claims — encode the run id in the claim (agent-running:<run_id>) and treat a
-    # claim whose run is no longer in-progress as expired at selection time.
+    # claim leaks and the issue stays out of selection until a human unlabels it. The run-id
+    # encoding (agent-running:<run_id>) fixes the leak: the select job also expires stale
+    # claims whose run is no longer in-progress, so the label self-cleans even when the
+    # release job is skipped on cancellation.
     runs-on: ubuntu-latest
     timeout-minutes: 120
     outputs:
@@ -44,6 +45,7 @@ jobs:
       ISSUE_REPOSITORY: ${{ vars.ISSUE_REPOSITORY || github.repository }}
       MODEL_AVAILABILITY_CACHE_ISSUE: ${{ vars.MODEL_AVAILABILITY_CACHE_ISSUE }}
       GITHUB_FORK_INVITE_USER: ${{ vars.FORK_INVITE_USER || secrets.FORK_INVITE_USER }}
+      GITHUB_RUN_ID: ${{ github.run_id }}
 
     steps:
       - name: Check out repository
@@ -97,6 +99,32 @@ jobs:
 
           candidates="$RUNNER_TEMP/candidate-numbers.txt"
           jq -r '.[].number | tostring' "$search_json" > "$candidates"
+
+          # Exclude candidates carrying an active agent-running:<run_id> label.
+          # GitHub search does not support wildcard label matching, so we check
+          # each candidate's labels and drop any whose agent-running claim
+          # belongs to a run that is still in-progress. Claims from cancelled
+          # or completed runs are treated as expired and the issue stays available.
+          stale_candidates=()
+          while IFS= read -r num; do
+            labels="$(gh issue view "$num" -R "$ISSUE_REPOSITORY" --json labels --jq '[.labels[].name] | join(",")' 2>/dev/null || echo "")"
+            if [[ "$labels" == *"agent-running:"* ]]; then
+              claim_run_id="$(echo "$labels" | grep -oE 'agent-running:[0-9]+' | head -1 | cut -d: -f2)"
+              if [[ -n "$claim_run_id" ]]; then
+                run_status="$(gh run view "$claim_run_id" -R "$ISSUE_REPOSITORY" --json status --jq '.status' 2>/dev/null || echo "")"
+                case "$run_status" in
+                  in_progress|requested|pending) stale_candidates+=("$num") ;; # still active, remove from selection
+                  *) ;; # run finished/cancelled, claim is stale — issue is available again
+                esac
+              fi
+            fi
+          done < "$candidates"
+          if (( ${#stale_candidates[@]} > 0 )); then
+            printf 'Removing %s active agent-running claim(s): %s\n' "${#stale_candidates[@]}" "${stale_candidates[*]}"
+            for stale in "${stale_candidates[@]}"; do
+              sed -i "\<${stale}\>d" "$candidates"
+            done
+          fi
           if [[ ! -s "$candidates" ]]; then
             printf '%s\n' 'No unclaimed open issues; nothing to do.'
             exit 0
@@ -156,6 +184,13 @@ jobs:
 
           default_tail="$(cat scripts/issue-selection-tail.txt)"
           tail_instruction="${SELECTION_PROMPT:-$default_tail}"
+          # Ensure the SELECTED_ISSUE: marker survives any custom selection_prompt.
+          # When SELECTION_PROMPT overrides the tail, it may drop the anchored marker
+          # instruction, which would make the claim parse fail. Append it if missing.
+          if [[ -n "$SELECTION_PROMPT" ]] && ! grep -q 'SELECTED_ISSUE:' <<<"$tail_instruction"; then
+            marker_instruction="$(awk '/SELECTED_ISSUE:/,0' scripts/issue-selection-tail.txt)"
+            tail_instruction+="${marker_instruction}"
+          fi
 
           enriched="$RUNNER_TEMP/candidates.enriched.txt"
           : > "$enriched"
@@ -274,7 +309,7 @@ jobs:
             printf '::warning::could not determine selected issue; dispatching without a claim\n'
           else
             printf 'issue_number=%s\n' "$issue_number" >> "$GITHUB_OUTPUT"
-            if ! gh issue edit "$issue_number" -R "$ISSUE_REPOSITORY" --add-label agent-running; then
+            if ! gh issue edit "$issue_number" -R "$ISSUE_REPOSITORY" --add-label "agent-running:${GITHUB_RUN_ID}"; then
               printf '::warning::could not claim issue %s; dispatching unclaimed\n' "$issue_number"
             fi
           fi
@@ -348,14 +383,16 @@ jobs:
     env:
       GITHUB_TOKEN: ${{ secrets.BACLUC_AGENT_GITHUB_TOKEN }}
       ISSUE_REPOSITORY: ${{ vars.ISSUE_REPOSITORY || github.repository }}
+      GITHUB_RUN_ID: ${{ github.run_id }}
     steps:
       - name: Release the issue claim
         shell: bash
         env:
           ISSUE_NUMBER: ${{ needs.select.outputs.issue_number }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
         run: |
           set -Eeuo pipefail
           printf '::add-mask::%s\n' "$GITHUB_TOKEN"
-          if ! gh issue edit "$ISSUE_NUMBER" -R "$ISSUE_REPOSITORY" --remove-label agent-running; then
-            printf '::warning::could not remove agent-running from #%s; it stays claimed until unlabelled by hand\n' "$ISSUE_NUMBER"
+          if ! gh issue edit "$ISSUE_NUMBER" -R "$ISSUE_REPOSITORY" --remove-label "agent-running:${GITHUB_RUN_ID}"; then
+            printf '::warning::could not remove agent-running:%s from #%s; it stays claimed until unlabelled by hand\n' "$GITHUB_RUN_ID" "$ISSUE_NUMBER"
           fi
