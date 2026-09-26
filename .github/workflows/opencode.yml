@@ -174,9 +174,7 @@ jobs:
           # Exclude known-weak free models per scripts/model-deny-list.txt (shared with
           # hourly-issue.yml and refine-issues.yml); they pass the trivial OK probe but
           # fail as coordinator/selector in 10+ runs (e.g. 34029380869, 34042660858).
-          # The diagnostics checkout tracks main, so the file is absent until this
-          # change merges; deny_re then degrades to an inert pattern.
-          deny_re="$(grep -vE '^[[:space:]]*(#|$)' "$RUNNER_TEMP/agent-runner/scripts/model-deny-list.txt" 2>/dev/null | paste -sd'|' - || true)"
+          deny_re="$(grep -vE '^[[:space:]]*(#|$)' "scripts/model-deny-list.txt" 2>/dev/null | paste -sd'|' - || true)"
           [[ -n "$deny_re" ]] || deny_re='^$'
           mapfile -t free_models < <(grep -E '^(opencode|openrouter)/[^[:space:]]+(-free|:free)$' "$available_models_file" | grep -Ev "$deny_re" | awk '!seen[$0]++')
           for candidate in \
@@ -206,7 +204,7 @@ jobs:
           done
           if [[ -z "$fallback_model" && -z "${requested:-}" ]]; then
             # ponytail: a weak run beats no run; the cache marks a failing model ok:false so the next run probes another
-            fallback_model="$(grep -Ev -f "$RUNNER_TEMP/agent-runner/scripts/model-deny-list.txt" "$available_models_file" | head -n1 || true)"
+            fallback_model="$(grep -Ev -f "scripts/model-deny-list.txt" "$available_models_file" | head -n1 || true)"
             model_source='fallback: last resort (deny-list filtered)'
             if [[ -z "$fallback_model" ]]; then
               fallback_model="$(head -n1 "$available_models_file")"
