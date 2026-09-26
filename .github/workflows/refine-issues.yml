@@ -199,7 +199,7 @@ jobs:
               fi
               if (( opencode_status != 0 )); then
                 printf 'Refinement failed for issue #%s (opencode=%s); skipping.\n' "$number" "$opencode_status" >&2
-                ((opencode_status == 124)) && printf '::error::issue refinement exceeded the 8m limit (opencode exit %s); skipping issue #%s\n' "$opencode_status" "$number"
+                ((opencode_status == 124)) && printf '::warning::issue refinement exceeded the 8m limit (opencode exit %s); skipping issue #%s\n' "$opencode_status" "$number"
                 printf '::group::refinement output tail for issue #%s\n' "$number"
                 tail -n 200 "$out" | tee -a "$GITHUB_STEP_SUMMARY" || true
                 printf '::endgroup::\n'

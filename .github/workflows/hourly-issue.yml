@@ -258,7 +258,7 @@ jobs:
             printf 'Selection failed (opencode=%s); not dispatching.\n' "$selection_status" >&2
             ((selection_status == 124)) && printf '::error::issue selection exceeded the 10m limit (opencode exit %s)\n' "$selection_status"
             printf '::group::selection output tail\n'
-            tail -n 200 "$RUNNER_TEMP/selection.out" "$RUNNER_TEMP/selection.out.stderr" | tee -a "$GITHUB_STEP_SUMMARY" || true
+            tail -n 200 "$RUNNER_TEMP/selection.out" | tee -a "$GITHUB_STEP_SUMMARY" || true
             printf '::endgroup::\n'
             exit "$selection_status"
           fi
