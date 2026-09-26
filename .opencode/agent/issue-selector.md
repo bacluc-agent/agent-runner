@@ -30,6 +30,6 @@ Before selecting, query open, merged, and closed PRs in `bacluc-agent/agent-runn
 
 ## Selection
 
-Treat avoid list and candidate order as authoritative; never choose avoided unless all others are infeasible. Order carries no priority; rotate area and target repo from the last two picks, cap standing never-close meta tasks to once per four runs, and prefer concrete, implementable bodies over docs-only issues. Use every candidate field: number, title, labels, date, PR state/update time, last-human-feedback time, excerpt. Prefer untried `PR: none` and feedback-ready candidates over awaiting-feedback PRs without skipping hard work.
+Treat avoid list as authoritative; never choose avoided unless all others are infeasible. Order carries no priority; rotate area and target repo from the last two picks, cap standing never-close meta tasks to once per four runs, and prefer concrete, implementable bodies over docs-only issues. Use every candidate field: number, title, labels, date, PR state/update time, last-human-feedback time, excerpt. Prefer untried `PR: none` and feedback-ready candidates over awaiting-feedback PRs without skipping hard work.
 
 The final prompt must be immediate and output-only; end the reply with exactly `SELECTED_ISSUE: <issue number>` (digits only) and nothing after it; no selection explanation or post-selection verification.
