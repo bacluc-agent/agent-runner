@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "e52e10e8410d87c4f86d7ba117efa60a",
+    "content-hash": "b18161bce7976a181bcceaad011ec1d9",
     "packages": [
         {
             "name": "api-platform/doctrine-common",
@@ -11792,6 +11792,83 @@
             "time": "2026-09-16T09:49:42+00:00"
         },
         {
+            "name": "api-platform/test",
+            "version": "v5.0.1",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/api-platform/test.git",
+                "reference": "c25535107531c9b08c54768ff503c97e7804e943"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/api-platform/test/zipball/c25535107531c9b08c54768ff503c97e7804e943",
+                "reference": "c25535107531c9b08c54768ff503c97e7804e943",
+                "shasum": ""
+            },
+            "require": {
+                "api-platform/json-schema": "^5.0",
+                "api-platform/metadata": "^5.0",
+                "php": ">=8.2",
+                "phpunit/phpunit": "^11.5 || ^12.2 || ^13.0",
+                "symfony/browser-kit": "^7.4 || ^8.0",
+                "symfony/framework-bundle": "^7.4 || ^8.0",
+                "symfony/http-client": "^7.4 || ^8.0"
+            },
+            "suggest": {
+                "doctrine/mongodb-odm": "To use findIriBy() with MongoDB",
+                "doctrine/orm": "To use findIriBy() with Doctrine ORM",
+                "justinrainbow/json-schema": "To validate JSON schemas in assertions",
+                "symfony/mercure": "To use the Mercure assertions",
+                "symfony/security-core": "To use Client::loginUser()"
+            },
+            "type": "library",
+            "extra": {
+                "thanks": {
+                    "url": "https://github.com/api-platform/api-platform",
+                    "name": "api-platform/api-platform"
+                },
+                "branch-alias": {
+                    "dev-main": "5.0.x-dev"
+                }
+            },
+            "autoload": {
+                "psr-4": {
+                    "ApiPlatform\\Test\\": ""
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Kévin Dunglas",
+                    "email": "kevin@dunglas.fr",
+                    "homepage": "https://dunglas.fr"
+                },
+                {
+                    "name": "Antoine Bluchet",
+                    "email": "soyuka@gmail.com",
+                    "homepage": "https://soyuka.me"
+                }
+            ],
+            "description": "Testing utilities for API Platform",
+            "homepage": "https://api-platform.com",
+            "keywords": [
+                "JSON-LD",
+                "api",
+                "graphql",
+                "phpunit",
+                "rest",
+                "test"
+            ],
+            "support": {
+                "issues": "https://github.com/api-platform/test/issues",
+                "source": "https://github.com/api-platform/test/tree/v5.0.1"
+            },
+            "time": "2026-09-22T14:19:04+00:00"
+        },
+        {
             "name": "brianium/paratest",
             "version": "v7.23.1",
             "source": {
@@ -13149,16 +13226,16 @@
         },
         {
             "name": "phpunit/php-code-coverage",
-            "version": "14.3.3",
+            "version": "14.3.5",
             "source": {
                 "type": "git",
                 "url": "https://github.com/sebastianbergmann/php-code-coverage.git",
-                "reference": "f8640c238e930b914d0098a1edbad6652e61a64a"
+                "reference": "96af7aaa1e15561a67b2fa5b98906b063ebec9c2"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/sebastianbergmann/php-code-coverage/zipball/f8640c238e930b914d0098a1edbad6652e61a64a",
-                "reference": "f8640c238e930b914d0098a1edbad6652e61a64a",
+                "url": "https://api.github.com/repos/sebastianbergmann/php-code-coverage/zipball/96af7aaa1e15561a67b2fa5b98906b063ebec9c2",
+                "reference": "96af7aaa1e15561a67b2fa5b98906b063ebec9c2",
                 "shasum": ""
             },
             "require": {
@@ -13166,7 +13243,7 @@
                 "ext-libxml": "*",
                 "ext-mbstring": "*",
                 "ext-xmlwriter": "*",
-                "nikic/php-parser": "^5.8.0",
+                "nikic/php-parser": "^5.9.0",
                 "php": ">=8.4",
                 "phpunit/php-text-template": "^6.0",
                 "sebastian/complexity": "^6.0",
@@ -13177,7 +13254,7 @@
                 "theseer/tokenizer": "^2.0.1"
             },
             "require-dev": {
-                "phpunit/phpunit": "^13.3.3"
+                "phpunit/phpunit": "^13.3.4"
             },
             "suggest": {
                 "ext-pcov": "PHP extension that provides line coverage",
@@ -13215,7 +13292,7 @@
             "support": {
                 "issues": "https://github.com/sebastianbergmann/php-code-coverage/issues",
                 "security": "https://github.com/sebastianbergmann/php-code-coverage/security/policy",
-                "source": "https://github.com/sebastianbergmann/php-code-coverage/tree/14.3.3"
+                "source": "https://github.com/sebastianbergmann/php-code-coverage/tree/14.3.5"
             },
             "funding": [
                 {
@@ -13235,7 +13312,7 @@
                     "type": "tidelift"
                 }
             ],
-            "time": "2026-09-10T13:08:32+00:00"
+            "time": "2026-09-25T08:28:49+00:00"
         },
         {
             "name": "phpunit/php-file-iterator",
