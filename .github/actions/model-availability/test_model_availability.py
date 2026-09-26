@@ -1,8 +1,10 @@
 import json
+import os
 import re
 import shlex
 import subprocess
 import tempfile
+import textwrap
 import types
 from datetime import datetime, timezone
 from pathlib import Path
@@ -1313,11 +1315,14 @@ if {guard[len("if ") : -len("; then")]}; then exit 0; else exit 1; fi
 
 
 class TestTimeoutAnnotationSeverity:
-    """A refinement timeout skips one issue; it must not fail the whole run.
+    """Severity buys loudness; the exit code is what fails a run.
 
-    A `::error::` annotation fails a workflow run even when the step exits 0, so the
-    refiner's 124 has to stay a warning while the three sites that really do fail the
-    run stay errors (bacluc-agent/agent-todo#283).
+    `core.error` only writes the annotation (`actions/toolkit` `core.ts` sets the
+    process exit code in `core.setFailed`, not in `core.error`), so severity does not
+    decide whether a run fails — the exit code does. Severity buys loudness for a step
+    that is about to recover: `opencode.yml`'s discovery 124 falls back and exits 0, so
+    it is a warning, while the three sites that really do fail the run stay errors
+    (bacluc-agent/agent-todo#283).
     """
 
     # (path, status variable, expected severity)
@@ -1325,7 +1330,7 @@ class TestTimeoutAnnotationSeverity:
         (".github/workflows/refine-issues.yml", "opencode_status", "warning"),
         (".github/workflows/hourly-issue.yml", "selection_status", "error"),
         (".github/workflows/opencode.yml", "coordinator_status", "error"),
-        (".github/workflows/opencode.yml", "discovery_status", "error"),
+        (".github/workflows/opencode.yml", "discovery_status", "warning"),
     ]
 
     def _annotation(self, path, variable):
@@ -1423,14 +1428,24 @@ SELECTOR_PATHS = [
 ]
 
 
-def run_workflow_selector(path, cache, tmp_path, requested="", model=None, resolved=""):
+def run_workflow_selector(
+    path, cache, tmp_path, requested="", model=None, resolved="", follow_resolution=False
+):
     """Run a workflow's selector block under bash; return (selection, returncode, stderr).
 
     `requested` and `model` are the inputs the model slot is resolved from, so the
     degradation announcement can be replayed for a fallback that is never dispatched.
-    `resolved` is what `requested` resolved to, which is what the announcement compares
-    the dispatched model against: a short alias normalises, so the raw request and the
-    dispatched model are different strings for the very same request.
+    `resolved` is what `requested` resolved to; the pair is what the announcement judges
+    the dispatched model against. On the auto path `requested` is empty, and a short alias
+    normalises, so `$model` can equal `$resolved` without the dispatch being what was
+    asked for.
+
+    `follow_resolution` runs the lines between the selector and the announcement instead
+    of replaying a hand-written `model`/`resolved` pair, so `resolved` is whatever
+    `resolve_model` really returns. opencode.yml is the only selector whose model slot is
+    settled after the loop, and on the discovery path nothing was requested, so the
+    resolution returns the picked model unchanged and `$model` equals `$resolved`
+    (bacluc-agent/agent-todo#283).
 
     The give-up's `fi` boundary is located by depth, not by a fixed `exit 1` string, and bash
     never inherits stdin: anchoring it on that string silently extended the
@@ -1456,16 +1471,23 @@ def run_workflow_selector(path, cache, tmp_path, requested="", model=None, resol
         if lines[i].strip() == "fi" and len(lines[i]) - len(lines[i].lstrip()) == depth
     )
     announced = next(i for i, line in enumerate(lines) if "Using fallback model:" in line)
-    block = [
-        f"requested={shlex.quote(requested)}",
-        *lines[start : end + 1],
-        f"model=${{{variable}}}" if model is None else f"model={shlex.quote(model)}",
-        f"resolved={shlex.quote(resolved)}",
-    ]
-    if announced > end:
+    resolved_file = tmp_path / "resolved.txt"
+    resolved_file.unlink(missing_ok=True)
+    block = [f"requested={shlex.quote(requested)}", *lines[start : end + 1]]
+    if follow_resolution:
         # opencode.yml only: the announcement moved past the model resolution, so it names
-        # the model that is dispatched and skips an explicitly requested one.
-        block += lines[announced - 1 : announced + 2]
+        # the model that is dispatched and skips an explicitly requested one. Dedented,
+        # because `resolve_model`'s heredoc terminator has to sit in column 1 and the
+        # block is otherwise lifted straight out of the YAML with its indentation.
+        block += textwrap.dedent("\n".join(lines[end + 1 : announced + 3])).splitlines()
+        block += [f'printf \'%s\' "$resolved" > {resolved_file}']
+    else:
+        block += [
+            f"model=${{{variable}}}" if model is None else f"model={shlex.quote(model)}",
+            f"resolved={shlex.quote(resolved)}",
+        ]
+        if announced > end:
+            block += lines[announced - 1 : announced + 2]
     models_file = tmp_path / "available-models.txt"
     models_file.write_text("".join(f"{model}\n" for model in cache))
     selection_file = tmp_path / "selection.txt"
@@ -1606,8 +1628,19 @@ def test_a_discarded_fallback_is_not_announced(requested, resolved, model, monke
 # The cache is `opencode/big-pickle` plus a deny-listed model, so the selector's own pick
 # (`fallback_model`) is never the model that reaches dispatch.
 ANNOUNCEMENT_CASES = [
-    # a deny-listed dispatch nothing asked for, while the pick that was kept is `big-pickle`
-    ("", "", "opencode/ling-3.0-flash-fin-free", "opencode/ling-3.0-flash-fin-free"),
+    # a deny-listed dispatch nothing asked for, while the pick that was kept is `big-pickle`.
+    # `resolved` is the deny-listed model, not `''`: the only deny-listed model that survives
+    # the opencode.yml:242 guard is `fallback_model` itself, so `$model` equals `$resolved`
+    # whenever a deny-listed model is dispatched with nothing requested, and `resolved=''` is
+    # not a state the workflow can reach. That is the auto path, where `requested_model` is
+    # the selector's own pick and resolves to itself, so the pre-fix `$model != $resolved`
+    # suppressed the announcement on exactly it (bacluc-agent/agent-todo#283).
+    (
+        "",
+        "opencode/ling-3.0-flash-fin-free",
+        "opencode/ling-3.0-flash-fin-free",
+        "opencode/ling-3.0-flash-fin-free",
+    ),
     # the user's own deny-listed request, reached through a short alias that normalises to
     # `opencode/nemotron-3-ultra-free`; it is dispatched unchanged, so no fallback happened
     (
@@ -1623,14 +1656,16 @@ ANNOUNCEMENT_CASES = [
 def test_the_announcement_names_the_dispatched_model(
     requested, resolved, model, announced, monkeypatch, tmp_path
 ):
-    """The announced model has to be `$model`, and only when it is not what was requested.
+    """The announced model has to be `$model`, and only when the dispatch is a degradation.
 
     The harness defaults `model` to `fallback_model`, so an announcement naming either is
     indistinguishable and `"$fallback_model"` in the printf survives a green suite while
-    the run log claims a non-deny-listed fallback over a deny-listed dispatch. Comparing
-    against the resolved request instead of the raw one also keeps a short alias for a
-    deny-listed model from being reported as an unrequested fallback
-    (bacluc-agent/agent-todo#283).
+    the run log claims a non-deny-listed fallback over a deny-listed dispatch.
+
+    "Only when it is not what was requested" is judged against what the run asked for:
+    nothing (`requested` empty, the auto path, where `$model` equals `$resolved`) or a
+    request that is not itself deny-listed — so a short alias for a deny-listed model
+    stays silent (bacluc-agent/agent-todo#283).
     """
     for key, value in SELECTOR_EMPTY_KEYS.items():
         monkeypatch.setenv(key, value)
@@ -1699,3 +1734,38 @@ def test_a_give_up_at_another_indentation_cannot_swallow_a_blocking_loop(tmp_pat
     assert "Candidate enrichment:" not in stderr, (
         f"the block ran past the give-up into a stdin-reading loop: {stderr!r}"
     )
+
+
+def test_a_deny_listed_discovery_fallback_is_announced(monkeypatch, tmp_path):
+    """`Using fallback model:` must survive `resolve_model` returning the picked model.
+
+    Nothing was requested, so the discovery agent ran, failed, and the deny-listed
+    `fallback_model` was dispatched. `resolve_model` then returns that very string as
+    `available`, so `$model` equals `$resolved` and comparing the two is permanently
+    false: a deny-listed model was dispatched silently. The predicate needs the
+    "nothing was requested" case back, or the signal only ever fires for a request that
+    failed to resolve (bacluc-agent/agent-todo#283).
+    """
+    for key, value in SELECTOR_EMPTY_KEYS.items():
+        monkeypatch.setenv(key, value)
+    stub = tmp_path / "stub"
+    stub.mkdir()
+    (stub / "opencode").write_text("#!/bin/sh\nexit 1\n")
+    (stub / "opencode").chmod(0o755)
+    monkeypatch.setenv("PATH", f"{stub}{os.pathsep}{os.environ['PATH']}")
+    monkeypatch.setenv("RUNNER_TEMP", str(tmp_path))
+    monkeypatch.setenv("PROMPT", "do the thing")
+    monkeypatch.setenv("AVAILABLE_MODELS", "opencode/ling-3.0-flash-fin-free")
+    selection, status, stderr = run_workflow_selector(
+        ".github/workflows/opencode.yml",
+        ["opencode/ling-3.0-flash-fin-free"],
+        tmp_path,
+        follow_resolution=True,
+    )
+    assert (selection, status) == ("opencode/ling-3.0-flash-fin-free", 0), f"{selection!r}/{status}"
+    assert (tmp_path / "resolved.txt").read_text() == selection, (
+        f"the predicate is only alive while they differ, and this ran with $resolved={selection!r}"
+    )
+    assert [line for line in stderr.splitlines() if "Using fallback model:" in line] == [
+        "Using fallback model: opencode/ling-3.0-flash-fin-free"
+    ], f"a deny-listed model was dispatched with nothing requested: {stderr!r}"
