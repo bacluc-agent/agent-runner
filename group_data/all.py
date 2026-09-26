@@ -320,7 +320,7 @@ openwebui = {
     "requesty_api_key": "",
     "cortecs_api_key": "",
     "openwebui_caller_key": "",
-    "opencode_base_url": "https://opencode.ai/zen/go/v1",
+    "opencode_base_url": "https://opencode.ai/zen/v1",
     "ollama_base_url": "http://host.docker.internal:11434/v1",
     "requesty_base_url": "https://router.requesty.ai/v1",
     "cortecs_base_url": "https://api.cortecs.ai/v1",
