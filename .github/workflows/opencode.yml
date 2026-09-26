@@ -206,7 +206,7 @@ jobs:
             fallback_model=$(head -n1 "$available_models_file")
             if [[ -z "$fallback_model" ]]; then
               printf '%s\n' 'No coordinator fallback model is available; not dispatching.' >&2
-              printf '::error::no coordinator fallback model is available; every available model is excluded by the model-selection rules: %s\n' "$(paste -sd, "$available_models_file")"
+              printf '::error::no coordinator fallback model is available; the model-availability cache returned no models\n'
               exit 1
             fi
             printf '%s\n' "Using fallback model: $fallback_model" >&2
