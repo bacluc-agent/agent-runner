@@ -26,6 +26,30 @@ runs:
         printf '::add-mask::%s\n' "${BRAVE_API_KEY:-}"
         source_dir="$RUNNER_TEMP/provision-machines"
         config_dir="$RUNNER_TEMP/opencode-config"
+        source_resolved=0
+        if [[ -n "${SOURCE_BRANCH:-}" ]]; then
+          branch_rc=0
+          branch_line="$(git ls-remote --exit-code --heads "$SOURCE_REPOSITORY" "$SOURCE_BRANCH")" || branch_rc=$?
+          if ((branch_rc == 0)); then
+            branch_sha="${branch_line%%$'\t'*}"
+            git clone --quiet --branch "$SOURCE_BRANCH" "$SOURCE_REPOSITORY" "$source_dir"
+            cloned_branch_sha="$(git -C "$source_dir" rev-parse --verify "refs/heads/$SOURCE_BRANCH^{commit}" 2>/dev/null || true)"
+            if [[ "$cloned_branch_sha" != "$branch_sha" ]]; then
+              printf 'Source config branch changed while cloning: expected %s, got %s\n' "$branch_sha" "${cloned_branch_sha:-unresolved}" >&2
+              exit 1
+            fi
+            git -C "$source_dir" checkout --quiet --detach "$branch_sha"
+            printf 'Using source config BRANCH: %s (commit %s, resolution: resolved)\n' "$SOURCE_BRANCH" "$branch_sha"
+            source_resolved=1
+          else
+            printf '::error::could not resolve SOURCE_BRANCH %s in %s (exit %s); the ref may be transient — it may have just been deleted or renamed\n' "$SOURCE_BRANCH" "$SOURCE_REPOSITORY" "$branch_rc"
+            git ls-remote --heads "$SOURCE_REPOSITORY" 2>&1 | tail -n 20 || true
+            printf 'SOURCE_BRANCH resolution: unresolved (exit %s); fell back to tag\n' "$branch_rc"
+          fi
+        fi
+        # The tag path below keeps its original indentation on purpose: bash
+        # ignores leading whitespace, so this fix stays a pure addition.
+        if ((source_resolved == 0)); then
         mapfile -t tags < <(git ls-remote --tags "$SOURCE_REPOSITORY" \
           | awk '$2 !~ /\^\{\}$/ { sub("refs/tags/", "", $2); print $2 }' \
           | grep -E '^[vV]?[0-9]+([.][0-9]+){1,2}([-.][0-9A-Za-z.-]+)?$' \
@@ -52,6 +76,7 @@ runs:
           exit 1
         fi
         git -C "$source_dir" checkout --quiet --detach "$tag_sha"
+        fi
         if [[ ! -d "$source_dir/$CONFIG_PATH" ]]; then
           printf 'Missing OpenCode configuration directory: %s\n' "$CONFIG_PATH" >&2
           exit 1
