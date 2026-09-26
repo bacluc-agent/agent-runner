@@ -1,6 +1,7 @@
 import json
 import re
 import subprocess
+import tempfile
 import types
 from datetime import datetime, timezone
 from pathlib import Path
@@ -1264,11 +1265,40 @@ class TestWorkflowLastResortModel:
             "the deny pattern now rejects the preferred coordinator model"
         )
 
-    def test_discovery_guard_applies_the_deny_pattern(self):
-        assert (
-            'if [[ -z "$model" ]] || ! grep -Fxq "$model" "$available_models_file" '
-            '|| grep -Eq "$deny_re" <<<"$model"; then'
-        ) in Path(".github/workflows/opencode.yml").read_text()
+    def test_discovery_guard_falls_back_for_a_deny_listed_answer(self):
+        assert self._discovery_guard_rejects("opencode/nemotron-3-ultra-free"), (
+            "the discovery guard accepts an available model that the deny pattern rejects"
+        )
+
+    def test_discovery_guard_keeps_an_available_answer_that_is_not_deny_listed(self):
+        assert not self._discovery_guard_rejects("opencode/big-pickle"), (
+            "the discovery guard rejects a usable model"
+        )
+
+    def _discovery_guard_rejects(self, model):
+        """Run the discovery guard from the workflow verbatim and report whether it falls back.
+
+        The condition is executed, not string-matched, so inverting any of its disjuncts
+        (for example turning the deny-list `||` into `&&`) fails the tests above.
+        """
+        content = Path(".github/workflows/opencode.yml").read_text()
+        guard = next(
+            line.strip()
+            for line in content.splitlines()
+            if line.strip().startswith("if ") and 'grep -Eq "$deny_re" <<<"$model"' in line
+        )
+        assert guard.endswith("; then"), f"unexpected discovery guard shape: {guard}"
+        pattern = re.search(r"deny_re='([^']+)'", content).group(1)
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Path(tmp) / "available_models"
+            cache.write_text(f"{model}\n")
+            script = f"""
+deny_re='{pattern}'
+model={model}
+available_models_file={cache}
+if {guard[len("if ") : -len("; then")]}; then exit 0; else exit 1; fi
+"""
+            return subprocess.run(["bash", "-c", script], check=False).returncode == 0
 
 
 SELECTOR_START = re.compile(r"^ {10}(fallback_model|selection_model)=''$")
