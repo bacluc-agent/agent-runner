@@ -25,4 +25,6 @@ A numbered list naming files, patterns, and verification steps so implementation
 
 Never add another `##` section, preamble, closing text, or markdown fence. The output is validated and may be retried with a rejection reason.
 
-Validation rejects empty output/sections, fenced output, missing or reversed headings, extra headings, and hostile text: `BEGIN_PROMPT`, `END_PROMPT`, `SELECTED_ISSUE:`, instructions to ignore previous instructions, or API-key-shaped secrets. When rejected, output only the corrected body.
+Validation rejects empty output/sections, fenced output, missing or reversed headings, extra headings, hostile text (`BEGIN_PROMPT`, `END_PROMPT`, `SELECTED_ISSUE:`, instructions to ignore previous instructions, or API-key-shaped secrets), and bodies exceeding 4000 visible characters before any `<details>` fold (`too_long`). When rejected, output only the corrected body.
+
+When writing PR descriptions (e.g., for the coordinator agent), keep at most 4000 visible characters before any `<details>` fold; move remaining detail into `<details>` folds.

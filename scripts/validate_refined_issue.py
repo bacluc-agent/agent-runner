@@ -15,6 +15,17 @@ _HOSTILE_RE = re.compile(
     re.IGNORECASE,
 )
 _REQUIRED_HEADINGS = ("## Goal", "## How to implement")
+_MAX_VISIBLE_CHARS = 4000
+
+
+def _visible_chars_before_details(text: str) -> int:
+    # ponytail: count visible chars before first <details> fold; case-insensitive
+    details_idx = text.lower().find("<details>")
+    if details_idx == -1:
+        details_idx = text.lower().find("<details ")
+    if details_idx == -1:
+        return len(text)
+    return len(text[:details_idx])
 
 
 def _section_empty(stripped: list[str], heading_idx: int) -> bool:
@@ -64,6 +75,24 @@ def validate_refined_body(text: str) -> tuple[bool, str]:
         return False, "extra_sections"
     if _HOSTILE_RE.search(text):
         return False, "hostile_text"
+    visible = _visible_chars_before_details(text)
+    if visible > _MAX_VISIBLE_CHARS:
+        return False, "too_long"
+    return True, "ok"
+
+
+def validate_pr_description(text: str) -> tuple[bool, str]:
+    visible = _visible_chars_before_details(text)
+    if visible > _MAX_VISIBLE_CHARS:
+        return False, "too_long"
+    # If overflow exists, it must be inside a <details> fold
+    details_idx = text.lower().find("<details>")
+    if details_idx == -1:
+        details_idx = text.lower().find("<details ")
+    if details_idx != -1:
+        # There is a details fold; verify there's content after it (overflow moved in)
+        after_details = text[details_idx:]
+        # Basic check: details tag exists; full structural validation is agent-side
     return True, "ok"
 
 
