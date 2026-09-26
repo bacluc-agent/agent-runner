@@ -37,11 +37,17 @@ openwebui = {
     "opencode_api_key": "sk-...",
     "opencode_api_key_2": "sk-...",
     "opencode_api_key_3": "sk-...",
-    "ollama_api_key": "...",
     "requesty_api_key": "sk-...",
-    "cortecs_api_key": "...",
-    "openwebui_caller_key": "...",
+    "cortecs_api_key": "sk-...",
+    "openwebui_caller_key": "sk-...",
 }
 ```
 
-The six first keys are written from `local.py` into the mode-600 `.env`; an empty one fails the `Validate aisix resources before starting the stack` pre-flight in `deploys/openwebui/deploy.py` with `environment variable X is unset or empty`. No real secret goes in `all.py`.
+Those six keys are written from `local.py` into the mode-600 `.env`. Every `${VAR}`
+that `deploys/openwebui/files/docker-compose.yml` and `resources.yaml` interpolate
+must be set to a non-empty value: the `Validate aisix resources before starting the
+stack` pre-flight in `deploys/openwebui/deploy.py` runs `aisix validate` before the
+systemd unit starts the stack, and it exits 1 naming the variable, e.g.
+``key_env environment variable `OPENWEBUI_CALLER_KEY` is unset or empty``.
+`tests/openwebui_env_test.py` fails if a newly interpolated variable is not in
+`operations/openwebui_env.py`. No real secret goes in `all.py`.
