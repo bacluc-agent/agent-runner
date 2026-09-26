@@ -103,6 +103,8 @@ jobs:
           if [[ -z "$requested" && "${MODEL_CHOICE:-auto}" != auto ]]; then requested="$MODEL_CHOICE"; fi
           printf "requested_model: %s\n" "$requested"
           printf "timeout_minutes: %s\n" "$TIMEOUT_MINUTES"
+          printf "coordinator_output_path: %s\n" "${RUNNER_TEMP}/coordinator.out"
+          if [[ -f "${RUNNER_TEMP}/coordinator.out" ]]; then echo "=== coordinator.out tail ==="; tail -n 20 "${RUNNER_TEMP}/coordinator.out"; fi
         env:
           MODEL_TEXT: ${{ inputs.model }}
           MODEL_CHOICE: ${{ inputs.model_choice }}
