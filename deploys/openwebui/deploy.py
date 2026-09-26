@@ -7,6 +7,7 @@ from pyinfra.facts.files import Directory
 from pyinfra.operations import files, server, systemd
 
 from operations.filesystem import dirname_of
+from operations.openwebui_env import env_lines
 from operations.user import get_user_name
 
 user = get_user_name()
@@ -81,33 +82,7 @@ if host.data.openwebui["enabled"]:
 
     env_file = files.put(
         name="Deploy .env",
-        src=io.StringIO(
-            "\n".join(
-                [
-                    f"OPENCODE_API_KEY={host.data.openwebui['opencode_api_key']}",
-                    f"OPENCODE_API_KEY_2={host.data.openwebui['opencode_api_key_2']}",
-                    f"OPENCODE_API_KEY_3={host.data.openwebui['opencode_api_key_3']}",
-                    f"OLLAMA_API_KEY={host.data.openwebui['ollama_api_key']}",
-                    f"REQUESTY_API_KEY={host.data.openwebui['requesty_api_key']}",
-                    f"CORTECS_API_KEY={host.data.openwebui['cortecs_api_key']}",
-                    f"OPENWEBUI_CALLER_KEY={host.data.openwebui['openwebui_caller_key']}",
-                    f"OPENAI_API_KEYS={host.data.openwebui['openwebui_caller_key']}",
-                    f"OPENCODE_BASE_URL={host.data.openwebui['opencode_base_url']}",
-                    f"OLLAMA_BASE_URL={host.data.openwebui['ollama_base_url']}",
-                    f"REQUESTY_BASE_URL={host.data.openwebui['requesty_base_url']}",
-                    f"CORTECS_BASE_URL={host.data.openwebui['cortecs_base_url']}",
-                    f"ZEN_MODEL_CHAT={host.data.openwebui['zen_model_chat']}",
-                    f"ZEN_MODEL_CHAT_THINKING={host.data.openwebui['zen_model_chat_thinking']}",
-                    f"ZEN_MODEL_WEB_RESEARCH={host.data.openwebui['zen_model_web_research']}",
-                    f"ZEN_MODEL_FAST={host.data.openwebui['zen_model_fast']}",
-                    f"OLLAMA_MODEL_CHAT={host.data.openwebui['ollama_model_chat']}",
-                    f"REQUESTY_MODEL_CHAT={host.data.openwebui['requesty_model_chat']}",
-                    f"CORTECS_MODEL_CHAT={host.data.openwebui['cortecs_model_chat']}",
-                ]
-                + [f"{k}={v}" for k, v in host.data.openwebui["extra_env"].items() if k != "OPENAI_API_KEYS"]
-            )
-            + "\n"
-        ),
+        src=io.StringIO("\n".join(env_lines(host.data.openwebui)) + "\n"),
         dest=f"{compose_project_dir}/.env",
         user=user,
         group=user,
