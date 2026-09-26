@@ -325,7 +325,7 @@ jobs:
             printf 'Model availability: fallback requested %q is available; resolved model %q\n' "$fallback_model" "$fallback_resolved"
             model="$fallback_resolved"
           fi
-          if [[ "$model" != "${requested:-}" ]] && grep -Eq "$deny_re" <<<"$model"; then
+          if [[ "$model" != "$resolved" ]] && grep -Eq "$deny_re" <<<"$model"; then
             printf '%s\n' "Using fallback model: $model" >&2
           fi
           printf '\n\n\n\n\n\n'

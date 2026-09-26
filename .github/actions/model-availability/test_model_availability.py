@@ -1423,11 +1423,14 @@ SELECTOR_PATHS = [
 ]
 
 
-def run_workflow_selector(path, cache, tmp_path, requested="", model=None):
+def run_workflow_selector(path, cache, tmp_path, requested="", model=None, resolved=""):
     """Run a workflow's selector block under bash; return (selection, returncode, stderr).
 
     `requested` and `model` are the inputs the model slot is resolved from, so the
     degradation announcement can be replayed for a fallback that is never dispatched.
+    `resolved` is what `requested` resolved to, which is what the announcement compares
+    the dispatched model against: a short alias normalises, so the raw request and the
+    dispatched model are different strings for the very same request.
 
     The block is located by shape, not by fixed indentation, and bash never inherits
     stdin: anchoring the give-up on one exact `exit 1` string silently extended the
@@ -1457,6 +1460,7 @@ def run_workflow_selector(path, cache, tmp_path, requested="", model=None):
         f"requested={shlex.quote(requested)}",
         *lines[start : end + 1],
         f"model=${{{variable}}}" if model is None else f"model={shlex.quote(model)}",
+        f"resolved={shlex.quote(resolved)}",
     ]
     if announced > end:
         # opencode.yml only: the announcement moved past the model resolution, so it names
@@ -1527,16 +1531,21 @@ def test_a_deny_listed_pick_is_announced_on_stderr(path, cache, expected, announ
     )
 
 
-# (requested input, dispatched model) - the deny-listed pick in the cache is never dispatched
+# (requested input, what it resolved to, dispatched model) - the deny-listed pick in the
+# cache is never dispatched
 DISCARDED_CASES = [
-    ("opencode/some-paid-model", "opencode/some-paid-model"),
-    ("opencode/nemotron-3-ultra-free", "opencode/nemotron-3-ultra-free"),
-    ("", "opencode/keep-free"),
+    ("opencode/some-paid-model", "", "opencode/some-paid-model"),
+    (
+        "opencode/nemotron-3-ultra-free",
+        "opencode/nemotron-3-ultra-free",
+        "opencode/nemotron-3-ultra-free",
+    ),
+    ("", "", "opencode/keep-free"),
 ]
 
 
-@pytest.mark.parametrize("requested,model", DISCARDED_CASES)
-def test_a_discarded_fallback_is_not_announced(requested, model, monkeypatch, tmp_path):
+@pytest.mark.parametrize("requested,resolved,model", DISCARDED_CASES)
+def test_a_discarded_fallback_is_not_announced(requested, resolved, model, monkeypatch, tmp_path):
     """`Using fallback model:` must name the model that is dispatched, or say nothing.
 
     opencode.yml resolves the model slot after the selector, so the announcement sits past
@@ -1551,11 +1560,58 @@ def test_a_discarded_fallback_is_not_announced(requested, model, monkeypatch, tm
         tmp_path,
         requested=requested,
         model=model,
+        resolved=resolved,
     )
     assert (selection, status) == ("opencode/ling-3.0-flash-fin-free", 0), f"{selection!r}/{status}"
     assert "Using fallback model:" not in stderr, (
         f"requested {requested!r} dispatched {model!r} but stderr announced {stderr!r}"
     )
+
+
+# (requested, resolved request, dispatched model, expected stderr line)
+# The cache is `opencode/big-pickle` plus a deny-listed model, so the selector's own pick
+# (`fallback_model`) is never the model that reaches dispatch.
+ANNOUNCEMENT_CASES = [
+    # a deny-listed dispatch nothing asked for, while the pick that was kept is `big-pickle`
+    ("", "", "opencode/ling-3.0-flash-fin-free", "opencode/ling-3.0-flash-fin-free"),
+    # the user's own deny-listed request, reached through a short alias that normalises to
+    # `opencode/nemotron-3-ultra-free`; it is dispatched unchanged, so no fallback happened
+    (
+        "nemotron-3-ultra-free",
+        "opencode/nemotron-3-ultra-free",
+        "opencode/nemotron-3-ultra-free",
+        "",
+    ),
+]
+
+
+@pytest.mark.parametrize("requested,resolved,model,announced", ANNOUNCEMENT_CASES)
+def test_the_announcement_names_the_dispatched_model(
+    requested, resolved, model, announced, monkeypatch, tmp_path
+):
+    """The announced model has to be `$model`, and only when it is not what was requested.
+
+    The harness defaults `model` to `fallback_model`, so an announcement naming either is
+    indistinguishable and `"$fallback_model"` in the printf survives a green suite while
+    the run log claims a non-deny-listed fallback over a deny-listed dispatch. Comparing
+    against the resolved request instead of the raw one also keeps a short alias for a
+    deny-listed model from being reported as an unrequested fallback
+    (bacluc-agent/agent-todo#283).
+    """
+    for key, value in SELECTOR_EMPTY_KEYS.items():
+        monkeypatch.setenv(key, value)
+    selection, status, stderr = run_workflow_selector(
+        ".github/workflows/opencode.yml",
+        ["opencode/big-pickle", "opencode/ling-3.0-flash-fin-free"],
+        tmp_path,
+        requested=requested,
+        model=model,
+        resolved=resolved,
+    )
+    assert (selection, status) == ("opencode/big-pickle", 0), f"{selection!r}/{status}"
+    assert [line for line in stderr.splitlines() if "Using fallback model:" in line] == (
+        [f"Using fallback model: {announced}"] if announced else []
+    ), f"requested {requested!r} dispatched {model!r} but stderr announced {stderr!r}"
 
 
 def test_a_requested_model_outlives_an_empty_cache(monkeypatch, tmp_path):
