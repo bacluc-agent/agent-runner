@@ -137,11 +137,46 @@ def comments(repo, issue):
 
 
 REPORT_RE = re.compile(r"<!-- run-history-report window=([0-9TZ:.-]+)\.\.([0-9TZ:.-]+) -->")
+COMMENT_URL_RE = re.compile(r"issuecomment-(\d+)")
 
 
 def previous_report(comment_list):
     reports = [item for item in comment_list if REPORT_RE.search(item.get("body", ""))]
     return max(reports, key=lambda item: item.get("created_at", ""), default=None)
+
+
+def has_report_window(comment_list, since, until):
+    marker = MARKER.format(start=iso_time(since), end=iso_time(until))
+    return any(marker in item.get("body", "") for item in comment_list)
+
+
+def post_chunks(repo, issue, chunks):
+    posted = []
+    path = Path(".run-history-comment.md")
+    try:
+        for chunk in chunks:
+            path.write_text(chunk)
+            result = subprocess.run(
+                ["gh", "issue", "comment", str(issue), "-R", repo, "--body-file", str(path)],
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode:
+                raise RuntimeError("failed to post report comment")
+            match = COMMENT_URL_RE.search(result.stdout)
+            if not match:
+                raise RuntimeError("posted report comment URL was not returned")
+            posted.append(match.group(1))
+    except RuntimeError:
+        for comment_id in reversed(posted):
+            subprocess.run(
+                ["gh", "api", "--method", "DELETE", f"repos/{repo}/issues/{issue}/comments/{comment_id}"],
+                capture_output=True,
+                text=True,
+            )
+        raise
+    finally:
+        path.unlink(missing_ok=True)
 
 
 def main(argv=None):
@@ -156,7 +191,8 @@ def main(argv=None):
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args(argv)
     until = parse_time(args.now) if args.now else datetime.now(timezone.utc)
-    prior = previous_report(comments(args.issue_repository, args.issue))
+    comment_list = comments(args.issue_repository, args.issue)
+    prior = previous_report(comment_list)
     previous_end = None
     if prior:
         match = REPORT_RE.search(prior["body"])
@@ -165,6 +201,8 @@ def main(argv=None):
     since = parse_time(args.since) if args.since else (previous_end or until - timedelta(days=7))
     if since > until:
         raise ValueError("since must not be after now")
+    if args.post and has_report_window(comment_list=comment_list, since=since, until=until):
+        return 0
     runs = collect_runs(args.repo, since, until, args.pages)
     full = render_report(runs, since, until, prior.get("html_url") if prior else None)
     separator = full.index("|---|")
@@ -175,13 +213,7 @@ def main(argv=None):
     if args.dry_run or not args.post:
         sys.stdout.write("\n\n".join(chunks))
         return 0
-    for chunk in chunks:
-        path = Path(".run-history-comment.md")
-        path.write_text(chunk)
-        result = subprocess.run(["gh", "issue", "comment", str(args.issue), "-R", args.issue_repository, "--body-file", str(path)])
-        path.unlink(missing_ok=True)
-        if result.returncode:
-            raise RuntimeError("failed to post report comment")
+    post_chunks(args.issue_repository, args.issue, chunks)
     return 0
 
 
