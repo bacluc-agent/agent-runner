@@ -341,7 +341,7 @@ jobs:
         continue-on-error: true
         shell: bash
         run: |
-          issue_num=$(printf '%s' "$PROMPT" | grep -oE 'issues/[0-9]+' | grep -oE '[0-9]+' | head -n1)
+          issue_num=$(printf '%s' "$PROMPT" | grep -oE 'issues/[0-9]+' | grep -oE '[0-9]+' | head -n1 || true)
           if [[ -n "$issue_num" ]]; then
             if gh issue view "$issue_num" -R "$ISSUE_REPOSITORY" >/dev/null 2>&1; then
               echo "issue_number=${issue_num}" >> "$GITHUB_OUTPUT"
@@ -366,7 +366,7 @@ jobs:
           printf '::add-mask::%s\n' "$GITHUB_TOKEN"
           comment_url=$(gh issue comment "$ISSUE_NUMBER" -R "$ISSUE_REPOSITORY" \
             --body "Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID — model: $MODEL")
-          comment_id=$(printf '%s' "$comment_url" | grep -oE '[0-9]+$')
+          comment_id=$(printf '%s' "$comment_url" | grep -oE '[0-9]+$' || true)
           echo "comment_id=${comment_id}" >> "$GITHUB_OUTPUT"
           echo "comment_url=${comment_url}" >> "$GITHUB_OUTPUT"
 
