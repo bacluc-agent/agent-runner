@@ -91,6 +91,21 @@ CASES = [
         "## Goal\nUse sk-abcdefghijklmnopqrstuvwxyz012345.\n\n## How to implement\n1. Do it.\n",
         "hostile_text",
     ),
+    (
+        "too_long_visible_chars",
+        "## Goal\n" + "x" * 4001 + "\n\n## How to implement\n1. Do it.\n",
+        "too_long",
+    ),
+    (
+        "too_long_with_details_fold",
+        "## Goal\n" + "x" * 4001 + "\n\n<details>\nMore info\n</details>\n\n## How to implement\n1. Do it.\n",
+        "too_long",
+    ),
+    (
+        "ok_with_details_fold_under_limit",
+        "## Goal\nShort.\n\n<details>\nMore info\n</details>\n\n## How to implement\n1. Do it.\n",
+        "ok",
+    ),
 ]
 
 
