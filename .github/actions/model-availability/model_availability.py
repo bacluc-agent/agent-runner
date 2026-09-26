@@ -238,9 +238,6 @@ def discover_models() -> tuple[list[str], dict[str, list[str]]]:
         for name, info in provider_config.items()
         if valid_base_url(info["baseURL"])
     }
-    # root cause: provider baseURL missing from opencode debug config in CI; add fallback
-    if "opencode-go-openai-2" not in base_urls:
-        base_urls["opencode-go-openai-2"] = "https://opencode.ai/zen/go/v1"
     kept, dropped = [], []
     for model in whitelisted_models:
         (kept if provider_probeable(model, provider_config, os.environ) else dropped).append(model)

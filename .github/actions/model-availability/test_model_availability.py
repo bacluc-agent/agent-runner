@@ -60,7 +60,6 @@ class TestDiscoverModels:
         assert free_models == ["opencode/a-free"]
         assert provider_models == {
             "opencode-go-openai": ["glm-5.2"],
-            "opencode-go-openai-2": ["glm-5.2"],
             "opencode-go-anthropic": ["glm-5.2"],
             "openrouter": [],
         }
@@ -79,7 +78,6 @@ class TestDiscoverModels:
         assert free_models == ["opencode/a-free"]
         assert provider_models == {
             "opencode-go-openai": [],
-            "opencode-go-openai-2": [],
             "opencode-go-anthropic": [],
             "openrouter": [],
         }
@@ -115,34 +113,18 @@ class TestDiscoverModels:
         monkeypatch.setattr(model_availability.subprocess, "run", fake_run_missing)
         free_models, provider_models = model_availability.discover_models()
         assert free_models == ["opencode/a-free"]
-        assert provider_models == {
-            "opencode-go-openai": ["glm-5.2"],
-            "opencode-go-openai-2": ["glm-5.2"],
-        }
+        assert provider_models == {"opencode-go-openai": ["glm-5.2"]}
 
     def test_config_read_failure(self, monkeypatch):
-        class FakeResponse:
-            def __enter__(self):
-                return self
-
-            def __exit__(self, *args):
-                return False
-
-            def read(self):
-                return b'{"data": []}'
-
         def fail_config(args, *a, **kw):
             if args == ["opencode", "models"]:
                 return types.SimpleNamespace(stdout="opencode/a-free\n")
             raise RuntimeError("opencode failed")
 
-        monkeypatch.setattr(
-            model_availability.urllib.request, "urlopen", lambda *a, **kw: FakeResponse()
-        )
         monkeypatch.setattr(model_availability.subprocess, "run", fail_config)
         free_models, provider_models = model_availability.discover_models()
         assert free_models == ["opencode/a-free"]
-        assert provider_models == {"opencode-go-openai-2": []}
+        assert provider_models == {}
 
     def test_filters_openrouter_models_by_whitelist(self, monkeypatch):
         captured = {}
@@ -235,16 +217,6 @@ class TestDiscoverModels:
         assert "opencode-go-openai" in provider_models
 
     def test_skips_provider_with_non_string_baseurl(self, monkeypatch):
-        class FakeResponse:
-            def __enter__(self):
-                return self
-
-            def __exit__(self, *args):
-                return False
-
-            def read(self):
-                return b'{"data": []}'
-
         config = {
             "provider": {
                 "openrouter": {
@@ -264,13 +236,10 @@ class TestDiscoverModels:
                 return types.SimpleNamespace(stdout="")
             raise AssertionError(f"unexpected args: {args}")
 
-        monkeypatch.setattr(
-            model_availability.urllib.request, "urlopen", lambda *a, **kw: FakeResponse()
-        )
         monkeypatch.setattr(model_availability.subprocess, "run", fake_run_non_string)
         free_models, provider_models = model_availability.discover_models()
         assert free_models == ["opencode/a-free"]
-        assert provider_models == {"opencode-go-openai-2": []}
+        assert provider_models == {}
 
     def test_skips_whitelisted_models_from_unprobeable_providers(self, monkeypatch):
         class FakeResponse:
@@ -1040,7 +1009,6 @@ class TestDiscoverModelsLogging:
         assert free_models == ["opencode/a-free", "opencode/big-pickle"]
         assert provider_models == {
             "opencode-go-openai": [],
-            "opencode-go-openai-2": [],
             "opencode-go-anthropic": [],
             "openrouter": [],
         }
