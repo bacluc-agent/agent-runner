@@ -5,7 +5,6 @@ import re
 import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 
 MAX_COMMENT_BYTES = 65_000
 WORKFLOWS = ("Hourly issue runner", "OpenCode agent", "Refine issues", "Review fixes runner", "CI")
@@ -106,24 +105,6 @@ def render_report(runs, since, until, previous=None):
     return header + "\n".join(render_row(item) for item in runs) + "\n"
 
 
-def chunk_report(header, rows, limit=MAX_COMMENT_BYTES):
-    chunks, current = [], header
-    if len(current.encode()) > limit:
-        raise ValueError("report header exceeds GitHub comment limit")
-    for row in rows:
-        candidate = current + ("" if current.endswith("\n") else "\n") + row + "\n"
-        if len(candidate.encode()) > limit and current != header:
-            chunks.append(current)
-            current = header + row + "\n"
-        elif len(candidate.encode()) > limit:
-            raise ValueError("report row exceeds GitHub comment limit")
-        else:
-            current = candidate
-    if current != header or not chunks:
-        chunks.append(current)
-    return chunks
-
-
 def comments(repo, issue):
     result = []
     for page in range(1, 1001):
@@ -137,7 +118,6 @@ def comments(repo, issue):
 
 
 REPORT_RE = re.compile(r"<!-- run-history-report window=([0-9TZ:.-]+)\.\.([0-9TZ:.-]+) -->")
-COMMENT_URL_RE = re.compile(r"issuecomment-(\d+)")
 
 
 def previous_report(comment_list):
@@ -145,38 +125,31 @@ def previous_report(comment_list):
     return max(reports, key=lambda item: item.get("created_at", ""), default=None)
 
 
-def has_report_window(comment_list, since, until):
+def matching_report(comment_list, since, until):
     marker = MARKER.format(start=iso_time(since), end=iso_time(until))
-    return any(marker in item.get("body", "") for item in comment_list)
+    matches = [item for item in comment_list if marker in item.get("body", "")]
+    return min(matches, key=lambda item: (int(item["id"]), item.get("created_at", "")), default=None)
 
 
-def post_chunks(repo, issue, chunks):
-    posted = []
-    path = Path(".run-history-comment.md")
-    try:
-        for chunk in chunks:
-            path.write_text(chunk)
-            result = subprocess.run(
-                ["gh", "issue", "comment", str(issue), "-R", repo, "--body-file", str(path)],
-                capture_output=True,
-                text=True,
-            )
-            if result.returncode:
-                raise RuntimeError("failed to post report comment")
-            match = COMMENT_URL_RE.search(result.stdout)
-            if not match:
-                raise RuntimeError("posted report comment URL was not returned")
-            posted.append(match.group(1))
-    except RuntimeError:
-        for comment_id in reversed(posted):
-            subprocess.run(
-                ["gh", "api", "--method", "DELETE", f"repos/{repo}/issues/{issue}/comments/{comment_id}"],
-                capture_output=True,
-                text=True,
-            )
-        raise
-    finally:
-        path.unlink(missing_ok=True)
+def post_report(repo, issue, body, comment_list):
+    if len(body.encode()) > MAX_COMMENT_BYTES:
+        raise ValueError("report exceeds GitHub comment limit")
+    existing = matching_report(comment_list, *report_window(body)) if REPORT_RE.search(body) else None
+    if existing:
+        command = ["gh", "api", "--method", "PATCH", f"repos/{repo}/issues/comments/{existing['id']}", "--input", "-"]
+    else:
+        command = ["gh", "api", "--method", "POST", f"repos/{repo}/issues/{issue}/comments", "--input", "-"]
+    result = subprocess.run(command, input=json.dumps({"body": body}), capture_output=True, text=True)
+    if result.returncode:
+        action = "update" if existing else "create"
+        raise RuntimeError(f"failed to {action} report comment: {result.stderr.strip() or 'gh api failed'}")
+
+
+def report_window(body):
+    match = REPORT_RE.search(body)
+    if not match:
+        raise ValueError("report is missing its window marker")
+    return parse_time(match.group(1)), parse_time(match.group(2))
 
 
 def main(argv=None):
@@ -201,19 +174,12 @@ def main(argv=None):
     since = parse_time(args.since) if args.since else (previous_end or until - timedelta(days=7))
     if since > until:
         raise ValueError("since must not be after now")
-    if args.post and has_report_window(comment_list=comment_list, since=since, until=until):
-        return 0
     runs = collect_runs(args.repo, since, until, args.pages)
     full = render_report(runs, since, until, prior.get("html_url") if prior else None)
-    separator = full.index("|---|")
-    header_end = full.index("\n", separator) + 1
-    header = full[:header_end]
-    rows = [line for line in full[header_end:].splitlines() if line.startswith("|")]
-    chunks = chunk_report(header, rows)
     if args.dry_run or not args.post:
-        sys.stdout.write("\n\n".join(chunks))
+        sys.stdout.write(full)
         return 0
-    post_chunks(args.issue_repository, args.issue, chunks)
+    post_report(args.issue_repository, args.issue, full, comment_list)
     return 0
 
 

@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 
+import json
 import subprocess
 
 import run_history
@@ -62,53 +63,86 @@ def test_render_has_required_columns_order_and_escaped_values():
     assert body.index("| Run ID") < body.index("| [42]")
 
 
-def test_chunk_report_is_byte_limited_and_reconstructable():
-    rows = [run_history.render_row(run(index, "2026-09-20T00:00:00Z")) for index in range(1000)]
-    chunks = run_history.chunk_report("header\n", rows, limit=200)
+def test_post_report_rejects_oversized_body_before_mutation(monkeypatch):
+    def fail_run(*args, **kwargs):
+        raise AssertionError("GitHub API must not be called")
 
-    assert len(chunks) > 1
-    assert all(len(chunk.encode()) <= 200 for chunk in chunks)
-    assert "\n".join(chunks).count("https://github.com/bacluc-agent/agent-runner/actions/runs/") == 1000
+    monkeypatch.setattr(run_history.subprocess, "run", fail_run)
+
+    try:
+        run_history.post_report("bacluc-agent/agent-todo", 219, "x" * (run_history.MAX_COMMENT_BYTES + 1), [])
+    except ValueError as error:
+        assert str(error) == "report exceeds GitHub comment limit"
+    else:
+        raise AssertionError("post_report should reject oversized reports")
 
 
-def test_post_chunks_rolls_back_comments_when_a_later_chunk_fails(tmp_path, monkeypatch):
+def test_post_report_updates_the_lowest_id_matching_window(monkeypatch):
     calls = []
 
     def fake_run(command, **kwargs):
         calls.append(command)
-        if command[:3] == ["gh", "issue", "comment"] and len(calls) == 2:
-            return subprocess.CompletedProcess(command, 1, "", "controlled failure")
-        return subprocess.CompletedProcess(command, 0, "https://github.com/bacluc-agent/agent-todo/issues/219#issuecomment-123\n", "")
+        return subprocess.CompletedProcess(command, 0, "{}", "")
 
-    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(run_history.subprocess, "run", fake_run)
+    comments = [
+        {"id": 20, "body": "<!-- run-history-report window=2026-09-20T00:00:00Z..2026-09-21T00:00:00Z -->"},
+        {"id": 10, "body": "<!-- run-history-report window=2026-09-20T00:00:00Z..2026-09-21T00:00:00Z -->"},
+    ]
+
+    body = "<!-- run-history-report window=2026-09-20T00:00:00Z..2026-09-21T00:00:00Z -->\nreport"
+    run_history.post_report("bacluc-agent/agent-todo", 219, body, comments)
+
+    assert calls == [["gh", "api", "--method", "PATCH", "repos/bacluc-agent/agent-todo/issues/comments/10", "--input", "-"]]
+
+
+def test_post_report_creates_one_comment_from_stdin(monkeypatch):
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append((command, kwargs))
+        return subprocess.CompletedProcess(command, 0, "{}", "")
+
+    monkeypatch.setattr(run_history.subprocess, "run", fake_run)
+
+    run_history.post_report("bacluc-agent/agent-todo", 219, "report", [])
+
+    assert calls[0][0] == ["gh", "api", "--method", "POST", "repos/bacluc-agent/agent-todo/issues/219/comments", "--input", "-"]
+    assert json.loads(calls[0][1]["input"]) == {"body": "report"}
+
+
+def test_post_report_surfaces_api_failure_without_follow_up_mutation(monkeypatch):
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 1, "", "controlled failure")
+
     monkeypatch.setattr(run_history.subprocess, "run", fake_run)
 
     try:
-        run_history.post_chunks("bacluc-agent/agent-todo", 219, ["first", "second"])
+        run_history.post_report("bacluc-agent/agent-todo", 219, "report", [])
     except RuntimeError as error:
-        assert str(error) == "failed to post report comment"
+        assert str(error) == "failed to create report comment: controlled failure"
     else:
-        raise AssertionError("post_chunks should fail when a chunk cannot be posted")
+        raise AssertionError("post_report should surface API failures")
 
-    assert calls[0][:3] == ["gh", "issue", "comment"]
-    assert calls[-1][:3] == ["gh", "api", "--method"]
-    assert calls[-1][3] == "DELETE"
+    assert len(calls) == 1
 
 
-def test_identical_window_is_detected_as_already_posted():
+def test_matching_report_uses_the_lowest_comment_id():
     since = datetime(2026, 9, 20, tzinfo=timezone.utc)
     until = datetime(2026, 9, 21, tzinfo=timezone.utc)
-    comments = [{"body": "<!-- run-history-report window=2026-09-20T00:00:00Z..2026-09-21T00:00:00Z -->"}]
+    comments = [
+        {"id": 20, "body": "<!-- run-history-report window=2026-09-20T00:00:00Z..2026-09-21T00:00:00Z -->"},
+        {"id": 10, "body": "<!-- run-history-report window=2026-09-20T00:00:00Z..2026-09-21T00:00:00Z -->"},
+    ]
 
-    assert run_history.has_report_window(comments, since, until)
+    assert run_history.matching_report(comments, since, until)["id"] == 10
 
 
-def test_post_rerun_skips_existing_window(monkeypatch):
-    monkeypatch.setattr(
-        run_history,
-        "comments",
-        lambda repo, issue: [{"body": "<!-- run-history-report window=2026-09-20T00:00:00Z..2026-09-21T00:00:00Z -->"}],
+def test_report_window_reads_the_marker():
+    assert run_history.report_window("<!-- run-history-report window=2026-09-20T00:00:00Z..2026-09-21T00:00:00Z -->") == (
+        datetime(2026, 9, 20, tzinfo=timezone.utc),
+        datetime(2026, 9, 21, tzinfo=timezone.utc),
     )
-    monkeypatch.setattr(run_history, "collect_runs", lambda *args: (_ for _ in ()).throw(AssertionError("collected runs")))
-
-    assert run_history.main(["--since", "2026-09-20T00:00:00Z", "--now", "2026-09-21T00:00:00Z", "--post"]) == 0
