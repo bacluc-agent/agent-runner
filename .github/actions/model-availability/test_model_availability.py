@@ -1432,8 +1432,8 @@ def run_workflow_selector(path, cache, tmp_path, requested="", model=None, resol
     the dispatched model against: a short alias normalises, so the raw request and the
     dispatched model are different strings for the very same request.
 
-    The block is located by shape, not by fixed indentation, and bash never inherits
-    stdin: anchoring the give-up on one exact `exit 1` string silently extended the
+    The give-up's `fi` boundary is located by depth, not by a fixed `exit 1` string, and bash
+    never inherits stdin: anchoring it on that string silently extended the
     block across the rest of the workflow, and a swallowed `done < <(shuf "$candidates")`
     then blocked forever on an unset variable instead of failing the suite
     (bacluc-agent/agent-todo#283).
@@ -1521,14 +1521,48 @@ def test_a_deny_listed_pick_is_announced_on_stderr(path, cache, expected, announ
     `if [[ -z "$model" ]]; then ... exit 1; fi`, so a weak pick dispatched silently. Run the
     block, so deleting the printf or inverting the deny match fails here
     (bacluc-agent/agent-todo#283).
+
+    `model` and `resolved` are both the pick because that is the state the workflow is in when
+    nothing was requested: `requested_model="$model"` at `opencode.yml:293` is the pick and
+    `resolve_model` returns it unchanged, so `$resolved == $model` and the announcement has to
+    key on `$requested` being empty instead. The default `resolved=""` is only real in the
+    undeliverable-request branch, so leaving it out here would pass on a state the selector
+    cannot produce and would not notice the signal going quiet.
     """
     for key, value in SELECTOR_EMPTY_KEYS.items():
         monkeypatch.setenv(key, value)
-    selection, status, stderr = run_workflow_selector(path, cache, tmp_path)
+    selection, status, stderr = run_workflow_selector(
+        path, cache, tmp_path, model=expected, resolved=expected
+    )
     assert (selection, status) == (expected, 0), f"{path}: cache {cache} gave {selection!r}/{status}"
     assert ("Using fallback model: " in stderr) is announced, (
         f"{path}: cache {cache} announced={announced} but stderr was {stderr!r}"
     )
+
+
+def test_an_undeliverable_request_still_announces_a_deny_listed_fallback(monkeypatch, tmp_path):
+    """A dispatched deny-listed model is announced however the slot was arrived at.
+
+    `resolve_model` prints the bare word `unavailable` with no tab when nothing matches, so
+    `IFS=$'\\t' read -r resolution resolved` at `opencode.yml:307` leaves `resolved` **empty**
+    and the fallback branch assigns `model="$fallback_resolved"`. The predicate at `:328`
+    therefore still has to compare the dispatched model against that empty `resolved`; drop
+    that conjunct and this state goes quiet (bacluc-agent/agent-todo#283).
+    """
+    for key, value in SELECTOR_EMPTY_KEYS.items():
+        monkeypatch.setenv(key, value)
+    selection, status, stderr = run_workflow_selector(
+        ".github/workflows/opencode.yml",
+        ["opencode/ling-3.0-flash-fin-free"],
+        tmp_path,
+        requested="opencode/does-not-exist",
+        model="opencode/ling-3.0-flash-fin-free",
+        resolved="",
+    )
+    assert (selection, status) == ("opencode/ling-3.0-flash-fin-free", 0), f"{selection!r}/{status}"
+    assert [line for line in stderr.splitlines() if "Using fallback model:" in line] == [
+        "Using fallback model: opencode/ling-3.0-flash-fin-free"
+    ], f"an undeliverable request dispatched a deny-listed model but stderr said {stderr!r}"
 
 
 # (requested input, what it resolved to, dispatched model) - the deny-listed pick in the
