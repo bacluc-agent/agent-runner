@@ -89,19 +89,11 @@ jobs:
           printf '::add-mask::%s\n' "$OPENCODE_GO_2_API_KEY"
           printf '::add-mask::%s\n' "$OPENCODE_AUTH_CONTENT"
 
-          # /rate_limit is free (it does not count against the quota), so probe it
-          # before any other call. An exhausted quota means "nothing to do this
-          # run", not a red run: without this the first 403 (label create, then
-          # the search) kills the step under `set -e`.
-          _buckets="$(gh api rate_limit --jq '[.resources.core.remaining, .resources.search.remaining] | @tsv' 2>/dev/null || echo 'unknown unknown')"
-          read -r _core _search <<< "$_buckets"
-          printf 'GitHub API rate limit: core=%s search=%s remaining\n' "$_core" "$_search"
-          if [[ "$_core" == 0 || "$_search" == 0 ]]; then
-            printf '::warning::GitHub API quota exhausted (core=%s search=%s); not selecting or claiming anything this run.\n' "$_core" "$_search" >&2
-            exit 0
-          fi
+          # Free quota probe (/rate_limit does not count against the quota); stands down loudly, never silently.
+          source scripts/gh-retry.sh
+          gh_preflight "issue selection, the agent-running claim, and dispatch" core graphql
 
-          if ! gh label create agent-running -R "$ISSUE_REPOSITORY" \
+          if ! gh_retry label create agent-running -R "$ISSUE_REPOSITORY" \
             --color 0E8A16 --description 'Selected by the hourly issue runner' --force; then
             printf '::warning::could not ensure the agent-running label exists; the claim may not apply\n'
           fi
@@ -110,11 +102,13 @@ jobs:
           printf 'Fetching github issues...\n'
           printf '\n\n\n\n\n\n'
 
-          # Oldest-first: the 50-item page keeps the OLDEST 50 unclaimed issues instead of the
-          # newest 50, so backlog items beyond the cap are the newest, not the oldest.
           search_json="$RUNNER_TEMP/candidates.json"
-          if ! gh api "search/issues?q=repo:${ISSUE_REPOSITORY}+is:open+is:issue+label:ready-for-implementation+-label:agent-running+sort:created-asc&per_page=50" \
-            --jq '.items' > "$search_json"; then
+          # List-with-filters on the core bucket (5000/h) instead of the Search API
+          # (30/min): oldest ready issues first; PRs and agent-running claims are
+          # dropped client-side. per_page=100 > the 50 kept, so the selection is unchanged.
+          # ponytail: REST list vs Search can diverge if >100 stale claimed issues crowd the page — upgrade path: keep per_page ahead of growth.
+          if ! gh_retry api "repos/${ISSUE_REPOSITORY}/issues?state=open&labels=ready-for-implementation&sort=created&direction=asc&per_page=100" \
+            --jq 'map(select(.pull_request == null)) | map(select(.labels | map(.name) | index("agent-running") == null)) | .[0:50]' > "$search_json"; then
             printf '::warning::could not list candidate issues; skipping this run.\n' >&2
             exit 0
           fi
@@ -189,21 +183,13 @@ jobs:
 
           # Repos to check for open agent PRs: the known agent repos plus any repos
           # referenced in candidate issue bodies (e.g. upstream ecamp/ecamp3).
-          # Extracted mentions are filtered by existence on GitHub to drop path-like
-          # noise (e.g. api/camps, e2e/tests) that the grep pattern also matches.
+          # Extracted mentions are matched against PR headRefNames below; the gh pr list … || true calls tolerate nonexistent repos — no existence probe (one gh call per mention saved).
           repo_list=("$GITHUB_REPOSITORY" "$ISSUE_REPOSITORY" bacluc/provision-machines bacluc-agent/ecamp3)
           mapfile -t body_repos < <(jq -r '.[].body // ""' "$search_json" \
             | sed 's|https\?://[^/]*/||g; s|git@[^:]*:||g; s|github\.com/||g; s|\.git\b||g' \
             | grep -oE '[A-Za-z0-9][A-Za-z0-9-]{2,}/[A-Za-z0-9][A-Za-z0-9_.-]{1,}' \
             | grep -vE '^(github|www|http|https)\.com$' \
             | sort -u)
-          existing_repos=()
-          for repo in "${body_repos[@]}"; do
-            if gh repo view "$repo" --json nameWithOwner --jq .nameWithOwner >/dev/null 2>&1; then
-              existing_repos+=("$repo")
-            fi
-          done
-          body_repos=("${existing_repos[@]}")
           for repo in "${body_repos[@]}"; do
             case " ${repo_list[*]} " in
               *" $repo "*) ;;
@@ -216,12 +202,37 @@ jobs:
 
           pr_lookup_dir="$RUNNER_TEMP/pr-lookup"
           mkdir -p "$pr_lookup_dir"
+          # ponytail: single page per repo; a repo whose newest 100 PRs all postdate the candidate hides its PR — upgrade path: per-candidate gh pr list --search "issue-<n>" on lookup miss.
           for repo in "${repo_list[@]}"; do
             key="$(echo "$repo" | tr '/' '_')"
-            gh pr list -R "$repo" --state all --limit 200 --json number,updatedAt,headRefName,state,title \
-              --jq '.[] | "\(.headRefName)|#\(.number)|\(.updatedAt)|\(.state)|\(.title)"' 2>/dev/null \
+            gh_retry pr list -R "$repo" --state all --limit 100 --json number,updatedAt,headRefName,state,title \
+              --jq '.[] | "\(.headRefName)|#\(.number)|\(.updatedAt)|\(.state)|\(.title)"' \
               | sort -t'|' -k3 -r > "$pr_lookup_dir/$key.lookup" || true
           done
+          printf 'PR lookups: %s repos, limit 100 each\n' "${#repo_list[@]}"
+
+          # Batch the human-feedback lookup: one GraphQL request per 25 candidates
+          # instead of one `gh issue view --json comments` per candidate (one
+          # core-bucket call each — the N+1 that burned the quota).
+          human_ts_file="$RUNNER_TEMP/human-timestamps.txt"
+          : > "$human_ts_file"
+          mapfile -t cand_nums < "$candidates"
+          human_requests=0
+          repo_owner="${ISSUE_REPOSITORY%%/*}"
+          repo_name="${ISSUE_REPOSITORY##*/}"
+          for ((chunk = 0; chunk < ${#cand_nums[@]}; chunk += 25)); do
+            aliases=''
+            for ((i = chunk; i < chunk + 25 && i < ${#cand_nums[@]}; i++)); do
+              aliases+="i${cand_nums[$i]}: issue(number: ${cand_nums[$i]}) { comments(last: 100) { nodes { author { login } createdAt } } } "
+            done
+            if ! gh_retry api graphql -f query="query { repository(owner: \"${repo_owner}\", name: \"${repo_name}\") { ${aliases} } }" \
+              --jq '.data.repository | to_entries[] | "\(.key[1:])|\([(.value.comments.nodes // [])[] | select(.author.login != "bacluc-agent") | .createdAt] | max // "none")"' \
+              >> "$human_ts_file"; then
+              printf '::warning::human-feedback batch failed; affected candidates fall back to none\n' >&2
+            fi
+            human_requests=$((human_requests + 1))
+          done
+          printf 'Human feedback timestamps: %s candidates via %s GraphQL request(s)\n' "${#cand_nums[@]}" "$human_requests"
 
           # Shuffle candidates so enrichment order (and the debug dump) is random.
           while IFS= read -r num; do
@@ -241,7 +252,7 @@ jobs:
                 break
               fi
             done
-            human_ts="$(gh issue view "$num" -R "$ISSUE_REPOSITORY" --json comments --jq '[.comments[] | select(.author.login != "bacluc-agent")] | max_by(.createdAt) | .createdAt // "none"' 2>/dev/null || echo "none")"
+            human_ts="$(grep -E "^${num}\|" "$human_ts_file" 2>/dev/null | head -n1 | cut -d'|' -f2 || true)"
             if [[ -z "$human_ts" || "$human_ts" == "null" ]]; then
               human_ts="none"
             fi
@@ -258,7 +269,7 @@ jobs:
             printf '%s\n' "$line" >> "$candidate_lines"
           done < "$enriched"
 
-          recent_issues="$(gh pr list -R "$GITHUB_REPOSITORY" --state all --limit 30 --json headRefName --jq '.[].headRefName' | grep -oE 'issue-[0-9]+' | grep -oE '[0-9]+' | awk '!seen[$0]++' | head -n 10 | paste -sd, - || true)"
+          recent_issues="$(gh_retry pr list -R "$GITHUB_REPOSITORY" --state all --limit 30 --json headRefName --jq '.[].headRefName' | grep -oE 'issue-[0-9]+' | grep -oE '[0-9]+' | awk '!seen[$0]++' | head -n 10 | paste -sd, - || true)"
           recent_issues="${recent_issues:-none}"
 
           prompt="$RUNNER_TEMP/selection-prompt.txt"
@@ -332,7 +343,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.BACLUC_AGENT_GITHUB_TOKEN }}
         run: |
           set -Eeuo pipefail
-          cache_json=$(gh issue view "$CACHE_ISSUE" -R "$ISSUE_REPOSITORY" --json body --jq '.body' 2>/dev/null || echo '{}')
+          source scripts/gh-retry.sh
+          cache_json=$(gh_retry issue view "$CACHE_ISSUE" -R "$ISSUE_REPOSITORY" --json body --jq '.body' || echo '{}')
           checked="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           fatal_model=""
           fatal_reason=""
@@ -351,7 +363,7 @@ jobs:
             new_cache=$(echo "$cache_json" | jq --arg model "$MODEL" --arg checked "$checked" \
               '. + {($model): {"ok": false, "checked": $checked}}')
           fi
-          gh issue edit "$CACHE_ISSUE" -R "$ISSUE_REPOSITORY" --body "$new_cache" || true
+          gh_retry issue edit "$CACHE_ISSUE" -R "$ISSUE_REPOSITORY" --body "$new_cache" || true
 
       - name: Dump debug output
         if: always()
