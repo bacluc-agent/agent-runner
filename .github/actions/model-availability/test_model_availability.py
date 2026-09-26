@@ -1287,11 +1287,17 @@ class TestWorkflowLastResortModel:
         (for example turning the deny-list `||` into `&&`) fails the tests above.
         """
         content = Path(".github/workflows/opencode.yml").read_text()
-        guard = next(
+        # `available_models_file` is what tells this guard apart from the degradation
+        # announcement, which carries the same `grep -Eq "$deny_re" <<<"$model"` tail.
+        guards = [
             line.strip()
             for line in content.splitlines()
-            if line.strip().startswith("if ") and 'grep -Eq "$deny_re" <<<"$model"' in line
-        )
+            if line.strip().startswith("if ")
+            and 'grep -Eq "$deny_re" <<<"$model"' in line
+            and "available_models_file" in line
+        ]
+        assert len(guards) == 1, f"expected exactly one discovery guard, found {guards}"
+        guard = guards[0]
         assert guard.endswith("; then"), f"unexpected discovery guard shape: {guard}"
         pattern = re.search(r"deny_re='([^']+)'", content).group(1)
         with tempfile.TemporaryDirectory() as tmp:
