@@ -119,3 +119,25 @@ class TestMain:
         assert artifact["failure_mode"] == "success"
         with open(output_path) as f:
             assert f"metrics={json.dumps(artifact)}\n" in f.read()
+
+    def test_timeout_overrides_artifact_failure_mode(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        with open("loop-metrics.json", "w") as f:
+            json.dump(
+                {
+                    "steps": 12,
+                    "tokenCostPerStep": 0.042,
+                    "convergenceRate": 6,
+                    "failureMode": "success",
+                    "terminatedAt": "2026-09-20T12:00:00+00:00",
+                },
+                f,
+            )
+        monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(tmp_path / "summary.md"))
+        monkeypatch.setenv("GITHUB_OUTPUT", str(tmp_path / "output.txt"))
+        monkeypatch.setenv("LOOP_FAILURE_MODE", "timeout")
+
+        assert loop_metrics.main() == 0
+
+        with open("loop-metrics.json") as f:
+            assert json.load(f)["failure_mode"] == "timeout"

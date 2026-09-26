@@ -203,7 +203,7 @@ jobs:
           done
           if [[ -z "$fallback_model" && -z "${requested:-}" ]]; then
             printf '%s\n' 'No coordinator fallback model is available; not dispatching.' >&2
-            printf '::error::no dispatchable coordinator model: every available model is key-gated or denied\n'
+            printf '::error::no dispatchable coordinator model: available candidates may be key-gated, denied, or unsupported\n'
             exit 1
           fi
 
@@ -399,6 +399,9 @@ jobs:
           printf 'Coordinator statuses: opencode=%s tee=%s\n' "$coordinator_status" "$coordinator_tee_status"
           echo "coordinator_status=${coordinator_status}" >> "$GITHUB_OUTPUT"
           echo "coordinator_tee_status=${coordinator_tee_status}" >> "$GITHUB_OUTPUT"
+          if ((coordinator_status == 124)); then
+            echo "failure_mode=timeout" >> "$GITHUB_OUTPUT"
+          fi
           if ((coordinator_status != 0)); then
             ((coordinator_status == 124)) && printf '::error::coordinator exceeded the %sm limit (opencode exit %s)\n' "$COORDINATOR_TIMEOUT" "$coordinator_status"
             printf '::group::coordinator output tail\n'
@@ -416,11 +419,13 @@ jobs:
           if [[ -f "$RUNNER_TEMP/opencode-fatal.json" ]]; then
             reason=$(jq -r '.reason' "$RUNNER_TEMP/opencode-fatal.json")
             fatal_model=$(jq -r '.model' "$RUNNER_TEMP/opencode-fatal.json")
-            printf '::error::fatal provider error (%s) from model %s\n' "$reason" "$fatal_model"
+            fatal_message=$(jq -r '(.message // empty) | tostring | gsub("%"; "%25") | gsub("[\r\n]+"; " ")' "$RUNNER_TEMP/opencode-fatal.json")
+            printf '::error::fatal provider error (%s) from model %s: %s\n' "$reason" "$fatal_model" "${fatal_message:-unknown}"
             {
               echo "fatal-model=${fatal_model}"
               echo "fatal-reason=${reason}"
               echo "fatal-provider=${fatal_model%/*}"
+              echo "failure_mode=error"
             } >> "$GITHUB_OUTPUT"
           fi
 
@@ -531,7 +536,7 @@ jobs:
         env:
           LOOP_STEPS: "${{ steps.coordinator.outputs.steps || '0' }}"
           LOOP_PROGRESS_DELTA: "${{ steps.coordinator.outputs.progress_delta || '1' }}"
-          LOOP_FAILURE_MODE: "${{ steps.coordinator.outputs.failure_mode || 'unknown' }}"
+          LOOP_FAILURE_MODE: "${{ steps.fatal-guard.outputs.failure_mode || steps.coordinator.outputs.failure_mode || 'unknown' }}"
           LOOP_TOKEN_ESTIMATE: "${{ steps.coordinator.outputs.token_estimate || '' }}"
         run: |
           set -Eeuo pipefail

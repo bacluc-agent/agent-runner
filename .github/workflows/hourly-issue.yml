@@ -146,7 +146,7 @@ jobs:
           fi
           if [[ -z "$selection_model" ]]; then
             printf '%s\n' 'No issue-selection model is available; not dispatching.' >&2
-            printf '::error::no dispatchable issue-selection model: every available model is key-gated or denied\n'
+            printf '::error::no dispatchable issue-selection model: available candidates may be key-gated, denied, or unsupported\n'
             exit 1
           fi
           printf 'Issue selection model: %s\n' "$selection_model"
@@ -309,7 +309,8 @@ jobs:
           if [[ -f "$RUNNER_TEMP/opencode-fatal.json" ]]; then
             fatal_model=$(jq -r '.model' "$RUNNER_TEMP/opencode-fatal.json")
             fatal_reason=$(jq -r '.reason' "$RUNNER_TEMP/opencode-fatal.json")
-            printf '::error::fatal provider error (%s) from model %s\n' "$fatal_reason" "$fatal_model"
+            fatal_message=$(jq -r '(.message // empty) | tostring | gsub("%"; "%25") | gsub("[\r\n]+"; " ")' "$RUNNER_TEMP/opencode-fatal.json")
+            printf '::error::fatal provider error (%s) from model %s: %s\n' "$fatal_reason" "$fatal_model" "${fatal_message:-unknown}"
           fi
           fatal_provider="${fatal_model%/*}"
           MODEL="${fatal_model:-$MODEL}"
