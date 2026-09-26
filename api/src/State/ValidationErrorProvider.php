@@ -53,7 +53,8 @@ class ValidationErrorProvider implements ProviderInterface {
                 )
             );
 
-            $propertyPath = $this->nameConverter->normalize($violation->getPropertyPath(), $violation->getRoot()::class, 'jsonproblem');
+            $root = $violation->getRoot();
+            $propertyPath = $this->nameConverter->normalize($violation->getPropertyPath(), $root ? $root::class : null, 'jsonproblem');
 
             $violationInfos[] = [
                 'code' => $violation->getCode(),
