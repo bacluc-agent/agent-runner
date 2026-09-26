@@ -1220,12 +1220,11 @@ class TestWorkflowOpenRouterSelection:
 
 
 class TestWorkflowLastResortModel:
-    """Every model selector must degrade to the first available model instead of hard-exiting.
+    """Every model selector must degrade to the first dispatchable model instead of hard-exiting.
 
-    Without this the jobs fail in seconds at the selector step: the deny-list empties the
-    candidate list, `fallback_model` stays empty and the step exits 1 before any provider
-    is ever called (see bacluc-agent/agent-todo#309). The swallowed-output half of the
-    same investigation is bacluc-agent/agent-todo#283.
+    The last resort appends the unfiltered cache to the candidate list so it passes the
+    same provider-key guards, instead of dispatching line 1 unguarded
+    (bacluc-agent/agent-todo#309, bacluc-agent/agent-todo#283).
     """
 
     SELECTORS = [
@@ -1239,15 +1238,6 @@ class TestWorkflowLastResortModel:
         (".github/workflows/hourly-issue.yml", "grep -Ev '"),
         (".github/workflows/refine-issues.yml", "grep -Ev '"),
     ]
-
-    def test_selector_falls_back_before_giving_up(self):
-        for path, give_up_message in self.SELECTORS:
-            content = Path(path).read_text()
-            fallback = 'head -n1 "$available_models_file"'
-            assert fallback in content, f"{path}: no last-resort model"
-            assert content.index(fallback) < content.index(give_up_message), (
-                f"{path}: the last-resort model must be tried before giving up"
-            )
 
     def test_give_up_annotates(self):
         for path, give_up_message in self.SELECTORS:
@@ -1275,6 +1265,79 @@ class TestWorkflowLastResortModel:
         )
 
     def test_discovery_guard_applies_the_deny_pattern(self):
-        assert 'grep -Eq "$deny_re" <<<"$model"' in Path(
-            ".github/workflows/opencode.yml"
-        ).read_text()
+        assert (
+            'if [[ -z "$model" ]] || ! grep -Fxq "$model" "$available_models_file" '
+            '|| grep -Eq "$deny_re" <<<"$model"; then'
+        ) in Path(".github/workflows/opencode.yml").read_text()
+
+
+SELECTOR_START = re.compile(r"^ {10}(fallback_model|selection_model)=''$")
+SELECTOR_EMPTY_KEYS = {
+    "OPENCODE_GO_API_KEY": "",
+    "OPENCODE_GO_2_API_KEY": "",
+    "OPENROUTER_API_KEY": "",
+}
+SELECTOR_CASES = [
+    (
+        ["openrouter/z-ai-mini:free", "opencode/ling-3.0-flash-fin-free"],
+        {},
+        "opencode/ling-3.0-flash-fin-free",
+        0,
+    ),
+    (["opencode-go-openai-2/qwen3.8-flash"], {}, "", 1),
+    (["opencode/mimo-v2.5-free"], {}, "opencode/mimo-v2.5-free", 0),
+    (["opencode/big-pickle"], {}, "opencode/big-pickle", 0),
+    ([], {}, "", 1),
+    (["openrouter/z-ai-mini:free"], {"OPENROUTER_API_KEY": "k"}, "openrouter/z-ai-mini:free", 0),
+    (["opencode/ling-3.0-flash-fin-free", "opencode/keep-free"], {}, "opencode/keep-free", 0),
+    (["opencode/mimo-v2.5-free", "opencode/keep-free"], {}, "opencode/keep-free", 0),
+]
+
+
+def run_workflow_selector(path, cache, tmp_path):
+    """Run a workflow's selector block under bash; return (selection, returncode)."""
+    lines = Path(path).read_text().splitlines()
+    start = next(i for i, line in enumerate(lines) if SELECTOR_START.match(line))
+    variable = SELECTOR_START.match(lines[start]).group(1)
+    loop_end = next(i for i, line in enumerate(lines[start:], start) if line == "          done")
+    end = next(i for i, line in enumerate(lines[loop_end:], loop_end) if line == "          fi")
+    models_file = tmp_path / "available-models.txt"
+    models_file.write_text("".join(f"{model}\n" for model in cache))
+    selection_file = tmp_path / "selection.txt"
+    selection_file.unlink(missing_ok=True)
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            "\n".join(
+                [
+                    "set -Eeuo pipefail",
+                    f"available_models_file={models_file}",
+                    *lines[start : end + 1],
+                    f'printf \'%s\' "${variable}" > {selection_file}',
+                ]
+            ),
+        ],
+        capture_output=True,
+        text=True,
+    )
+    selection = selection_file.read_text() if selection_file.exists() else ""
+    return selection, result.returncode
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        ".github/workflows/opencode.yml",
+        ".github/workflows/hourly-issue.yml",
+        ".github/workflows/refine-issues.yml",
+    ],
+)
+def test_last_resort_runs_through_the_provider_key_guards(path, monkeypatch, tmp_path):
+    for cache, keys, expected, expected_status in SELECTOR_CASES:
+        for key, value in {**SELECTOR_EMPTY_KEYS, **keys}.items():
+            monkeypatch.setenv(key, value)
+        selection, status = run_workflow_selector(path, cache, tmp_path)
+        assert (selection, status) == (expected, expected_status), (
+            f"{path}: cache {cache} keys {sorted(keys)} selected {selection!r} with {status}"
+        )

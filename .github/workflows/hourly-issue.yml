@@ -114,12 +114,13 @@ jobs:
           # Exclude known-weak free models (ling-3.0-flash-fin-free, mimo-v2.5-free, nemotron-*, muse-spark-*)
           # per model-discovery.md (provision-machines devel branch); they pass the trivial OK
           # probe but fail as coordinator/selector in 10+ runs (e.g. 34029380869, 34042660858).
+          mapfile -t unfiltered < "$available_models_file"
           mapfile -t free_models < <(grep -E '^(opencode|openrouter)/[^[:space:]]+(-free|:free)$' "$available_models_file" | grep -Ev '/(ling-3\.0-flash-fin|mimo-v2\.5)(-free|:free)$|/nemotron-|/muse-spark-' | awk '!seen[$0]++')
           for candidate in \
             'opencode-go-openai/qwen3.8-flash' \
             'opencode-go-openai-2/qwen3.8-flash' \
             'opencode/big-pickle' \
-            "${free_models[@]}"; do
+            "${free_models[@]}" "${unfiltered[@]}"; do
             case "$candidate" in
               opencode-go-openai/qwen3.8-flash)
                 grep -Fxq "$candidate" "$available_models_file" && [[ -n "$OPENCODE_GO_API_KEY" ]] || continue
@@ -140,7 +141,6 @@ jobs:
             break
           done
           if [[ -z "$selection_model" ]]; then
-            selection_model=$(head -n1 "$available_models_file")
             if [[ -z "$selection_model" ]]; then
               printf '%s\n' 'No issue-selection model is available; not dispatching.' >&2
               printf '::error::no issue-selection model is available; the model-availability cache returned no models\n'
