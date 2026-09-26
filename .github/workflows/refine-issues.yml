@@ -56,10 +56,16 @@ jobs:
           printf '::add-mask::%s\n' "$OPENCODE_GO_2_API_KEY"
           printf '::add-mask::%s\n' "$OPENCODE_AUTH_CONTENT"
 
-          gh label create agent-refined -R "$ISSUE_REPOSITORY" \
-            --color 1D76DB --description 'Refined by the issue-refiner agent' --force
-          gh label create ready-for-implementation -R "$ISSUE_REPOSITORY" \
-            --color 0E8A16 --description 'Approved for agent implementation' --force
+          printf '::group::ensure agent labels\n'
+          if ! gh label create agent-refined -R "$ISSUE_REPOSITORY" \
+            --color 1D76DB --description 'Refined by the issue-refiner agent' --force; then
+            printf '::warning::could not ensure the agent-refined label exists; the label may not be applied\n'
+          fi
+          if ! gh label create ready-for-implementation -R "$ISSUE_REPOSITORY" \
+            --color 0E8A16 --description 'Approved for agent implementation' --force; then
+            printf '::warning::could not ensure the ready-for-implementation label exists; the label may not be applied\n'
+          fi
+          printf '::endgroup::\n'
 
           printf '\n\n\n\n\n\n'
           printf 'Fetching github issues...\n'
