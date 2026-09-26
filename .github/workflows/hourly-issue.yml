@@ -143,6 +143,7 @@ jobs:
             selection_model=$(head -n1 "$available_models_file")
             if [[ -z "$selection_model" ]]; then
               printf '%s\n' 'No issue-selection model is available; not dispatching.' >&2
+              printf '::error::no issue-selection model is available; the model-availability cache returned no models\n'
               exit 1
             fi
             printf '%s\n' "Using fallback model: $selection_model" >&2

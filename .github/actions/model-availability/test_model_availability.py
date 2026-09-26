@@ -1,4 +1,5 @@
 import json
+import re
 import subprocess
 import types
 from datetime import datetime, timezone
@@ -1223,13 +1224,20 @@ class TestWorkflowLastResortModel:
 
     Without this the jobs fail in seconds at the selector step: the deny-list empties the
     candidate list, `fallback_model` stays empty and the step exits 1 before any provider
-    is ever called (see agent-runner#283).
+    is ever called (see bacluc-agent/agent-todo#309). The swallowed-output half of the
+    same investigation is bacluc-agent/agent-todo#283.
     """
 
     SELECTORS = [
         (".github/workflows/opencode.yml", "No coordinator fallback model is available"),
         (".github/workflows/hourly-issue.yml", "No issue-selection model is available"),
         (".github/workflows/refine-issues.yml", "No refinement model is available"),
+    ]
+
+    DENY_SITES = [
+        (".github/workflows/opencode.yml", "deny_re='"),
+        (".github/workflows/hourly-issue.yml", "grep -Ev '"),
+        (".github/workflows/refine-issues.yml", "grep -Ev '"),
     ]
 
     def test_selector_falls_back_before_giving_up(self):
@@ -1241,7 +1249,32 @@ class TestWorkflowLastResortModel:
                 f"{path}: the last-resort model must be tried before giving up"
             )
 
-    def test_discovery_result_is_deny_listed(self):
-        content = Path(".github/workflows/opencode.yml").read_text()
-        assert "deny_re=" in content
-        assert 'grep -Fxq "$model" "$available_models_file" || grep -Eq "$deny_re" <<<"$model"' in content
+    def test_give_up_annotates(self):
+        for path, give_up_message in self.SELECTORS:
+            content = Path(path).read_text()
+            at = content.index(give_up_message)
+            tail = content[at : content.index("exit 1", at)]
+            assert "::error::" in tail, f"{path}: the give-up is still plain text"
+
+    def test_deny_pattern_is_identical_in_every_selector(self):
+        patterns = set()
+        for path, marker in self.DENY_SITES:
+            assert marker in (content := Path(path).read_text()), f"{path}: {marker} gone"
+            patterns.add(content.split(marker, 1)[1].split("'", 1)[0])
+        assert len(patterns) == 1, f"deny pattern drifted across selectors: {patterns}"
+
+    def test_deny_pattern_rejects_the_known_weak_model(self):
+        pattern = re.search(
+            r"deny_re='([^']+)'", Path(".github/workflows/opencode.yml").read_text()
+        ).group(1)
+        assert re.search(pattern, "opencode/ling-3.0-flash-fin-free"), (
+            "the deny pattern no longer rejects ling-3.0-flash-fin-free"
+        )
+        assert not re.search(pattern, "opencode/big-pickle"), (
+            "the deny pattern now rejects the preferred coordinator model"
+        )
+
+    def test_discovery_guard_applies_the_deny_pattern(self):
+        assert 'grep -Eq "$deny_re" <<<"$model"' in Path(
+            ".github/workflows/opencode.yml"
+        ).read_text()
