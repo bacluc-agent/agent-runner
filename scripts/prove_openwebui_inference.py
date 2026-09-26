@@ -5,7 +5,6 @@ import sys
 import time
 import urllib.error
 import urllib.request
-from typing import Any
 
 AISIX = "http://aisix:3000"
 AISIX_COMPLETIONS = f"{AISIX}/v1/chat/completions"
@@ -16,23 +15,31 @@ QUESTION = os.environ.get("PROVE_QUESTION", "What color is the sky on a clear da
 TIMEOUT = int(os.environ.get("PROVE_TIMEOUT", "120"))
 
 
-def extract_text(payload: dict[str, Any]) -> str:
-    choices = payload.get("choices") or []
-    if not choices:
+def extract_text(payload: dict[str, object]) -> str:
+    choices = payload.get("choices")
+    if not isinstance(choices, list) or not choices:
         return ""
-    content = (choices[0].get("message") or {}).get("content")
-    if content is None:
-        return (choices[0].get("text") or "").strip()
-    return str(content).strip()
+    first_choice = choices[0]
+    if not isinstance(first_choice, dict):
+        return ""
+    message = first_choice.get("message")
+    if isinstance(message, dict):
+        content = message.get("content")
+        if isinstance(content, str):
+            return content.strip()
+    text = first_choice.get("text")
+    if isinstance(text, str):
+        return text.strip()
+    return ""
 
 
 def request(
     method: str,
     url: str,
-    body: dict[str, Any] | None = None,
+    body: dict[str, object] | None = None,
     headers: dict[str, str] | None = None,
     timeout: int = TIMEOUT,
-) -> tuple[int, dict[str, Any]]:
+) -> tuple[int, dict[str, object]]:
     data = None if body is None else json.dumps(body).encode()
     req = urllib.request.Request(url, data=data, method=method)
     req.add_header("Content-Type", "application/json")
@@ -54,7 +61,7 @@ def request(
 
 
 def wait_ready(url: str, attempts: int = 90) -> bool:
-    for _attempt in range(attempts):
+    for _ in range(attempts):
         status, _ = request("GET", url, timeout=10)
         if status == 200:
             return True
@@ -90,7 +97,7 @@ def prove(caller_key: str, label: str) -> bool:
         return False
     status, signin = request("POST", f"{OPENWEBUI}/api/v1/auths/signin", {"email": "", "password": ""})
     token = signin.get("token")
-    if not token:
+    if not token or not isinstance(token, str):
         print(f"{label}_FAILED openwebui signin http={status} {json.dumps(signin)[:300]}", flush=True)
         return False
     return complete(OPENWEBUI_COMPLETIONS, token, f"{label}_OPENWEBUI")
@@ -104,7 +111,7 @@ def main() -> int:
         return 2
     if not prove(caller_key, label):
         return 1
-    print("BOTH_PROOFS_OK", flush=True)
+    print("BOTH_PROOF_OK", flush=True)
     return 0
 
 
