@@ -87,7 +87,10 @@ idea (issue in agent-todo)
 - `issue-selector` — reads the candidate issues and picks one, avoiding
   duplicates and repeating recent picks.
 - `issue-refiner` — a technical writer that rewrites issue bodies into
-  `## Goal` and `## How to implement`.
+  `## Goal` and `## How to implement`, keeping at most 4000 visible
+  characters before any `<details>` fold and moving the rest into one
+  `<details><summary>Extra context</summary>` fold inside the
+  implementation section.
 - `coordinator` and `model-discovery` — the main implementer and the model
   picker. They live in `bacluc/provision-machines` and are installed by the
   `setup-opencode` action.
@@ -96,7 +99,9 @@ idea (issue in agent-todo)
 
 - `completion-check` — runs all quality checks (see below).
 - `validate_refined_issue.py` — checks that a refined issue body has exactly
-  the two required sections.
+  the two required sections and at most 4000 visible characters before any
+  `<details>` fold (reason `too_long`); extra detail goes into a
+  `<details>` fold inside the implementation section.
 - `dump_subagent_transcripts.py` — dumps agent session transcripts for
   debugging.
 - `refresh-token.py` / `chatgpt-login.py` — refresh the OpenAI login without
