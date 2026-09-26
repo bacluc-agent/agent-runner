@@ -1313,11 +1313,14 @@ if {guard[len("if ") : -len("; then")]}; then exit 0; else exit 1; fi
 
 
 class TestTimeoutAnnotationSeverity:
-    """A refinement timeout skips one issue; it must not fail the whole run.
+    """Severity buys loudness; the exit code is what fails a run.
 
-    A `::error::` annotation fails a workflow run even when the step exits 0, so the
-    refiner's 124 has to stay a warning while the three sites that really do fail the
-    run stay errors (bacluc-agent/agent-todo#283).
+    `core.error` only writes the annotation (`actions/toolkit` `core.ts` sets the
+    process exit code in `core.setFailed`, not in `core.error`), so severity does not
+    decide whether a run fails — the exit code does. Severity buys loudness for a step
+    that is about to recover: `opencode.yml`'s discovery 124 falls back and exits 0, so
+    it is a warning, while the three sites that really do fail the run stay errors
+    (bacluc-agent/agent-todo#283).
     """
 
     # (path, status variable, expected severity)
@@ -1325,7 +1328,7 @@ class TestTimeoutAnnotationSeverity:
         (".github/workflows/refine-issues.yml", "opencode_status", "warning"),
         (".github/workflows/hourly-issue.yml", "selection_status", "error"),
         (".github/workflows/opencode.yml", "coordinator_status", "error"),
-        (".github/workflows/opencode.yml", "discovery_status", "error"),
+        (".github/workflows/opencode.yml", "discovery_status", "warning"),
     ]
 
     def _annotation(self, path, variable):
@@ -1428,9 +1431,10 @@ def run_workflow_selector(path, cache, tmp_path, requested="", model=None, resol
 
     `requested` and `model` are the inputs the model slot is resolved from, so the
     degradation announcement can be replayed for a fallback that is never dispatched.
-    `resolved` is what `requested` resolved to, which is what the announcement compares
-    the dispatched model against: a short alias normalises, so the raw request and the
-    dispatched model are different strings for the very same request.
+    `resolved` is what `requested` resolved to; the pair is what the announcement judges
+    the dispatched model against. On the auto path `requested` is empty, and a short alias
+    normalises, so `$model` can equal `$resolved` without the dispatch being what was
+    asked for.
 
     The block is located by shape, not by fixed indentation, and bash never inherits
     stdin: anchoring the give-up on one exact `exit 1` string silently extended the
@@ -1574,6 +1578,15 @@ def test_a_discarded_fallback_is_not_announced(requested, resolved, model, monke
 ANNOUNCEMENT_CASES = [
     # a deny-listed dispatch nothing asked for, while the pick that was kept is `big-pickle`
     ("", "", "opencode/ling-3.0-flash-fin-free", "opencode/ling-3.0-flash-fin-free"),
+    # the auto path: nothing was requested, so `requested_model` is the selector's own
+    # pick and resolves to itself, `$model` == `$resolved`, and the pre-fix
+    # `$model != $resolved` suppressed the announcement on exactly this path
+    (
+        "",
+        "opencode/ling-3.0-flash-fin-free",
+        "opencode/ling-3.0-flash-fin-free",
+        "opencode/ling-3.0-flash-fin-free",
+    ),
     # the user's own deny-listed request, reached through a short alias that normalises to
     # `opencode/nemotron-3-ultra-free`; it is dispatched unchanged, so no fallback happened
     (
@@ -1589,14 +1602,16 @@ ANNOUNCEMENT_CASES = [
 def test_the_announcement_names_the_dispatched_model(
     requested, resolved, model, announced, monkeypatch, tmp_path
 ):
-    """The announced model has to be `$model`, and only when it is not what was requested.
+    """The announced model has to be `$model`, and only when the dispatch is a degradation.
 
     The harness defaults `model` to `fallback_model`, so an announcement naming either is
     indistinguishable and `"$fallback_model"` in the printf survives a green suite while
-    the run log claims a non-deny-listed fallback over a deny-listed dispatch. Comparing
-    against the resolved request instead of the raw one also keeps a short alias for a
-    deny-listed model from being reported as an unrequested fallback
-    (bacluc-agent/agent-todo#283).
+    the run log claims a non-deny-listed fallback over a deny-listed dispatch.
+
+    "Only when it is not what was requested" is judged against what the run asked for:
+    nothing (`requested` empty, the auto path, where `$model` equals `$resolved`) or a
+    request that is not itself deny-listed — so a short alias for a deny-listed model
+    stays silent (bacluc-agent/agent-todo#283).
     """
     for key, value in SELECTOR_EMPTY_KEYS.items():
         monkeypatch.setenv(key, value)

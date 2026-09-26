@@ -235,7 +235,7 @@ jobs:
             fi
             if ((discovery_status != 0)); then
               printf 'Model discovery failed with status %s; falling back to the verified model %q.\n' "$discovery_status" "$fallback_model"
-              ((discovery_status == 124)) && printf '::error::model discovery exceeded the 5m limit; falling back to the verified model %q\n' "$fallback_model"
+              ((discovery_status == 124)) && printf '::warning::model discovery exceeded the 5m limit; falling back to the verified model %q\n' "$fallback_model"
               model="$fallback_model"
             else
               model="$({ grep -oE 'coordinator: [^,[:space:]]+' "$discovery_output" || true; } | tail -n 1 | cut -d' ' -f2-)"
@@ -325,7 +325,7 @@ jobs:
             printf 'Model availability: fallback requested %q is available; resolved model %q\n' "$fallback_model" "$fallback_resolved"
             model="$fallback_resolved"
           fi
-          if [[ "$model" != "$resolved" ]] && grep -Eq "$deny_re" <<<"$model"; then
+          if grep -Eq "$deny_re" <<<"$model" && { [[ -z "${requested:-}" ]] || ! grep -Eq "$deny_re" <<<"$resolved"; }; then
             printf '%s\n' "Using fallback model: $model" >&2
           fi
           printf '\n\n\n\n\n\n'
