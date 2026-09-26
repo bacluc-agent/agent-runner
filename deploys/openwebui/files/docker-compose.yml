@@ -4,6 +4,8 @@ services:
     image: "ghcr.io/open-webui/open-webui:v0.11.4"
     ports:
       - "127.0.0.1:13307:8080"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - "open-webui:/app/backend/data"
     restart: "unless-stopped"
@@ -20,6 +22,8 @@ services:
     volumes:
       - "./aisix-config.yaml:/etc/aisix/config.yaml:ro"
       - "./resources.yaml:/etc/aisix/resources.yaml:ro"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     env_file:
       - "./.env"
   searxng:
