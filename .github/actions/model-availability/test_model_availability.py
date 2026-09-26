@@ -1,5 +1,6 @@
 import json
 import re
+import shlex
 import subprocess
 import tempfile
 import types
@@ -1416,14 +1417,28 @@ SELECTOR_PATHS = [
 ]
 
 
-def run_workflow_selector(path, cache, tmp_path):
-    """Run a workflow's selector block under bash; return (selection, returncode, stderr)."""
+def run_workflow_selector(path, cache, tmp_path, requested="", model=None):
+    """Run a workflow's selector block under bash; return (selection, returncode, stderr).
+
+    `requested` and `model` are the inputs the model slot is resolved from, so the
+    degradation announcement can be replayed for a fallback that is never dispatched.
+    """
     lines = Path(path).read_text().splitlines()
     start = next(i for i, line in enumerate(lines) if SELECTOR_START.match(line))
     variable = SELECTOR_START.match(lines[start]).group(1)
     loop_end = next(i for i, line in enumerate(lines[start:], start) if line == "          done")
     give_up = next(i for i, line in enumerate(lines[loop_end:], loop_end) if line == "            exit 1")
     end = next(i for i, line in enumerate(lines[give_up:], give_up) if line == "          fi")
+    announced = next(i for i, line in enumerate(lines) if "Using fallback model:" in line)
+    block = [
+        f"requested={shlex.quote(requested)}",
+        *lines[start : end + 1],
+        f"model=${{{variable}}}" if model is None else f"model={shlex.quote(model)}",
+    ]
+    if announced > end:
+        # opencode.yml only: the announcement moved past the model resolution, so it names
+        # the model that is dispatched and skips an explicitly requested one.
+        block += lines[announced - 1 : announced + 2]
     models_file = tmp_path / "available-models.txt"
     models_file.write_text("".join(f"{model}\n" for model in cache))
     selection_file = tmp_path / "selection.txt"
@@ -1436,7 +1451,7 @@ def run_workflow_selector(path, cache, tmp_path):
                 [
                     "set -Eeuo pipefail",
                     f"available_models_file={models_file}",
-                    *lines[start : end + 1],
+                    *block,
                     f'printf \'%s\' "${variable}" > {selection_file}',
                 ]
             ),
@@ -1484,4 +1499,47 @@ def test_a_deny_listed_pick_is_announced_on_stderr(path, cache, expected, announ
     assert (selection, status) == (expected, 0), f"{path}: cache {cache} gave {selection!r}/{status}"
     assert ("Using fallback model: " in stderr) is announced, (
         f"{path}: cache {cache} announced={announced} but stderr was {stderr!r}"
+    )
+
+
+# (requested input, dispatched model) - the deny-listed pick in the cache is never dispatched
+DISCARDED_CASES = [
+    ("opencode/some-paid-model", "opencode/some-paid-model"),
+    ("opencode/nemotron-3-ultra-free", "opencode/nemotron-3-ultra-free"),
+    ("", "opencode/keep-free"),
+]
+
+
+@pytest.mark.parametrize("requested,model", DISCARDED_CASES)
+def test_a_discarded_fallback_is_not_announced(requested, model, monkeypatch, tmp_path):
+    """`Using fallback model:` must name the model that is dispatched, or say nothing.
+
+    opencode.yml resolves the model slot after the selector, so the announcement sits past
+    that resolution: an explicit input, and a model the discovery agent answered with,
+    both discard the deny-listed pick without reporting it (bacluc-agent/agent-todo#283).
+    """
+    for key, value in SELECTOR_EMPTY_KEYS.items():
+        monkeypatch.setenv(key, value)
+    selection, status, stderr = run_workflow_selector(
+        ".github/workflows/opencode.yml",
+        ["opencode/ling-3.0-flash-fin-free"],
+        tmp_path,
+        requested=requested,
+        model=model,
+    )
+    assert (selection, status) == ("opencode/ling-3.0-flash-fin-free", 0), f"{selection!r}/{status}"
+    assert "Using fallback model:" not in stderr, (
+        f"requested {requested!r} dispatched {model!r} but stderr announced {stderr!r}"
+    )
+
+
+def test_a_requested_model_outlives_an_empty_cache(monkeypatch, tmp_path):
+    """`-z "${requested:-}"` is what lets a requested-but-unavailable model reach resolve_model."""
+    for key, value in SELECTOR_EMPTY_KEYS.items():
+        monkeypatch.setenv(key, value)
+    selection, status, stderr = run_workflow_selector(
+        ".github/workflows/opencode.yml", [], tmp_path, requested="opencode/some-paid-model"
+    )
+    assert (selection, status) == ("", 0), (
+        f"an empty cache gave up on an explicitly requested model: {selection!r}/{status} {stderr!r}"
     )

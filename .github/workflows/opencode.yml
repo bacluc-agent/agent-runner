@@ -201,9 +201,6 @@ jobs:
             fallback_model="$candidate"
             break
           done
-          if [[ -n "$fallback_model" ]] && grep -Eq "$deny_re" <<<"$fallback_model"; then
-            printf '%s\n' "Using fallback model: $fallback_model" >&2
-          fi
           if [[ -z "$fallback_model" && -z "${requested:-}" ]]; then
             printf '%s\n' 'No coordinator fallback model is available; not dispatching.' >&2
             printf '::error::no dispatchable coordinator model: every available model is key-gated or denied\n'
@@ -327,6 +324,9 @@ jobs:
             fi
             printf 'Model availability: fallback requested %q is available; resolved model %q\n' "$fallback_model" "$fallback_resolved"
             model="$fallback_resolved"
+          fi
+          if [[ "$model" != "${requested:-}" ]] && grep -Eq "$deny_re" <<<"$model"; then
+            printf '%s\n' "Using fallback model: $model" >&2
           fi
           printf '\n\n\n\n\n\n'
           printf 'Chosen model is %s\n' "$model"
