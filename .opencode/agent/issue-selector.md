@@ -8,6 +8,8 @@ permission:
   glob: allow
   grep: allow
   webfetch: allow
+  bash:
+    "*": allow
 ---
 
 # Issue Selector Agent
