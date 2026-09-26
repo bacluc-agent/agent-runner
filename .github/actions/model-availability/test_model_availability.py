@@ -1397,6 +1397,62 @@ class TestHourlySelectionTail:
         assert result.returncode == 124, f"exit {result.returncode}, expected the real status 124"
 
 
+class TestCoordinatorOutputTail:
+    """A coordinator 124 failed with its output nowhere, so the failure block annotates, groups
+    the tail and streams the last 200 lines of the capture the `| tee` really wrote
+    (bacluc-agent/agent-todo#283)."""
+
+    WORKFLOW = ".github/workflows/opencode.yml"
+    CAPTURE = re.compile(r'tee "\$RUNNER_TEMP/([^"]+)"')
+
+    def _failure_block(self):
+        lines = Path(self.WORKFLOW).read_text().splitlines()
+        start = next(
+            n for n, line in enumerate(lines) if line.strip() == "if ((coordinator_status != 0)); then"
+        )
+        end = next(n for n, line in enumerate(lines[start:], start) if line.strip() == "fi")
+        return "\n".join(line.strip() for line in lines[start : end + 1]), lines
+
+    def _run(self, block, tmp_path, status, capture="coordinator.out"):
+        if capture:
+            (tmp_path / capture).write_text("coordinator said something before it died\n")
+        return subprocess.run(
+            ["bash", "-c", f"set -Eeuo pipefail\ncoordinator_status={status}\nCOORDINATOR_TIMEOUT=30\n{block}"],
+            capture_output=True,
+            text=True,
+            env={
+                "PATH": "/usr/bin:/bin",
+                "RUNNER_TEMP": str(tmp_path),
+                "GITHUB_STEP_SUMMARY": str(tmp_path / "summary.md"),
+            },
+        )
+
+    @pytest.mark.parametrize("status,annotated", [(124, True), (7, False)])
+    def test_a_failure_surfaces_the_captured_output(self, tmp_path, status, annotated):
+        block, _ = self._failure_block()
+        result = self._run(block, tmp_path, status)
+        assert result.returncode == status, f"exit {result.returncode}, expected {status}"
+        assert ("::error::coordinator exceeded the" in result.stdout) is annotated, result.stdout
+        assert "::group::coordinator output tail\n" in result.stdout, result.stdout
+        assert "::endgroup::\n" in result.stdout, result.stdout
+        assert "coordinator said something before it died" in (tmp_path / "summary.md").read_text()
+
+    def test_a_missing_capture_does_not_mask_the_coordinator_exit_status(self, tmp_path):
+        """The `|| true` is load-bearing: with no capture on disk the step must still exit 124."""
+        block, _ = self._failure_block()
+        result = self._run(block, tmp_path, 124, capture=None)
+        assert "No such file" in result.stderr, "the harness must really be missing the capture"
+        assert result.returncode == 124, f"exit {result.returncode}, expected the real status 124"
+
+    def test_the_tail_names_the_capture_the_coordinator_tee_writes(self):
+        block, lines = self._failure_block()
+        written = {m.group(1) for line in lines if (m := self.CAPTURE.search(line))}
+        assert written == {"coordinator.out"}, f"the coordinator capture moved: {sorted(written)}"
+        tail = next(line.strip() for line in block.splitlines() if "tail -n 200" in line)
+        assert '"$RUNNER_TEMP/coordinator.out"' in tail, tail
+        assert ".stderr" not in tail, tail
+
+
 SELECTOR_START = re.compile(r"^ {10}(fallback_model|selection_model)=''$")
 SELECTOR_EMPTY_KEYS = {
     "OPENCODE_GO_API_KEY": "",
@@ -1769,3 +1825,39 @@ def test_a_deny_listed_discovery_fallback_is_announced(monkeypatch, tmp_path):
     assert [line for line in stderr.splitlines() if "Using fallback model:" in line] == [
         "Using fallback model: opencode/ling-3.0-flash-fin-free"
     ], f"a deny-listed model was dispatched with nothing requested: {stderr!r}"
+
+
+@pytest.mark.parametrize("output,outcome,expected", [("124", "failure", "124"), ("", "failure", "failure")])
+def test_the_pr_status_prefers_the_coordinator_exit_status(output, outcome, expected, tmp_path):
+    """`steps.coordinator.outcome` is always the step's conclusion, never the exit code.
+
+    `coordinator_status` carries the real code, so the PR status has to prefer it and fall
+    back to the outcome for a step that wrote no output at all. Actions' `||` yields the left
+    operand when it is set and the right one when it is empty, so the real `STATUS=` line is
+    rendered for both (bacluc-agent/agent-todo#283).
+    """
+    line = next(
+        line.strip()
+        for line in Path(".github/workflows/opencode.yml").read_text().splitlines()
+        if "coordinator exit" in line
+    )
+    assert line.startswith("STATUS="), f"the PR status line moved: {line}"
+    expression = re.search(r"\$\{\{ (.*?) \}\}", line).group(1)
+    operands = [operand.strip() for operand in expression.split("||")]
+    assert operands == [
+        "steps.coordinator.outputs.coordinator_status",
+        "steps.coordinator.outcome",
+    ], f"the PR status prefers something else: {expression!r}"
+    chosen = output or outcome
+    rendered = line.replace(f"${{{{ {expression} }}}}", chosen)
+    status = tmp_path / "status.txt"
+    subprocess.run(
+        ["bash", "-c", f'set -Eeuo pipefail\n{rendered}\nprintf %s "$STATUS" > {status}'],
+        capture_output=True,
+        text=True,
+        check=True,
+        env={"PATH": "/usr/bin:/bin"},
+    )
+    assert f"coordinator exit {expected}" in status.read_text(), (
+        f"output {output!r} outcome {outcome!r} rendered {status.read_text()!r}"
+    )
