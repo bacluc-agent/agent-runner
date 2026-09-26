@@ -201,6 +201,7 @@ jobs:
           done
           if [[ -z "$fallback_model" && -z "${requested:-}" ]]; then
             printf '%s\n' 'No coordinator fallback model is available; not dispatching.' >&2
+            printf '::error::no coordinator fallback model is available; every available model is excluded by the model-selection rules: %s\n' "$(paste -sd, "$available_models_file")"
             exit 1
           fi
 
@@ -548,7 +549,7 @@ jobs:
           elif [[ -n "${{ steps.fatal-guard.outputs.fatal-reason || '' }}" ]]; then
             STATUS="❌ fatal error: ${{ steps.fatal-guard.outputs.fatal-reason }}"
           else
-            STATUS="⚠️ failed (coordinator exit ${{ steps.coordinator.outcome }})"
+            STATUS="⚠️ failed (coordinator exit ${{ steps.coordinator.outputs.coordinator_status || steps.coordinator.outcome }})"
           fi
 
           # Check for existing PR
