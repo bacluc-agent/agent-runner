@@ -174,12 +174,14 @@ jobs:
           # Exclude known-weak free models (ling-3.0-flash-fin-free, mimo-v2.5-free, nemotron-*, muse-spark-*)
           # per model-discovery.md (provision-machines devel branch); they pass the trivial OK
           # probe but fail as coordinator/selector in 10+ runs (e.g. 34029380869, 34042660858).
-          mapfile -t free_models < <(grep -E '^(opencode|openrouter)/[^[:space:]]+(-free|:free)$' "$available_models_file" | grep -Ev '/(ling-3\.0-flash-fin|mimo-v2\.5)(-free|:free)$|/nemotron-|/muse-spark-' | awk '!seen[$0]++')
+          deny_re='/(ling-3\.0-flash-fin|mimo-v2\.5)(-free|:free)$|/nemotron-|/muse-spark-'
+          mapfile -t unfiltered < "$available_models_file"
+          mapfile -t free_models < <(grep -E '^(opencode|openrouter)/[^[:space:]]+(-free|:free)$' "$available_models_file" | grep -Ev "$deny_re" | awk '!seen[$0]++')
           for candidate in \
             'opencode/big-pickle' \
             'opencode-go-openai/qwen3.8-flash' \
             'opencode-go-openai-2/qwen3.8-flash' \
-            "${free_models[@]}"; do
+            "${free_models[@]}" "${unfiltered[@]}"; do
             case "$candidate" in
               opencode-go-openai/qwen3.8-flash)
                 grep -Fxq "$candidate" "$available_models_file" && [[ -n "$OPENCODE_GO_API_KEY" ]] || continue
@@ -199,8 +201,12 @@ jobs:
             fallback_model="$candidate"
             break
           done
+          if [[ -n "$fallback_model" ]] && grep -Eq "$deny_re" <<<"$fallback_model"; then
+            printf '%s\n' "Using fallback model: $fallback_model" >&2
+          fi
           if [[ -z "$fallback_model" && -z "${requested:-}" ]]; then
             printf '%s\n' 'No coordinator fallback model is available; not dispatching.' >&2
+            printf '::error::no coordinator fallback model is available; the model-availability cache returned no models\n'
             exit 1
           fi
 
@@ -232,10 +238,11 @@ jobs:
             fi
             if ((discovery_status != 0)); then
               printf 'Model discovery failed with status %s; falling back to the verified model %q.\n' "$discovery_status" "$fallback_model"
+              ((discovery_status == 124)) && printf '::error::model discovery exceeded the 5m limit; falling back to the verified model %q\n' "$fallback_model"
               model="$fallback_model"
             else
               model="$({ grep -oE 'coordinator: [^,[:space:]]+' "$discovery_output" || true; } | tail -n 1 | cut -d' ' -f2-)"
-              if [[ -z "$model" ]] || ! grep -Fxq "$model" "$available_models_file"; then
+              if [[ -z "$model" ]] || ! grep -Fxq "$model" "$available_models_file" || grep -Eq "$deny_re" <<<"$model"; then
                 printf 'Model discovery returned no usable available model; falling back to the verified model %q.\n' "$fallback_model"
                 model="$fallback_model"
               fi
@@ -396,6 +403,10 @@ jobs:
             echo "failure_mode=timeout" >> "$GITHUB_OUTPUT"
           fi
           if ((coordinator_status != 0)); then
+            ((coordinator_status == 124)) && printf '::error::coordinator exceeded the %sm limit (opencode exit %s)\n' "$COORDINATOR_TIMEOUT" "$coordinator_status"
+            printf '::group::coordinator output tail\n'
+            tail -n 200 "$RUNNER_TEMP/coordinator.out" | tee -a "$GITHUB_STEP_SUMMARY" || true
+            printf '::endgroup::\n'
             exit "$coordinator_status"
           fi
           exit "$coordinator_tee_status"
@@ -549,7 +560,7 @@ jobs:
           elif [[ -n "${{ steps.fatal-guard.outputs.fatal-reason || '' }}" ]]; then
             STATUS="❌ fatal error: ${{ steps.fatal-guard.outputs.fatal-reason }}"
           else
-            STATUS="⚠️ failed (coordinator exit ${{ steps.coordinator.outcome }})"
+            STATUS="⚠️ failed (coordinator exit ${{ steps.coordinator.outputs.coordinator_status || steps.coordinator.outcome }})"
           fi
 
           # Check for existing PR
