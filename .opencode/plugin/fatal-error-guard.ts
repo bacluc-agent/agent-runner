@@ -5,7 +5,7 @@ import { writeFileSync } from "node:fs";
 
 // .ts extension REQUIRED for Node type stripping
 
-// Total: never throws, always returns a string
+// Total: every input yields a string, so the marker is always well-formed
 export function messageOf(error: unknown): string {
   if (typeof error === "string") return error;
   if (!error || typeof error !== "object") return "unknown";

@@ -405,7 +405,7 @@ jobs:
           if [[ -f "$RUNNER_TEMP/opencode-fatal.json" ]]; then
             reason=$(jq -r '.reason' "$RUNNER_TEMP/opencode-fatal.json")
             fatal_model=$(jq -r '.model' "$RUNNER_TEMP/opencode-fatal.json")
-            fatal_message=$(jq -r '(.message // empty) | tostring | gsub("[\r\n]+"; " ")' "$RUNNER_TEMP/opencode-fatal.json")
+            fatal_message=$(jq -r '(.message // empty) | tostring | gsub("%"; "%25") | gsub("[\r\n]+"; " ")' "$RUNNER_TEMP/opencode-fatal.json")
             printf '::error::fatal provider error (%s) from model %s: %s\n' "$reason" "$fatal_model" "${fatal_message:-unknown}"
             {
               echo "fatal-model=${fatal_model}"
