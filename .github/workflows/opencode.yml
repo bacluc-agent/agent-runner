@@ -393,6 +393,10 @@ jobs:
           echo "coordinator_status=${coordinator_status}" >> "$GITHUB_OUTPUT"
           echo "coordinator_tee_status=${coordinator_tee_status}" >> "$GITHUB_OUTPUT"
           if ((coordinator_status != 0)); then
+            ((coordinator_status == 124)) && printf '::error::coordinator exceeded the %sm limit (opencode exit %s)\n' "$COORDINATOR_TIMEOUT" "$coordinator_status"
+            printf '::group::coordinator output tail\n'
+            tail -n 200 "$RUNNER_TEMP/coordinator.out" | tee -a "$GITHUB_STEP_SUMMARY" || true
+            printf '::endgroup::\n'
             exit "$coordinator_status"
           fi
           exit "$coordinator_tee_status"
