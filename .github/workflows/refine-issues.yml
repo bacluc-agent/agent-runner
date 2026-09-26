@@ -240,6 +240,7 @@ jobs:
           done < "$candidates"
 
           printf '\nRefinement complete: %s refined, %s failed.\n' "$refined" "$failed"
+          (( refined > 0 )) || exit 1
 
       - name: Dump debug output
         if: always()

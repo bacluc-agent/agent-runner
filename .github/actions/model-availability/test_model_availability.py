@@ -1202,6 +1202,36 @@ class TestDiscoveryTimeout:
         assert model_availability.DISCOVERY_TIMEOUT_SECONDS <= 120
 
 
+class TestRefineIssuesExitCode:
+    WORKFLOW = Path(__file__).parents[3] / ".github/workflows/refine-issues.yml"
+
+    @classmethod
+    def _completion_tail(cls):
+        lines = cls.WORKFLOW.read_text().splitlines()
+        index = next(
+            i
+            for i, line in enumerate(lines)
+            if line.strip().startswith("printf '\\nRefinement complete:")
+        )
+        return "\n".join(lines[index : index + 2])
+
+    @staticmethod
+    def _run(tail, refined, failed):
+        return subprocess.run(
+            ["bash", "-c", f"refined={refined}\nfailed={failed}\n{tail}"],
+            capture_output=True,
+            text=True,
+        )
+
+    def test_all_refinements_failed_fails_the_step(self):
+        result = self._run(self._completion_tail(), 0, 3)
+        assert result.returncode == 1
+        assert "0 refined, 3 failed" in result.stdout
+
+    def test_partial_success_still_succeeds(self):
+        assert self._run(self._completion_tail(), 1, 2).returncode == 0
+
+
 class TestWorkflowOpenRouterSelection:
     WORKFLOWS = [
         ".github/workflows/opencode.yml",
