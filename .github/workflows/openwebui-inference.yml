@@ -1,0 +1,138 @@
+name: Prove OpenWebUI inference
+
+on:
+  workflow_dispatch:
+    inputs:
+      provision_machines_ref:
+        description: Branch of BacLuc/provision-machines to prove
+        default: issue-263-openwebui-aisix-models
+        required: true
+        type: string
+      prove_model:
+        description: Model id aisix should serve (the router alias, not the upstream name)
+        default: chat
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  prove:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      PROVE_MODEL: ${{ inputs.prove_model }}
+      PROOF_REF: ${{ inputs.provision_machines_ref }}
+      PROOF_STACK: stack
+      PROOF_SECRETS: ${{ secrets.BACLUC_AGENT_GITHUB_TOKEN }},${{ secrets.OPENCODE_GO_API_KEY }},${{ secrets.OPENCODE_GO_2_API_KEY }},${{ secrets.OPENROUTER_API_KEY }}
+      OPENCODE_GO_API_KEY: ${{ secrets.OPENCODE_GO_API_KEY }}
+      OPENCODE_GO_2_API_KEY: ${{ secrets.OPENCODE_GO_2_API_KEY }}
+
+    steps:
+      - name: Check out agent-runner
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check out provision-machines
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: BacLuc/provision-machines
+          ref: ${{ inputs.provision_machines_ref }}
+          path: provision-machines
+          token: ${{ secrets.BACLUC_AGENT_GITHUB_TOKEN }}
+
+      - name: Render the stack .env from group data
+        run: |
+          set -euo pipefail
+          echo "::add-mask::${OPENCODE_GO_API_KEY}"
+          echo "::add-mask::${OPENCODE_GO_2_API_KEY}"
+          caller="sk-proof-$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+          echo "::add-mask::${caller}"
+          mkdir -p "$PROOF_STACK"
+          {
+            echo 'import os'
+            echo ''
+            echo 'openwebui = {'
+            echo '    "opencode_api_key": os.environ["OPENCODE_GO_API_KEY"],'
+            echo '    "opencode_api_key_2": os.environ["OPENCODE_GO_2_API_KEY"],'
+            echo '    "opencode_api_key_3": "sk-proof-unused-third-subscription",'
+            echo '    "requesty_api_key": "sk-proof-unused-requesty",'
+            echo '    "cortecs_api_key": "sk-proof-unused-cortecs",'
+            echo "    \"openwebui_caller_key\": \"${caller}\","
+            echo '    "zen_model_chat": "space-bunny-free",'
+            echo '    "zen_model_chat_thinking": "space-bunny-free",'
+            echo '    "zen_model_web_research": "space-bunny-free",'
+            echo '    "zen_model_fast": "space-bunny-free",'
+            echo '}'
+          } > provision-machines/group_data/local.py
+          python3 - "$PROOF_STACK/.env" <<'PY'
+          import sys
+
+          sys.path.insert(0, "provision-machines")
+          from group_data.all import openwebui
+          from operations.openwebui_env import env_lines
+
+          with open(sys.argv[1], "w") as env_file:
+              env_file.write("\n".join(env_lines(openwebui)) + "\n")
+          PY
+          sed -E 's/^([A-Z0-9_]*(KEY|KEYS)[A-Z0-9_]*)=.*/\1=<redacted>/' "$PROOF_STACK/.env"
+
+      - name: Link the committed stack files
+        run: |
+          set -euo pipefail
+          for f in docker-compose.yml resources.yaml aisix-config.yaml; do
+            ln -sf "../provision-machines/deploys/openwebui/files/$f" "$PROOF_STACK/$f"
+          done
+          mkdir -p "$PROOF_STACK/searngx"
+          for f in settings.yml limiter.toml; do
+            ln -sf "../../provision-machines/deploys/openwebui/files/searngx/$f" "$PROOF_STACK/searngx/$f"
+          done
+          ls -l "$PROOF_STACK"
+
+      - name: Validate the aisix resources
+        run: |
+          set -euo pipefail
+          docker volume create open-webui
+          cd "$PROOF_STACK"
+          docker compose config -q
+          docker compose run --rm --no-deps --entrypoint aisix aisix \
+            --config /etc/aisix/config.yaml validate --resources /etc/aisix/resources.yaml
+
+      - name: Start the stack
+        run: |
+          set -euo pipefail
+          cd "$PROOF_STACK"
+          docker compose up -d
+          docker compose ps
+
+      - name: Prove inference with both subscriptions live
+        run: |
+          set -euo pipefail
+          cd "$PROOF_STACK"
+          container=$(docker compose ps -q open-webui)
+          docker cp "$GITHUB_WORKSPACE/scripts/prove_openwebui_inference.py" "$container":/tmp/prove.py
+          docker compose exec -T -e PROVE_MODEL="$PROVE_MODEL" -e PROVE_TIMEOUT=180 open-webui \
+            python3 /tmp/prove.py LIVE
+
+      - name: Prove the failover on a dead primary key
+        run: |
+          set -euo pipefail
+          cd "$PROOF_STACK"
+          sed -i 's|^OPENCODE_API_KEY=.*|OPENCODE_API_KEY=sk-proof-dead-primary-key|' .env
+          docker compose up -d --force-recreate aisix
+          sleep 10
+          docker compose exec -T -e PROVE_MODEL="$PROVE_MODEL" -e PROVE_TIMEOUT=180 open-webui \
+            python3 /tmp/prove.py FAILOVER
+
+      - name: Collect the stack logs
+        if: always()
+        run: |
+          cd "$PROOF_STACK"
+          docker compose logs --no-color || true
+
+      - name: Tear the stack down
+        if: always()
+        run: |
+          cd "$PROOF_STACK"
+          docker compose down -v || true
+          docker volume rm open-webui || true
