@@ -56,6 +56,18 @@ jobs:
           printf '::add-mask::%s\n' "$OPENCODE_GO_2_API_KEY"
           printf '::add-mask::%s\n' "$OPENCODE_AUTH_CONTENT"
 
+          # /rate_limit is free (it does not count against the quota), so probe it
+          # before any other call. An exhausted quota means "nothing to do this
+          # run", not a red run: without this the first 403 (label create, then
+          # the search) kills the step under `set -e`.
+          _buckets="$(gh api rate_limit --jq '[.resources.core.remaining, .resources.search.remaining] | @tsv' 2>/dev/null || echo 'unknown unknown')"
+          read -r _core _search <<< "$_buckets"
+          printf 'GitHub API rate limit: core=%s search=%s remaining\n' "$_core" "$_search"
+          if [[ "$_core" == 0 || "$_search" == 0 ]]; then
+            printf '::warning::GitHub API quota exhausted (core=%s search=%s); not editing or labeling any issue this run.\n' "$_core" "$_search" >&2
+            exit 0
+          fi
+
           printf '::group::ensure agent labels\n'
           if ! gh label create agent-refined -R "$ISSUE_REPOSITORY" \
             --color 1D76DB --description 'Refined by the issue-refiner agent' --force; then
@@ -72,8 +84,11 @@ jobs:
           printf '\n\n\n\n\n\n'
 
           search_json="$RUNNER_TEMP/candidates.json"
-          gh api "search/issues?q=repo:${ISSUE_REPOSITORY}+is:open+is:issue+-label:agent-refined+-label:ready-for-implementation+-label:agent-ignore+sort:created-asc&per_page=5" \
-            --jq '.items' > "$search_json"
+          if ! gh api "search/issues?q=repo:${ISSUE_REPOSITORY}+is:open+is:issue+-label:agent-refined+-label:ready-for-implementation+-label:agent-ignore+sort:created-asc&per_page=5" \
+            --jq '.items' > "$search_json"; then
+            printf '::warning::could not list candidate issues; skipping this run.\n' >&2
+            exit 0
+          fi
 
           candidates="$RUNNER_TEMP/candidate-numbers.txt"
           jq -r '.[].number | tostring' "$search_json" > "$candidates"
@@ -139,8 +154,10 @@ jobs:
             fi
             printf '\n\n\n\n\n\n'
 
-            title="$(gh issue view "$number" -R "$ISSUE_REPOSITORY" --json title --jq '.title')" || { echo "::warning::skip $number: view title failed" >&2; ((failed++)) || true; continue; }
-            body="$(gh issue view "$number" -R "$ISSUE_REPOSITORY" --json body --jq '.body')" || { echo "::warning::skip $number: view body failed" >&2; ((failed++)) || true; continue; }
+            # One call instead of two: --json title,body returns the same fields.
+            issue_json="$(gh issue view "$number" -R "$ISSUE_REPOSITORY" --json title,body --jq '{title: .title, body: .body}')" || { echo "::warning::skip $number: view title/body failed" >&2; ((failed++)) || true; continue; }
+            title="$(jq -r '.title' <<< "$issue_json")"
+            body="$(jq -r '.body' <<< "$issue_json")"
 
             prompt="$RUNNER_TEMP/refine-prompt.txt"
             {
@@ -198,10 +215,14 @@ jobs:
                 break
               fi
               if (( validation_status == 0 )); then
-                gh issue edit "$number" --body-file "$out" -R "$ISSUE_REPOSITORY"
-                gh issue edit "$number" --add-label "agent-refined" -R "$ISSUE_REPOSITORY"
-                printf 'Issue #%s refined and labeled.\n' "$number"
-                (( refined++ )) || true
+                if gh issue edit "$number" --body-file "$out" -R "$ISSUE_REPOSITORY" \
+                  && gh issue edit "$number" --add-label "agent-refined" -R "$ISSUE_REPOSITORY"; then
+                  printf 'Issue #%s refined and labeled.\n' "$number"
+                  (( refined++ )) || true
+                else
+                  printf '::warning::could not save issue #%s; it stays unrefined for the next run.\n' "$number" >&2
+                  (( failed++ )) || true
+                fi
                 break
               fi
 

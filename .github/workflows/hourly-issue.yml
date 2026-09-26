@@ -80,6 +80,18 @@ jobs:
           printf '::add-mask::%s\n' "$OPENCODE_GO_2_API_KEY"
           printf '::add-mask::%s\n' "$OPENCODE_AUTH_CONTENT"
 
+          # /rate_limit is free (it does not count against the quota), so probe it
+          # before any other call. An exhausted quota means "nothing to do this
+          # run", not a red run: without this the first 403 (label create, then
+          # the search) kills the step under `set -e`.
+          _buckets="$(gh api rate_limit --jq '[.resources.core.remaining, .resources.search.remaining] | @tsv' 2>/dev/null || echo 'unknown unknown')"
+          read -r _core _search <<< "$_buckets"
+          printf 'GitHub API rate limit: core=%s search=%s remaining\n' "$_core" "$_search"
+          if [[ "$_core" == 0 || "$_search" == 0 ]]; then
+            printf '::warning::GitHub API quota exhausted (core=%s search=%s); not selecting or claiming anything this run.\n' "$_core" "$_search" >&2
+            exit 0
+          fi
+
           if ! gh label create agent-running -R "$ISSUE_REPOSITORY" \
             --color 0E8A16 --description 'Selected by the hourly issue runner' --force; then
             printf '::warning::could not ensure the agent-running label exists; the claim may not apply\n'
@@ -92,8 +104,11 @@ jobs:
           # Oldest-first: the 50-item page keeps the OLDEST 50 unclaimed issues instead of the
           # newest 50, so backlog items beyond the cap are the newest, not the oldest.
           search_json="$RUNNER_TEMP/candidates.json"
-          gh api "search/issues?q=repo:${ISSUE_REPOSITORY}+is:open+is:issue+label:ready-for-implementation+-label:agent-running+sort:created-asc&per_page=50" \
-            --jq '.items' > "$search_json"
+          if ! gh api "search/issues?q=repo:${ISSUE_REPOSITORY}+is:open+is:issue+label:ready-for-implementation+-label:agent-running+sort:created-asc&per_page=50" \
+            --jq '.items' > "$search_json"; then
+            printf '::warning::could not list candidate issues; skipping this run.\n' >&2
+            exit 0
+          fi
 
           candidates="$RUNNER_TEMP/candidate-numbers.txt"
           jq -r '.[].number | tostring' "$search_json" > "$candidates"
