@@ -202,12 +202,9 @@ jobs:
             break
           done
           if [[ -z "$fallback_model" && -z "${requested:-}" ]]; then
-            if [[ -z "$fallback_model" ]]; then
-              printf '%s\n' 'No coordinator fallback model is available; not dispatching.' >&2
-              printf '::error::no coordinator fallback model is available; the model-availability cache returned no models\n'
-              exit 1
-            fi
-            printf '%s\n' "Using fallback model: $fallback_model" >&2
+            printf '%s\n' 'No coordinator fallback model is available; not dispatching.' >&2
+            printf '::error::no coordinator fallback model is available; the model-availability cache returned no models\n'
+            exit 1
           fi
 
           printf '%s\n' 'Model selection reasoning: use the requested model unchanged when provided; otherwise discover an available coordinator model.'

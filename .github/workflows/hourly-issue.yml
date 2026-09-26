@@ -141,12 +141,9 @@ jobs:
             break
           done
           if [[ -z "$selection_model" ]]; then
-            if [[ -z "$selection_model" ]]; then
-              printf '%s\n' 'No issue-selection model is available; not dispatching.' >&2
-              printf '::error::no issue-selection model is available; the model-availability cache returned no models\n'
-              exit 1
-            fi
-            printf '%s\n' "Using fallback model: $selection_model" >&2
+            printf '%s\n' 'No issue-selection model is available; not dispatching.' >&2
+            printf '::error::no issue-selection model is available; the model-availability cache returned no models\n'
+            exit 1
           fi
           printf 'Issue selection model: %s\n' "$selection_model"
           echo "selection_model=${selection_model}" >> "$GITHUB_OUTPUT"

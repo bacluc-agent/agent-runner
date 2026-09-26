@@ -1247,6 +1247,40 @@ class TestWorkflowLastResortModel:
             tail = content[at : content.index("exit 1", at)]
             assert "::error::" in tail, f"{path}: the give-up is still plain text"
 
+    def test_give_up_block_has_no_dead_fallback_line(self):
+        """`Using fallback model:` was dead code in all three selectors.
+
+        The outer guard already requires an empty selection, so the nested re-test of the
+        same condition was always true: it gave up and exited before the fallback line
+        could run. Any state combination reaches the give-up, none the fallback
+        (bacluc-agent/agent-todo#283).
+        """
+        for path, give_up_message in self.SELECTORS:
+            content = Path(path).read_text()
+            assert "Using fallback model:" not in content, (
+                f"{path}: the unreachable fallback line is back"
+            )
+            nested = [
+                line
+                for line in self._give_up_block(content, give_up_message)[1:-1]
+                if line.startswith("if ")
+            ]
+            assert not nested, f"{path}: the give-up block re-tests its own guard: {nested}"
+
+    @staticmethod
+    def _give_up_block(content, give_up_message):
+        """The `if` block guarding the give-up, located by the give-up message."""
+        lines = content.splitlines()
+        at = next(i for i, line in enumerate(lines) if give_up_message in line)
+        start = next(i for i in range(at, -1, -1) if lines[i].strip().startswith("if "))
+        indent = len(lines[start]) - len(lines[start].lstrip())
+        end = next(
+            i
+            for i in range(start + 1, len(lines))
+            if lines[i].strip() == "fi" and len(lines[i]) - len(lines[i].lstrip()) == indent
+        )
+        return [line.strip() for line in lines[start : end + 1]]
+
     def test_deny_pattern_is_identical_in_every_selector(self):
         patterns = set()
         for path, marker in self.DENY_SITES:
