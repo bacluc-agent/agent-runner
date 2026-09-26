@@ -121,7 +121,7 @@ jobs:
                 "" \
                 "Apply the review comments for this PR. Check the PR review comments," \
                 "implement the requested changes, push to the PR branch, and verify" \
-                "the changes work. Update the corresponding issue with progress.")
+                "the changes work. Update the existing comment containing <!-- agent-progress --> on the corresponding issue instead of posting new comments.")
             fi
             pr_info=$(jq --arg prompt "$prompt" '. + {prompt: $prompt}' <<<"$pr_info")
             pr_metadata=$(jq --argjson pr "$pr_info" --arg key "$pr_key" --arg repo "$repo" \
