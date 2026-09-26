@@ -1,6 +1,10 @@
 name: Prove OpenWebUI inference
 
 on:
+  push:
+    paths:
+      - ".github/workflows/openwebui-inference.yml"
+      - "scripts/prove_openwebui_inference.py"
   workflow_dispatch:
     inputs:
       provision_machines_ref:
@@ -22,8 +26,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
-      PROVE_MODEL: ${{ inputs.prove_model }}
-      PROOF_REF: ${{ inputs.provision_machines_ref }}
+      PROVE_MODEL: ${{ inputs.prove_model || 'chat' }}
       PROOF_STACK: stack
       PROOF_SECRETS: ${{ secrets.BACLUC_AGENT_GITHUB_TOKEN }},${{ secrets.OPENCODE_GO_API_KEY }},${{ secrets.OPENCODE_GO_2_API_KEY }},${{ secrets.OPENROUTER_API_KEY }}
       OPENCODE_GO_API_KEY: ${{ secrets.OPENCODE_GO_API_KEY }}
@@ -37,7 +40,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: BacLuc/provision-machines
-          ref: ${{ inputs.provision_machines_ref }}
+          ref: ${{ inputs.provision_machines_ref || 'issue-263-openwebui-aisix-models' }}
           path: provision-machines
           token: ${{ secrets.BACLUC_AGENT_GITHUB_TOKEN }}
 
