@@ -1301,6 +1301,86 @@ if {guard[len("if ") : -len("; then")]}; then exit 0; else exit 1; fi
             return subprocess.run(["bash", "-c", script], check=False).returncode == 0
 
 
+class TestTimeoutAnnotationSeverity:
+    """A refinement timeout skips one issue; it must not fail the whole run.
+
+    A `::error::` annotation fails a workflow run even when the step exits 0, so the
+    refiner's 124 has to stay a warning while the three sites that really do fail the
+    run stay errors (bacluc-agent/agent-todo#283).
+    """
+
+    # (path, status variable, expected severity)
+    SITES = [
+        (".github/workflows/refine-issues.yml", "opencode_status", "warning"),
+        (".github/workflows/hourly-issue.yml", "selection_status", "error"),
+        (".github/workflows/opencode.yml", "coordinator_status", "error"),
+        (".github/workflows/opencode.yml", "discovery_status", "error"),
+    ]
+
+    def _annotation(self, path, variable):
+        """Execute the workflow's `((status == 124)) && printf ...` line and return what it prints.
+
+        Run, not string-matched, so flipping the severity in the workflow fails this.
+        """
+        line = next(
+            line.strip()
+            for line in Path(path).read_text().splitlines()
+            if f"(({variable} == 124))" in line and "printf" in line
+        )
+        assert line.startswith(f"(({variable} == 124)) && printf"), line
+        result = subprocess.run(
+            ["bash", "-c", f'{variable}=124\n{line}'], capture_output=True, text=True, check=True
+        )
+        return result.stdout.strip()
+
+    @pytest.mark.parametrize("path,variable,severity", SITES)
+    def test_124_annotates_with_the_expected_severity(self, path, variable, severity):
+        printed = self._annotation(path, variable)
+        assert printed.startswith(f"::{severity}::"), (
+            f"{path}: {variable} 124 annotates {printed!r}, expected ::{severity}::"
+        )
+
+
+class TestHourlySelectionTail:
+    """hourly-issue.yml tailed `${selection}.stderr`, a file the `2> >(tee ...)` process
+    substitution may not have created yet, so a selection failure reported tail's ENOENT
+    (exit 1) instead of the real status. The capture streams to the step log instead
+    (bacluc-agent/agent-todo#283)."""
+
+    WORKFLOW = ".github/workflows/hourly-issue.yml"
+
+    def _tail(self):
+        return next(
+            line.strip()
+            for line in Path(self.WORKFLOW).read_text().splitlines()
+            if "tail -n 200" in line and "selection" in line
+        )
+
+    def test_tail_names_no_capture_the_process_substitution_may_not_have_written(self):
+        tail = self._tail()
+        assert ".stderr" not in tail, f"{self.WORKFLOW}: the tail races ${selection}.stderr again: {tail}"
+        assert '"$RUNNER_TEMP/selection.out"' in tail, tail
+
+    def test_missing_capture_does_not_mask_the_selection_exit_status(self, tmp_path):
+        """The `|| true` is load-bearing: with no capture on disk the step must still exit 124."""
+        lines = Path(self.WORKFLOW).read_text().splitlines()
+        start = next(n for n, line in enumerate(lines) if "if (( selection_status != 0 )); then" in line)
+        end = next(n for n, line in enumerate(lines[start:], start) if line.strip() == "fi")
+        block = "\n".join(line.strip() for line in lines[start : end + 1])
+        result = subprocess.run(
+            ["bash", "-c", f"set -Eeuo pipefail\nselection_status=124\n{block}"],
+            capture_output=True,
+            text=True,
+            env={
+                "PATH": "/usr/bin:/bin",
+                "RUNNER_TEMP": str(tmp_path),  # deliberately empty: no selection.out
+                "GITHUB_STEP_SUMMARY": str(tmp_path / "summary.md"),
+            },
+        )
+        assert "No such file" in result.stderr, "the harness must really be missing the capture"
+        assert result.returncode == 124, f"exit {result.returncode}, expected the real status 124"
+
+
 SELECTOR_START = re.compile(r"^ {10}(fallback_model|selection_model)=''$")
 SELECTOR_EMPTY_KEYS = {
     "OPENCODE_GO_API_KEY": "",
@@ -1315,6 +1395,7 @@ SELECTOR_CASES = [
         0,
     ),
     (["opencode-go-openai-2/qwen3.8-flash"], {}, "", 1),
+    (["opencode-go-openai/qwen3.8-flash"], {}, "", 1),
     (["opencode/mimo-v2.5-free"], {}, "opencode/mimo-v2.5-free", 0),
     (["opencode/big-pickle"], {}, "opencode/big-pickle", 0),
     ([], {}, "", 1),
