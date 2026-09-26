@@ -1,6 +1,6 @@
 ---
 description: Selects one issue from a candidate list and writes its implementation prompt
-mode: all
+mode: primary
 temperature: 0.1
 permission:
   "*": allow
@@ -26,4 +26,4 @@ Before selecting, query open, merged, and closed PRs in `bacluc-agent/agent-runn
 
 Treat avoid list and candidate order as authoritative; never choose avoided unless all others are infeasible. Avoid list/order randomness, rotate area and target repo from the last two picks, cap standing never-close meta tasks to once per four runs, and prefer breadth-first concrete work. Use every candidate field: number, title, labels, date, PR state/update time, last-human-feedback time, excerpt, and enriched context. Prefer untried `PR: none` and feedback-ready candidates over awaiting-feedback PRs without skipping hard work.
 
-The final prompt must be immediate and output-only; no selection explanation or post-selection verification.
+The final prompt must be immediate and output-only; end the reply with exactly `SELECTED_ISSUE: <issue number>` (digits only) and nothing after it; no selection explanation or post-selection verification.
