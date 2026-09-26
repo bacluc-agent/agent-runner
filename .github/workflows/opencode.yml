@@ -201,6 +201,9 @@ jobs:
             fallback_model="$candidate"
             break
           done
+          if [[ -n "$fallback_model" ]] && grep -Eq "$deny_re" <<<"$fallback_model"; then
+            printf '%s\n' "Using fallback model: $fallback_model" >&2
+          fi
           if [[ -z "$fallback_model" && -z "${requested:-}" ]]; then
             printf '%s\n' 'No coordinator fallback model is available; not dispatching.' >&2
             printf '::error::no coordinator fallback model is available; the model-availability cache returned no models\n'

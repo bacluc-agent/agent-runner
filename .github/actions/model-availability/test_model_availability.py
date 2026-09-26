@@ -1234,11 +1234,7 @@ class TestWorkflowLastResortModel:
         (".github/workflows/refine-issues.yml", "No refinement model is available"),
     ]
 
-    DENY_SITES = [
-        (".github/workflows/opencode.yml", "deny_re='"),
-        (".github/workflows/hourly-issue.yml", "grep -Ev '"),
-        (".github/workflows/refine-issues.yml", "grep -Ev '"),
-    ]
+    DENY_SITES = [(path, "deny_re='") for path, _ in SELECTORS]
 
     def test_give_up_annotates(self):
         for path, give_up_message in self.SELECTORS:
@@ -1247,45 +1243,13 @@ class TestWorkflowLastResortModel:
             tail = content[at : content.index("exit 1", at)]
             assert "::error::" in tail, f"{path}: the give-up is still plain text"
 
-    def test_give_up_block_has_no_dead_fallback_line(self):
-        """`Using fallback model:` was dead code in all three selectors.
-
-        The outer guard already requires an empty selection, so the nested re-test of the
-        same condition was always true: it gave up and exited before the fallback line
-        could run. Any state combination reaches the give-up, none the fallback
-        (bacluc-agent/agent-todo#283).
-        """
-        for path, give_up_message in self.SELECTORS:
-            content = Path(path).read_text()
-            assert "Using fallback model:" not in content, (
-                f"{path}: the unreachable fallback line is back"
-            )
-            nested = [
-                line
-                for line in self._give_up_block(content, give_up_message)[1:-1]
-                if line.startswith("if ")
-            ]
-            assert not nested, f"{path}: the give-up block re-tests its own guard: {nested}"
-
-    @staticmethod
-    def _give_up_block(content, give_up_message):
-        """The `if` block guarding the give-up, located by the give-up message."""
-        lines = content.splitlines()
-        at = next(i for i, line in enumerate(lines) if give_up_message in line)
-        start = next(i for i in range(at, -1, -1) if lines[i].strip().startswith("if "))
-        indent = len(lines[start]) - len(lines[start].lstrip())
-        end = next(
-            i
-            for i in range(start + 1, len(lines))
-            if lines[i].strip() == "fi" and len(lines[i]) - len(lines[i].lstrip()) == indent
-        )
-        return [line.strip() for line in lines[start : end + 1]]
-
     def test_deny_pattern_is_identical_in_every_selector(self):
         patterns = set()
         for path, marker in self.DENY_SITES:
             assert marker in (content := Path(path).read_text()), f"{path}: {marker} gone"
-            patterns.add(content.split(marker, 1)[1].split("'", 1)[0])
+            pattern = content.split(marker, 1)[1].split("'", 1)[0]
+            assert content.count(pattern) == 1, f"{path}: the deny pattern is duplicated"
+            patterns.add(pattern)
         assert len(patterns) == 1, f"deny pattern drifted across selectors: {patterns}"
 
     def test_deny_pattern_rejects_the_known_weak_model(self):
@@ -1439,13 +1403,21 @@ SELECTOR_CASES = [
 ]
 
 
+SELECTOR_PATHS = [
+    ".github/workflows/opencode.yml",
+    ".github/workflows/hourly-issue.yml",
+    ".github/workflows/refine-issues.yml",
+]
+
+
 def run_workflow_selector(path, cache, tmp_path):
-    """Run a workflow's selector block under bash; return (selection, returncode)."""
+    """Run a workflow's selector block under bash; return (selection, returncode, stderr)."""
     lines = Path(path).read_text().splitlines()
     start = next(i for i, line in enumerate(lines) if SELECTOR_START.match(line))
     variable = SELECTOR_START.match(lines[start]).group(1)
     loop_end = next(i for i, line in enumerate(lines[start:], start) if line == "          done")
-    end = next(i for i, line in enumerate(lines[loop_end:], loop_end) if line == "          fi")
+    give_up = next(i for i, line in enumerate(lines[loop_end:], loop_end) if line == "            exit 1")
+    end = next(i for i, line in enumerate(lines[give_up:], give_up) if line == "          fi")
     models_file = tmp_path / "available-models.txt"
     models_file.write_text("".join(f"{model}\n" for model in cache))
     selection_file = tmp_path / "selection.txt"
@@ -1467,22 +1439,43 @@ def run_workflow_selector(path, cache, tmp_path):
         text=True,
     )
     selection = selection_file.read_text() if selection_file.exists() else ""
-    return selection, result.returncode
+    return selection, result.returncode, result.stderr
 
 
-@pytest.mark.parametrize(
-    "path",
-    [
-        ".github/workflows/opencode.yml",
-        ".github/workflows/hourly-issue.yml",
-        ".github/workflows/refine-issues.yml",
-    ],
-)
+@pytest.mark.parametrize("path", SELECTOR_PATHS)
 def test_last_resort_runs_through_the_provider_key_guards(path, monkeypatch, tmp_path):
     for cache, keys, expected, expected_status in SELECTOR_CASES:
         for key, value in {**SELECTOR_EMPTY_KEYS, **keys}.items():
             monkeypatch.setenv(key, value)
-        selection, status = run_workflow_selector(path, cache, tmp_path)
+        selection, status, _ = run_workflow_selector(path, cache, tmp_path)
         assert (selection, status) == (expected, expected_status), (
             f"{path}: cache {cache} keys {sorted(keys)} selected {selection!r} with {status}"
         )
+
+
+# (cache, expected selection, whether the log must announce the degradation)
+DEGRADATION_CASES = [
+    (["opencode/ling-3.0-flash-fin-free"], "opencode/ling-3.0-flash-fin-free", True),
+    (["opencode/mimo-v2.5-free"], "opencode/mimo-v2.5-free", True),
+    (["opencode/keep-free"], "opencode/keep-free", False),
+    (["opencode/big-pickle"], "opencode/big-pickle", False),
+]
+
+
+@pytest.mark.parametrize("path", SELECTOR_PATHS)
+@pytest.mark.parametrize("cache,expected,announced", DEGRADATION_CASES)
+def test_a_deny_listed_pick_is_announced_on_stderr(path, cache, expected, announced, monkeypatch, tmp_path):
+    """`Using fallback model:` is how a degraded dispatch shows up in the run log.
+
+    Folding the unfiltered cache into the candidate loop left the line behind
+    `if [[ -z "$model" ]]; then ... exit 1; fi`, so a weak pick dispatched silently. Run the
+    block, so deleting the printf or inverting the deny match fails here
+    (bacluc-agent/agent-todo#283).
+    """
+    for key, value in SELECTOR_EMPTY_KEYS.items():
+        monkeypatch.setenv(key, value)
+    selection, status, stderr = run_workflow_selector(path, cache, tmp_path)
+    assert (selection, status) == (expected, 0), f"{path}: cache {cache} gave {selection!r}/{status}"
+    assert ("Using fallback model: " in stderr) is announced, (
+        f"{path}: cache {cache} announced={announced} but stderr was {stderr!r}"
+    )
