@@ -114,12 +114,14 @@ jobs:
           # Exclude known-weak free models (ling-3.0-flash-fin-free, mimo-v2.5-free, nemotron-*, muse-spark-*)
           # per model-discovery.md (provision-machines devel branch); they pass the trivial OK
           # probe but fail as coordinator/selector in 10+ runs (e.g. 34029380869, 34042660858).
-          mapfile -t free_models < <(grep -E '^(opencode|openrouter)/[^[:space:]]+(-free|:free)$' "$available_models_file" | grep -Ev '/(ling-3\.0-flash-fin|mimo-v2\.5)(-free|:free)$|/nemotron-|/muse-spark-' | awk '!seen[$0]++')
+          deny_re='/(ling-3\.0-flash-fin|mimo-v2\.5)(-free|:free)$|/nemotron-|/muse-spark-'
+          mapfile -t unfiltered < "$available_models_file"
+          mapfile -t free_models < <(grep -E '^(opencode|openrouter)/[^[:space:]]+(-free|:free)$' "$available_models_file" | grep -Ev "$deny_re" | awk '!seen[$0]++')
           for candidate in \
             'opencode-go-openai/qwen3.8-flash' \
             'opencode-go-openai-2/qwen3.8-flash' \
             'opencode/big-pickle' \
-            "${free_models[@]}"; do
+            "${free_models[@]}" "${unfiltered[@]}"; do
             case "$candidate" in
               opencode-go-openai/qwen3.8-flash)
                 grep -Fxq "$candidate" "$available_models_file" && [[ -n "$OPENCODE_GO_API_KEY" ]] || continue
@@ -139,13 +141,13 @@ jobs:
             selection_model="$candidate"
             break
           done
-          if [[ -z "$selection_model" ]]; then
-            selection_model=$(head -n1 "$available_models_file")
-            if [[ -z "$selection_model" ]]; then
-              printf '%s\n' 'No issue-selection model is available; not dispatching.' >&2
-              exit 1
-            fi
+          if [[ -n "$selection_model" ]] && grep -Eq "$deny_re" <<<"$selection_model"; then
             printf '%s\n' "Using fallback model: $selection_model" >&2
+          fi
+          if [[ -z "$selection_model" ]]; then
+            printf '%s\n' 'No issue-selection model is available; not dispatching.' >&2
+            printf '::error::no dispatchable issue-selection model: available candidates may be key-gated, denied, or unsupported\n'
+            exit 1
           fi
           printf 'Issue selection model: %s\n' "$selection_model"
           echo "selection_model=${selection_model}" >> "$GITHUB_OUTPUT"
@@ -255,7 +257,11 @@ jobs:
           fi
           if (( selection_status != 0 )); then
             printf 'Selection failed (opencode=%s); not dispatching.\n' "$selection_status" >&2
-            exit 1
+            ((selection_status == 124)) && printf '::error::issue selection exceeded the 10m limit (opencode exit %s)\n' "$selection_status"
+            printf '::group::selection output tail\n'
+            tail -n 200 "$RUNNER_TEMP/selection.out" | tee -a "$GITHUB_STEP_SUMMARY" || true
+            printf '::endgroup::\n'
+            exit "$selection_status"
           fi
           if ! grep -q '[^[:space:]]' "$selection"; then
             printf '%s\n' 'Selection produced no output; not dispatching.' >&2
