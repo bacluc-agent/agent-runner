@@ -1,5 +1,5 @@
 import { classifyEvent } from "../classify.ts";
-import plugin from "./fatal-error-guard.ts";
+import plugin, { messageOf } from "./fatal-error-guard.ts";
 import assert from "node:assert/strict";
 import test from "node:test";
 
@@ -193,6 +193,26 @@ test("plain text / UnknownError → null", () => {
   );
 });
 
+test("messageOf: plain string message → verbatim", () => {
+  assert.equal(
+    messageOf(
+      "Weekly usage limit reached. To continue using this model now, enable usage from your available balance",
+    ),
+    "Weekly usage limit reached. To continue using this model now, enable usage from your available balance",
+  );
+});
+
+test("messageOf: APIError data.message → message", () => {
+  assert.equal(
+    messageOf(apiErr(402, "Insufficient balance")),
+    "Insufficient balance",
+  );
+});
+
+test("messageOf: non-object → unknown", () => {
+  assert.equal(messageOf(null), "unknown");
+});
+
 test("hook calls process.exit(1) and writes marker", async () => {
   const tmp = (process.env.RUNNER_TEMP = "/tmp/fatal-guard-test");
   const markerPath = `${tmp}/opencode-fatal.json`;
@@ -207,7 +227,10 @@ test("hook calls process.exit(1) and writes marker", async () => {
     mkdirSync(tmp, { recursive: true });
     const hooks = await plugin({});
     await hooks.event({
-      event: { type: "session.error", properties: { error: apiErr(402) } },
+      event: {
+        type: "session.error",
+        properties: { error: apiErr(402, "Insufficient balance") },
+      },
     });
   } catch {}
   process.exit = origExit;
@@ -216,4 +239,5 @@ test("hook calls process.exit(1) and writes marker", async () => {
     await import("node:fs").then((fs) => fs.readFileSync(markerPath, "utf8")),
   );
   assert.equal(marker.reason, "balance");
+  assert.equal(marker.message, "Insufficient balance");
 });
