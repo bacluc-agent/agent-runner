@@ -18,6 +18,10 @@ AUTOMATIC CI (`ci.yml` in `bacluc-agent/agent-runner`, which runs `./scripts/com
 
 When you change files under `.github/`, `.opencode/`, or `AGENTS.md`, trigger only the workflow(s) that exercise the changed code path — never all of them — via `gh workflow run <name> --ref <branch>`, poll `gh run list` for the run URL, and link it in the PR description; push-triggered runs (via `paths:` filters) provide automatic coverage for the workflows whose files you touched.
 
+## PR description length cap
+
+Agent-written PR descriptions must keep at most 4000 visible characters before any `<details>` fold; remaining detail must be moved into `<details>` folds.
+
 /completion-check-command
 
 ```bash
