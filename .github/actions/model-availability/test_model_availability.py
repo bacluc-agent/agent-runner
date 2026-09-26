@@ -764,6 +764,32 @@ class TestAvailableModels:
             "opencode-go-openai-2/glm-5.2",
         ]
 
+    def test_excludes_weak_models_from_available(self):
+        weak = [
+            "opencode/ling-3.0-flash-fin-free",
+            "opencode/nemotron-3-ultra-free",
+            "opencode/muse-spark-1.2-contributor-free",
+            "opencode/mimo-v2.5-free",
+            "openrouter/inclusionai/ling-3.0-flash-fin:free",
+            "openrouter/nvidia/nemotron-3.5-lightning:free",
+            "openrouter/xiaomi/mimo-v2.5",
+        ]
+        keep = ["opencode/big-pickle", "opencode/mimo-v2.6-free"]
+        ok = {"ok": True, "checked": "x"}
+        cache = {model: ok for model in weak + keep + ["opencode-go-openai/qwen3.8-flash"]}
+        result = model_availability.available_models(
+            cache,
+            weak + keep,
+            {"opencode-go-openai": ["qwen3.8-flash"]},
+        )
+        assert result == [
+            "opencode/big-pickle",
+            "opencode/mimo-v2.6-free",
+            "opencode-go-openai/qwen3.8-flash",
+        ]
+        # head -n1 guarantee: the first line can never be a weak model
+        assert result[0] == "opencode/big-pickle"
+
 
 class TestResolveCacheIssue:
     def test_env_var_wins(self, monkeypatch):
@@ -1215,4 +1241,5 @@ class TestWorkflowOpenRouterSelection:
             assert "openrouter/*)" in content
             assert '[[ -n "$OPENROUTER_API_KEY" ]]' in content
             assert "OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}" in content
-            assert "/(ling-3\\.0-flash-fin|mimo-v2\\.5)(-free|:free)$|/nemotron-|/muse-spark-" in content
+            # weak-model exclusion now lives once in model_availability.py WEAK_MODEL_PATTERNS (bacluc-agent/agent-todo#298)
+            assert "grep -Ev" not in content

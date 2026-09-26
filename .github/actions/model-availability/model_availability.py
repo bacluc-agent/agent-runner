@@ -21,6 +21,10 @@ PROVIDER_WHITELISTS: dict[str, list[str]] = {
     # gpt-5.6-sol/terra, gpt-6 excluded: too expensive; widen past gpt- if openai ships non-gpt names
     "openai": [r"^gpt-(?!(5\.6-(sol|terra)|6)).*$"],
 }
+# Exclude known-weak free models (ling-3.0-flash-fin-free, mimo-v2.5-free, nemotron-*, muse-spark-*)
+# per model-discovery.md (provision-machines devel branch); they pass the trivial OK
+# probe but fail as coordinator/selector in 10+ runs (e.g. 34029380869, 34042660858).
+WEAK_MODEL_PATTERNS = [r"nemotron-", r"muse-spark-", r"ling-3\.0-flash-fin", r"mimo-v2\.5"]
 PROVIDERS = (
     ("opencode-go-openai", "OPENCODE_GO_API_KEY"),
     ("opencode-go-openai-2", "OPENCODE_GO_2_API_KEY"),
@@ -402,7 +406,7 @@ def available_models(
             candidate = f"{provider}/{model}"
             if cache.get(candidate, {}).get("ok"):
                 available.append(candidate)
-    return list(dict.fromkeys(available))
+    return [model for model in dict.fromkeys(available) if not is_whitelisted(model, WEAK_MODEL_PATTERNS)]
 
 
 def write_outputs(cache_issue: str | None, cache: dict, available: list[str]) -> None:
