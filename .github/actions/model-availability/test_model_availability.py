@@ -1286,6 +1286,16 @@ class TestWorkflowOpenRouterSelection:
         assert 'grep -Eq "$deny_re" <<<"$requested"' in content
         assert "Requested model is deny-listed; not dispatching." in content
 
+    def test_opencode_deny_list_load_fails_closed_and_is_logged(self):
+        content = Path(".github/workflows/opencode.yml").read_text()
+        assert "deny_re='^$'" not in content, (
+            "deny_re must not degrade to an inert pattern when the deny-list is missing"
+        )
+        assert content.index("exit 1", content.index("deny_re=")) < content.index(
+            'grep -Eq "$deny_re" <<<"$requested"'
+        ), "a missing or empty deny-list must fail closed before deny_re is used"
+        assert "Deny-list %s loaded: %s pattern(s)" in content
+
     def test_deny_list_file_exists(self):
         root = Path(__file__).parents[3]
         deny_list = root / "scripts/model-deny-list.txt"
