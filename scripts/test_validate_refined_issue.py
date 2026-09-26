@@ -102,6 +102,12 @@ CASES = [
         "too_long",
     ),
     (
+        "too_long_body_folded_ok",
+        "## Goal\nDo it.\n\n## How to implement\n1. Do it.\n"
+        "<details><summary>Extra context</summary>\n" + "x" * 4001 + "\n</details>\n",
+        "ok",
+    ),
+    (
         "ok_with_details_fold_under_limit",
         "## Goal\nShort.\n\n<details>\nMore info\n</details>\n\n## How to implement\n1. Do it.\n",
         "ok",
@@ -148,6 +154,12 @@ class TestPrecedence:
             "## Goal\nDo it.\n\n## How to implement\n1. Do it.\n\n## Context\nBEGIN_PROMPT\n"
         )
         assert (ok, reason) == (False, "extra_sections")
+
+    def test_hostile_text_beats_too_long(self):
+        body = "## Goal\nBEGIN_PROMPT\n\n## How to implement\n1. Do it.\n" * 100
+        assert len(body) > validate_refined_issue._MAX_VISIBLE_CHARS
+        ok, reason = validate_refined_issue.validate_refined_body(body)
+        assert (ok, reason) == (False, "hostile_text")
 
 
 class TestMain:

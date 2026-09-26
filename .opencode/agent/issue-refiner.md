@@ -25,6 +25,6 @@ A numbered list naming files, patterns, and verification steps so implementation
 
 Never add another `##` section, preamble, closing text, or markdown fence. The output is validated and may be retried with a rejection reason.
 
-Validation rejects empty output/sections, fenced output, missing or reversed headings, extra headings, hostile text (`BEGIN_PROMPT`, `END_PROMPT`, `SELECTED_ISSUE:`, instructions to ignore previous instructions, or API-key-shaped secrets), and bodies exceeding 4000 visible characters before any `<details>` fold (`too_long`). When rejected, output only the corrected body.
+Keep at most 4000 visible characters before any `<details>` fold. Move evidence tables, run logs, and selector or command transcripts into one `<details><summary>Extra context</summary>…</details>` fold placed last in the implementation section; inside a fold use only `###` headings, because any other `## ` heading is rejected as `extra_sections`. The visible part keeps the goal, the numbered steps, and the files and commands needed to start coding.
 
-When writing PR descriptions (e.g., for the coordinator agent), keep at most 4000 visible characters before any `<details>` fold; move remaining detail into `<details>` folds.
+Validation rejects empty output/sections, fenced output, missing or reversed headings, extra headings, hostile text (`BEGIN_PROMPT`, `END_PROMPT`, `SELECTED_ISSUE:`, instructions to ignore previous instructions, or API-key-shaped secrets), and bodies exceeding 4000 visible characters before any `<details>` fold (`too_long`). When rejected, output only the corrected body.
