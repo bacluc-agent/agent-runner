@@ -174,7 +174,8 @@ jobs:
           # Exclude known-weak free models (ling-3.0-flash-fin-free, mimo-v2.5-free, nemotron-*, muse-spark-*)
           # per model-discovery.md (provision-machines devel branch); they pass the trivial OK
           # probe but fail as coordinator/selector in 10+ runs (e.g. 34029380869, 34042660858).
-          mapfile -t free_models < <(grep -E '^(opencode|openrouter)/[^[:space:]]+(-free|:free)$' "$available_models_file" | grep -Ev '/(ling-3\.0-flash-fin|mimo-v2\.5)(-free|:free)$|/nemotron-|/muse-spark-' | awk '!seen[$0]++')
+          deny_re='/(ling-3\.0-flash-fin|mimo-v2\.5)(-free|:free)$|/nemotron-|/muse-spark-'
+          mapfile -t free_models < <(grep -E '^(opencode|openrouter)/[^[:space:]]+(-free|:free)$' "$available_models_file" | grep -Ev "$deny_re" | awk '!seen[$0]++')
           for candidate in \
             'opencode/big-pickle' \
             'opencode-go-openai/qwen3.8-flash' \
@@ -200,9 +201,15 @@ jobs:
             break
           done
           if [[ -z "$fallback_model" && -z "${requested:-}" ]]; then
-            printf '%s\n' 'No coordinator fallback model is available; not dispatching.' >&2
-            printf '::error::no coordinator fallback model is available; every available model is excluded by the model-selection rules: %s\n' "$(paste -sd, "$available_models_file")"
-            exit 1
+            # ponytail: last resort; picks a deny-listed model on purpose, a weak run beats
+            # no run. Self-heals: a failure marks it not-ok in the cache, next run probes another.
+            fallback_model=$(head -n1 "$available_models_file")
+            if [[ -z "$fallback_model" ]]; then
+              printf '%s\n' 'No coordinator fallback model is available; not dispatching.' >&2
+              printf '::error::no coordinator fallback model is available; every available model is excluded by the model-selection rules: %s\n' "$(paste -sd, "$available_models_file")"
+              exit 1
+            fi
+            printf '%s\n' "Using fallback model: $fallback_model" >&2
           fi
 
           printf '%s\n' 'Model selection reasoning: use the requested model unchanged when provided; otherwise discover an available coordinator model.'
@@ -236,7 +243,7 @@ jobs:
               model="$fallback_model"
             else
               model="$({ grep -oE 'coordinator: [^,[:space:]]+' "$discovery_output" || true; } | tail -n 1 | cut -d' ' -f2-)"
-              if [[ -z "$model" ]] || ! grep -Fxq "$model" "$available_models_file"; then
+              if [[ -z "$model" ]] || ! grep -Fxq "$model" "$available_models_file" || grep -Eq "$deny_re" <<<"$model"; then
                 printf 'Model discovery returned no usable available model; falling back to the verified model %q.\n' "$fallback_model"
                 model="$fallback_model"
               fi

@@ -1216,3 +1216,32 @@ class TestWorkflowOpenRouterSelection:
             assert '[[ -n "$OPENROUTER_API_KEY" ]]' in content
             assert "OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}" in content
             assert "/(ling-3\\.0-flash-fin|mimo-v2\\.5)(-free|:free)$|/nemotron-|/muse-spark-" in content
+
+
+class TestWorkflowLastResortModel:
+    """Every model selector must degrade to the first available model instead of hard-exiting.
+
+    Without this the jobs fail in seconds at the selector step: the deny-list empties the
+    candidate list, `fallback_model` stays empty and the step exits 1 before any provider
+    is ever called (see agent-runner#283).
+    """
+
+    SELECTORS = [
+        (".github/workflows/opencode.yml", "No coordinator fallback model is available"),
+        (".github/workflows/hourly-issue.yml", "No issue-selection model is available"),
+        (".github/workflows/refine-issues.yml", "No refinement model is available"),
+    ]
+
+    def test_selector_falls_back_before_giving_up(self):
+        for path, give_up_message in self.SELECTORS:
+            content = Path(path).read_text()
+            fallback = 'head -n1 "$available_models_file"'
+            assert fallback in content, f"{path}: no last-resort model"
+            assert content.index(fallback) < content.index(give_up_message), (
+                f"{path}: the last-resort model must be tried before giving up"
+            )
+
+    def test_discovery_result_is_deny_listed(self):
+        content = Path(".github/workflows/opencode.yml").read_text()
+        assert "deny_re=" in content
+        assert 'grep -Fxq "$model" "$available_models_file" || grep -Eq "$deny_re" <<<"$model"' in content

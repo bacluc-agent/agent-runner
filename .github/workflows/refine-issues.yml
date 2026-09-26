@@ -120,8 +120,14 @@ jobs:
             break
           done
           if [[ -z "$selection_model" ]]; then
-            printf '%s\n' 'No refinement model is available; not dispatching.' >&2
-            exit 1
+            # ponytail: last resort; picks a deny-listed model on purpose, a weak run beats
+            # no run. Self-heals: a failure marks it not-ok in the cache, next run probes another.
+            selection_model=$(head -n1 "$available_models_file")
+            if [[ -z "$selection_model" ]]; then
+              printf '%s\n' 'No refinement model is available; not dispatching.' >&2
+              exit 1
+            fi
+            printf '%s\n' "Using fallback model: $selection_model" >&2
           fi
           printf 'Refinement model: %s\n' "$selection_model"
           printf '\n\n\n\n\n\n'
