@@ -31,9 +31,7 @@ class TestRequest:
         def fake_urlopen(req: urllib.request.Request, timeout: int | None = None) -> None:
             hdrs = email.message.EmailMessage()
             hdrs["Content-Type"] = "application/json"
-            raise urllib.error.HTTPError(
-                req.full_url, 429, "Too Many", hdrs, io.BytesIO(b'{"error": "slow down"}')
-            )
+            raise urllib.error.HTTPError(req.full_url, 429, "Too Many", hdrs, io.BytesIO(b'{"error": "slow down"}'))
 
         monkeypatch.setattr(prove.urllib.request, "urlopen", fake_urlopen)
         status, payload = prove.request("POST", "http://example.invalid", {"a": 1})
