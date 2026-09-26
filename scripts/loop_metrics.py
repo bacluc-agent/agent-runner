@@ -47,17 +47,24 @@ def emit_metrics(
     metrics: dict,
     summary_path: str | None = None,
     artifact_path: str | None = None,
+    source: str | None = None,
+    disagreement: str | None = None,
 ) -> dict:
     summary_file = summary_path or os.environ.get("GITHUB_STEP_SUMMARY", "/tmp/loop-summary.md")
     artifact_file = artifact_path or "loop-metrics.json"
 
+    mode_rows = f"| Failure mode | {metrics['failure_mode']} |\n"
+    if source is not None:
+        mode_rows += f"| Mode source | {source} |\n"
+    if disagreement:
+        mode_rows += f"| Disagreement | {disagreement} |\n"
     table = (
         "| Metric | Value |\n"
         "|---|---|\n"
         f"| Steps | {metrics['step_count']} |\n"
         f"| Token cost / step | {metrics['token_cost_per_step']:.4f} |\n"
         f"| Convergence rate | {metrics['convergence_rate']:.4f} |\n"
-        f"| Failure mode | {metrics['failure_mode']} |\n"
+        f"{mode_rows}"
         f"| Terminated at | {metrics['terminated_at']} |\n"
     )
 
@@ -71,19 +78,36 @@ def emit_metrics(
 
 
 def main() -> int:
-    # Prefer the artifact written by the opencode tool during the run; fall back to env defaults.
+    # Read raw env once ("" treated as unset). Workflow-derived timeout/error
+    # outrank the agent-written artifact's failureMode: the workflow owns the
+    # exit code; the agent does not.
+    env_mode = os.environ.get("LOOP_FAILURE_MODE") or None
     metrics = load_artifact()
+    artifact_mode = metrics["failure_mode"] if metrics else None
     if metrics is None:
         steps = int(os.environ.get("LOOP_STEPS", "0"))
         progress_delta = float(os.environ.get("LOOP_PROGRESS_DELTA", "1"))
-        failure_mode = os.environ.get("LOOP_FAILURE_MODE", "unknown")
         token_estimate = os.environ.get("LOOP_TOKEN_ESTIMATE")
         token_estimate_f = float(token_estimate) if token_estimate else None
 
-        metrics = compute_metrics(steps, progress_delta, failure_mode, token_estimate_f)
+        metrics = compute_metrics(steps, progress_delta, env_mode or "unknown", token_estimate_f)
 
-    result = emit_metrics(metrics)
+    # Join: resolve mode + source AFTER both branches have produced metrics.
+    if artifact_mode is not None and env_mode in ("timeout", "error"):
+        metrics["failure_mode"] = env_mode
+        source = "env"
+    elif artifact_mode is None:
+        source = "env"
+    else:
+        source = "artifact"
+
+    disagreement = None
+    if artifact_mode is not None and env_mode and env_mode != artifact_mode and env_mode != "unknown":
+        disagreement = f"env={env_mode} artifact={artifact_mode}"
+
+    result = emit_metrics(metrics, source=source, disagreement=disagreement)
     print(f"Metrics emitted: {json.dumps(metrics)}")
+    print(f"failure_mode={metrics['failure_mode']} (source={source}); env={env_mode or 'unset'}")
     print(f"Summary: {result['summary']}")
     print(f"Artifact: {result['artifact']}")
     # Write step output for GitHub Actions
