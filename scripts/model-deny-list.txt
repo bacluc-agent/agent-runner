@@ -1,0 +1,32 @@
+# Shared deny-list of known-weak free models for the agent-runner workflows
+# hourly-issue.yml, opencode.yml and refine-issues.yml. One extended regex per
+# line, matched against full model IDs like opencode/nemotron-3-ultra-free.
+# Lines starting with # are comments: grep -f reads every line as a live
+# pattern, so comments must stay pipe-free and must not look like model IDs.
+# No blank lines: a blank pattern matches every model and denies everything.
+# A weak model passes the trivial OK probe but fails as coordinator/selector;
+# the model-availability cache issue marks it ok:false so the next run probes
+# another model: https://github.com/bacluc-agent/agent-todo/issues/49
+# Background: model-discovery.md, provision-machines devel branch.
+# nemotron-3-ultra-free: retry_limit as coordinator in run 36243361343.
+/nemotron-
+# muse-spark-1.3-contributor-free: ok:false in cache issue 49.
+/muse-spark-
+# ling-3.0-flash-fin-free: fails as coordinator despite passing the probe.
+/ling-3\.0-flash-fin
+# mimo-v2.5-free: ok:false in cache issue 49.
+/mimo-v2\.5
+# cohere/north-mini-code:free: retry_limit in run 36101683733.
+/cohere/north-mini-code
+# poolside/laguna-xs-2.1:free: retry_limit in run 36103891508.
+/poolside/laguna-xs-2\.1
+# thinkingmachines/inkling:free: retry_limit in run 36241639584.
+/thinkingmachines/inkling
+# dots-studio/dots-3-note-preview:free: retry_limit in run 36101507293.
+/dots-studio/dots-3-note-preview
+# nex-agi/nex-n2.5-pro:free: retry_limit in run 35551496542.
+/nex-agi/nex-n2\.5-pro
+# liquid/lfm-2.5-2.6b:free: retry_limit in run 36240950553.
+/liquid/lfm-2\.5
+# inclusionai/ling-3.0-flash-sante:free: retry_limit in run 36237757334.
+/inclusionai/ling-3\.0-flash-sante
