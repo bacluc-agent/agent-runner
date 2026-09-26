@@ -4,8 +4,6 @@ services:
     image: "ghcr.io/open-webui/open-webui:v0.11.4"
     ports:
       - "127.0.0.1:13307:8080"
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     volumes:
       - "open-webui:/app/backend/data"
     restart: "unless-stopped"
@@ -23,25 +21,20 @@ services:
     volumes:
       - "./aisix-config.yaml:/etc/aisix/config.yaml:ro"
       - "./resources.yaml:/etc/aisix/resources.yaml:ro"
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     environment:
       - "OPENCODE_API_KEY=${OPENCODE_API_KEY}"
       - "OPENCODE_API_KEY_2=${OPENCODE_API_KEY_2}"
       - "OPENCODE_API_KEY_3=${OPENCODE_API_KEY_3}"
-      - "OLLAMA_API_KEY=${OLLAMA_API_KEY}"
       - "REQUESTY_API_KEY=${REQUESTY_API_KEY}"
       - "CORTECS_API_KEY=${CORTECS_API_KEY}"
       - "OPENWEBUI_CALLER_KEY=${OPENWEBUI_CALLER_KEY}"
       - "OPENCODE_BASE_URL=${OPENCODE_BASE_URL}"
-      - "OLLAMA_BASE_URL=${OLLAMA_BASE_URL}"
       - "REQUESTY_BASE_URL=${REQUESTY_BASE_URL}"
       - "CORTECS_BASE_URL=${CORTECS_BASE_URL}"
       - "ZEN_MODEL_CHAT=${ZEN_MODEL_CHAT}"
       - "ZEN_MODEL_CHAT_THINKING=${ZEN_MODEL_CHAT_THINKING}"
       - "ZEN_MODEL_WEB_RESEARCH=${ZEN_MODEL_WEB_RESEARCH}"
       - "ZEN_MODEL_FAST=${ZEN_MODEL_FAST}"
-      - "OLLAMA_MODEL_CHAT=${OLLAMA_MODEL_CHAT}"
       - "REQUESTY_MODEL_CHAT=${REQUESTY_MODEL_CHAT}"
       - "CORTECS_MODEL_CHAT=${CORTECS_MODEL_CHAT}"
   searxng:

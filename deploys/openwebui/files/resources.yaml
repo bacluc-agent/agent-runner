@@ -28,12 +28,6 @@ provider_keys:
       default_headers:
         x-opencode-session: openwebui
 
-  - display_name: ollama
-    provider: ollama
-    adapter: openai
-    api_base: ${OLLAMA_BASE_URL}
-    api_key: ${OLLAMA_API_KEY}
-
   - display_name: requesty
     provider: requesty
     adapter: openai
@@ -106,11 +100,6 @@ models:
     provider: opencode
     model_name: ${ZEN_MODEL_FAST}
     provider_key: opencode-3
-
-  - display_name: ollama-chat
-    provider: ollama
-    model_name: ${OLLAMA_MODEL_CHAT}
-    provider_key: ollama
 
   - display_name: requesty-chat
     provider: requesty
