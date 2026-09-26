@@ -54,3 +54,15 @@ def test_openai_api_keys_is_not_duplicated_from_extra_env() -> None:
     lines = env_lines(with_dupe)
     assert names(lines).count("OPENAI_API_KEYS") == 1
     assert values(lines)["OPENAI_API_KEYS"] == "key-caller"
+
+
+def test_env_example_lists_exactly_the_written_variables() -> None:
+    example = names((FILES / "env.example").read_text().splitlines())
+    assert sorted(example) == sorted(names(env_lines(openwebui)))
+
+
+def test_aisix_takes_its_env_from_the_generated_file() -> None:
+    compose = (FILES / "docker-compose.yml").read_text()
+    aisix = compose[compose.index("\n  aisix:") : compose.index("\n  searxng:")]
+    assert '"./.env"' in aisix
+    assert "environment:" not in aisix

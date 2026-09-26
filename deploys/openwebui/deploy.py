@@ -126,7 +126,6 @@ WantedBy=multi-user.target
         commands=[
             f"docker compose -f {shlex.quote(f'{compose_project_dir}/docker-compose.yml')} run --rm --no-deps --entrypoint aisix aisix --config /etc/aisix/config.yaml validate --resources /etc/aisix/resources.yaml"
         ],
-        _sudo=True,
         _if=lambda: (
             compose_file.changed or aisix_config_file.changed or aisix_resources_file.changed or env_file.changed
         ),

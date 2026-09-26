@@ -20,22 +20,8 @@ services:
     volumes:
       - "./aisix-config.yaml:/etc/aisix/config.yaml:ro"
       - "./resources.yaml:/etc/aisix/resources.yaml:ro"
-    environment:
-      - "OPENCODE_API_KEY=${OPENCODE_API_KEY}"
-      - "OPENCODE_API_KEY_2=${OPENCODE_API_KEY_2}"
-      - "OPENCODE_API_KEY_3=${OPENCODE_API_KEY_3}"
-      - "REQUESTY_API_KEY=${REQUESTY_API_KEY}"
-      - "CORTECS_API_KEY=${CORTECS_API_KEY}"
-      - "OPENWEBUI_CALLER_KEY=${OPENWEBUI_CALLER_KEY}"
-      - "OPENCODE_BASE_URL=${OPENCODE_BASE_URL}"
-      - "REQUESTY_BASE_URL=${REQUESTY_BASE_URL}"
-      - "CORTECS_BASE_URL=${CORTECS_BASE_URL}"
-      - "ZEN_MODEL_CHAT=${ZEN_MODEL_CHAT}"
-      - "ZEN_MODEL_CHAT_THINKING=${ZEN_MODEL_CHAT_THINKING}"
-      - "ZEN_MODEL_WEB_RESEARCH=${ZEN_MODEL_WEB_RESEARCH}"
-      - "ZEN_MODEL_FAST=${ZEN_MODEL_FAST}"
-      - "REQUESTY_MODEL_CHAT=${REQUESTY_MODEL_CHAT}"
-      - "CORTECS_MODEL_CHAT=${CORTECS_MODEL_CHAT}"
+    env_file:
+      - "./.env"
   searxng:
     image: ghcr.io/searxng/searxng:2026.2.16-8e824017d
     ports:
