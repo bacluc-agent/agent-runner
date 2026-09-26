@@ -124,6 +124,7 @@ models:
       retries: 0
       max_fallbacks: 2
       retry_on_429: true
+      fallback_on_statuses: [400, 401, 402, 403, 429]
 
   - display_name: chat_thinking
     routing:
@@ -138,6 +139,7 @@ models:
       retries: 0
       max_fallbacks: 2
       retry_on_429: true
+      fallback_on_statuses: [400, 401, 402, 403, 429]
 
   - display_name: web_research
     routing:
@@ -152,6 +154,7 @@ models:
       retries: 0
       max_fallbacks: 2
       retry_on_429: true
+      fallback_on_statuses: [400, 401, 402, 403, 429]
 
   - display_name: translate_de
     routing:
@@ -166,6 +169,7 @@ models:
       retries: 0
       max_fallbacks: 2
       retry_on_429: true
+      fallback_on_statuses: [400, 401, 402, 403, 429]
 
   - display_name: translate_en
     routing:
@@ -180,6 +184,7 @@ models:
       retries: 0
       max_fallbacks: 2
       retry_on_429: true
+      fallback_on_statuses: [400, 401, 402, 403, 429]
 
   - display_name: fix_grammar_en
     routing:
@@ -194,6 +199,7 @@ models:
       retries: 0
       max_fallbacks: 2
       retry_on_429: true
+      fallback_on_statuses: [400, 401, 402, 403, 429]
 
   - display_name: fix_grammar_de
     routing:
@@ -208,6 +214,7 @@ models:
       retries: 0
       max_fallbacks: 2
       retry_on_429: true
+      fallback_on_statuses: [400, 401, 402, 403, 429]
 
   - display_name: linux_cli
     routing:
@@ -222,6 +229,7 @@ models:
       retries: 0
       max_fallbacks: 2
       retry_on_429: true
+      fallback_on_statuses: [400, 401, 402, 403, 429]
 
 api_keys:
   - display_name: openwebui
