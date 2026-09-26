@@ -87,7 +87,7 @@ jobs:
     runs-on: ubuntu-latest
     # ponytail: a tolerated leg stays red in the job list but the run turns green; add a
     # gate job if leg failures must ever block a merge again
-    continue-on-error: ${{ inputs.continue_on_error }}
+    continue-on-error: ${{ inputs.continue_on_error == true }}
     timeout-minutes: 130
     env:
       GITHUB_TOKEN: ${{ secrets.BACLUC_AGENT_GITHUB_TOKEN }}
