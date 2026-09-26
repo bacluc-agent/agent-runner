@@ -5,6 +5,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from typing import Any
 
 AISIX = "http://aisix:3000"
 AISIX_COMPLETIONS = f"{AISIX}/v1/chat/completions"
@@ -15,17 +16,23 @@ QUESTION = os.environ.get("PROVE_QUESTION", "What color is the sky on a clear da
 TIMEOUT = int(os.environ.get("PROVE_TIMEOUT", "120"))
 
 
-def extract_text(payload):
+def extract_text(payload: dict[str, Any]) -> str:
     choices = payload.get("choices") or []
     if not choices:
         return ""
     content = (choices[0].get("message") or {}).get("content")
     if content is None:
         return (choices[0].get("text") or "").strip()
-    return content.strip()
+    return str(content).strip()
 
 
-def request(method, url, body=None, headers=None, timeout=TIMEOUT):
+def request(
+    method: str,
+    url: str,
+    body: dict[str, Any] | None = None,
+    headers: dict[str, str] | None = None,
+    timeout: int = TIMEOUT,
+) -> tuple[int, dict[str, Any]]:
     data = None if body is None else json.dumps(body).encode()
     req = urllib.request.Request(url, data=data, method=method)
     req.add_header("Content-Type", "application/json")
@@ -46,8 +53,8 @@ def request(method, url, body=None, headers=None, timeout=TIMEOUT):
         return status, {"_raw": raw}
 
 
-def wait_ready(url, attempts=90):
-    for attempt in range(attempts):
+def wait_ready(url: str, attempts: int = 90) -> bool:
+    for _attempt in range(attempts):
         status, _ = request("GET", url, timeout=10)
         if status == 200:
             return True
@@ -55,7 +62,7 @@ def wait_ready(url, attempts=90):
     return False
 
 
-def complete(url, token, label):
+def complete(url: str, token: str, label: str) -> bool:
     status, payload = request(
         "POST",
         url,
@@ -71,7 +78,7 @@ def complete(url, token, label):
     return ok
 
 
-def prove(caller_key, label):
+def prove(caller_key: str, label: str) -> bool:
     if not wait_ready(f"{AISIX}/readyz"):
         print(f"{label}_FAILED aisix /readyz never became ready", flush=True)
         return False
@@ -89,7 +96,7 @@ def prove(caller_key, label):
     return complete(OPENWEBUI_COMPLETIONS, token, f"{label}_OPENWEBUI")
 
 
-def main():
+def main() -> int:
     caller_key = os.environ.get("OPENWEBUI_CALLER_KEY") or os.environ.get("OPENAI_API_KEYS", "")
     label = sys.argv[1] if len(sys.argv) > 1 else "PROVIDE"
     if not caller_key:
