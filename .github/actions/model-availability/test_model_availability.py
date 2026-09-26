@@ -1215,4 +1215,58 @@ class TestWorkflowOpenRouterSelection:
             assert "openrouter/*)" in content
             assert '[[ -n "$OPENROUTER_API_KEY" ]]' in content
             assert "OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}" in content
-            assert "/(ling-3\\.0-flash-fin|mimo-v2\\.5)(-free|:free)$|/nemotron-|/muse-spark-" in content
+            assert "model-deny-list.txt" in content
+
+    def test_last_resort_ordering(self):
+        # PR #110: the raw head -n1 must come after the deny-filtered attempt
+        # and before the give-up message.
+        for path in self.WORKFLOWS:
+            content = Path(path).read_text()
+            mapfile = content.index("mapfile -t free_models")
+            raw = content.index('head -n1 "$available_models_file"')
+            give_up = content.index("not dispatching.' >&2")
+            assert mapfile < raw < give_up
+
+    def test_deny_list_file_exists(self):
+        root = Path(__file__).parents[3]
+        deny_list = root / "scripts/model-deny-list.txt"
+        assert deny_list.is_file()
+        lines = deny_list.read_text().splitlines()
+        assert lines, "deny-list must not be empty"
+        for line in lines:
+            assert line.strip(), "deny-list must not contain blank lines"
+            assert "|" not in line, (
+                "grep -f reads every line as a live pattern; comments must stay pipe-free"
+            )
+
+    def test_deny_list_excludes_known_weak_models_and_keeps_big_pickle(self):
+        root = Path(__file__).parents[3]
+        deny_list = root / "scripts/model-deny-list.txt"
+        weak_models = [
+            "opencode/nemotron-3-ultra-free",
+            "opencode/muse-spark-1.3-contributor-free",
+            "opencode/ling-3.0-flash-fin-free",
+            "opencode/mimo-v2.5-free",
+            "openrouter/cohere/north-mini-code:free",
+            "openrouter/poolside/laguna-xs-2.1:free",
+            "openrouter/thinkingmachines/inkling:free",
+            "openrouter/dots-studio/dots-3-note-preview:free",
+            "openrouter/nex-agi/nex-n2.5-pro:free",
+            "openrouter/liquid/lfm-2.5:free",
+            "openrouter/inclusionai/ling-3.0-flash-sante:free",
+        ]
+        for model in weak_models:
+            result = subprocess.run(
+                ["grep", "-Ev", "-f", str(deny_list)],
+                input=model,
+                capture_output=True,
+                text=True,
+            )
+            assert result.returncode == 1, f"{model} must be deny-listed"
+        kept = subprocess.run(
+            ["grep", "-Ev", "-f", str(deny_list)],
+            input="opencode/big-pickle",
+            capture_output=True,
+            text=True,
+        )
+        assert kept.returncode == 0, "opencode/big-pickle must be kept"
