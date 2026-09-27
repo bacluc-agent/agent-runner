@@ -421,8 +421,8 @@ jobs:
           printf 'Coordinator prompt:\n%s\n' "$PROMPT"
           set +e
           timeout "${COORDINATOR_TIMEOUT}m" opencode run --agent coordinator --model "$MODEL" --title "$coordinator_session_title" "$PROMPT" 2>&1 | tee "$RUNNER_TEMP/coordinator.out"
-          printf '::%s::\n' "$stop_token"
           coordinator_statuses=("${PIPESTATUS[@]}")
+          printf '::%s::\n' "$stop_token"
           coordinator_status=${coordinator_statuses[0]}
           coordinator_tee_status=${coordinator_statuses[1]}
           set -e
