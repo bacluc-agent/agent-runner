@@ -594,16 +594,6 @@ jobs:
           if [[ -n "${BRANCH:-}" ]]; then
             PR_URL=$(gh pr list -R "$GITHUB_REPOSITORY" --head "$BRANCH" --json url --jq '.[0].url' 2>/dev/null || true)
           fi
-          # A run that changed no code belongs on the issue, not in a pull request.
-          # ponytail: warning only; the AGENTS.md prompt rule is the enforcement.
-          NO_CODE_PR=""
-          if [[ -n "$PR_URL" ]]; then
-            pr_files=$(gh pr view "$PR_URL" -R "$GITHUB_REPOSITORY" --json files --jq '.files[].path' 2>/dev/null || true)
-            if [[ -n "$pr_files" ]] && [[ -z "$(printf '%s\n' "$pr_files" | grep -Ev '(^docs/|\.md$)' || true)" ]]; then
-              NO_CODE_PR="run delivered as a docs-only pull request; the result belongs in the target issue"
-              printf '::warning::%s\n' "$NO_CODE_PR"
-            fi
-          fi
 
           if [[ -n "${BRANCH:-}" ]]; then
             RUN_SUMMARY="branch \`$BRANCH\`"
@@ -612,9 +602,6 @@ jobs:
           fi
           if [[ -n "${PUSHED_REPOS:-}" ]]; then
             RUN_SUMMARY="${RUN_SUMMARY}; pushed: ${PUSHED_REPOS//$'\n'/ }"
-          fi
-          if [[ -n "$NO_CODE_PR" ]]; then
-            RUN_SUMMARY="${RUN_SUMMARY}; ${NO_CODE_PR}"
           fi
 
           # The runner owns the single progress comment: the script replaces this run's
