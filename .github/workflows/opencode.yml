@@ -393,23 +393,6 @@ jobs:
             --mode ensure \
             --github-output "$GITHUB_OUTPUT"
 
-      - name: Snapshot repository state
-        if: steps.target-issue.outputs.issue_number != ''
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          state_dir="$RUNNER_TEMP/repository-state"
-          rm -rf "$state_dir"
-          mkdir -p "$state_dir"
-          while IFS= read -r gitdir; do
-            repo_dir="$(dirname "$gitdir")"
-            key="$(printf '%s' "$repo_dir" | sha256sum | cut -d' ' -f1)"
-            git -C "$repo_dir" rev-parse HEAD > "$state_dir/$key.head"
-            git -C "$repo_dir" symbolic-ref --short -q HEAD > "$state_dir/$key.branch" || printf 'HEAD\n' > "$state_dir/$key.branch"
-            git -C "$repo_dir" status --porcelain=v1 > "$state_dir/$key.status"
-            printf '%s\n' "$repo_dir" > "$state_dir/$key.path"
-          done < <(find "$GITHUB_WORKSPACE" -maxdepth 5 -name ".git" -type d 2>/dev/null)
-
       - name: Run coordinator
         id: coordinator
         shell: bash
@@ -515,48 +498,23 @@ jobs:
           printf '::add-mask::%s\n' "$GITHUB_TOKEN"
           BRANCH_NAME="agent-run/${ISSUE_NUMBER}-${GITHUB_RUN_ID}"
           PUSHED_REPOS=""
-          CODE_CHANGED="false"
-          state_dir="$RUNNER_TEMP/repository-state"
-
-          is_code_change() {
-            case "$1" in
-              AGENTS.md|CLAUDE.md|README*|CHANGELOG*|docs/*|documentation/*|analysis/*|report/*|reports/*|*.md|*.rst) return 1 ;;
-              scripts/*|.github/*|.opencode/*|tests/*|test/*|*.py|*.js|*.ts|*.tsx|*.vue|*.go|*.rs|*.java|*.kt|*.rb|*.php|*.sh|*.yml|*.yaml|*.json|*.toml|*.ini|*.cfg|Dockerfile*|Makefile) return 0 ;;
-              *) return 0 ;;
-            esac
-          }
+          WORK_BRANCH=""
 
           # Find all git repos in the workspace (including subdirs)
           while IFS= read -r gitdir; do
             repo_dir="$(dirname "$gitdir")"
             cd "$repo_dir"
 
-            key="$(printf '%s' "$repo_dir" | sha256sum | cut -d' ' -f1)"
-            start_head="$(cat "$state_dir/$key.head" 2>/dev/null || git rev-parse HEAD)"
-            mapfile -t changed_files < <(
-              {
-                git diff --name-only "$start_head" HEAD 2>/dev/null || true
-                git diff --name-only HEAD 2>/dev/null || true
-                git diff --cached --name-only 2>/dev/null || true
-                git ls-files --others --exclude-standard
-              } | sort -u
-            )
-            if (( ${#changed_files[@]} == 0 )); then
-              printf 'No changes in %s\n' "$repo_dir"
-              cd - >/dev/null
-              continue
+            # Remember where the coordinator left its work, so the run-result
+            # comment can point at it even when there is nothing left to push.
+            current_branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+            if [[ -z "$WORK_BRANCH" && -n "$current_branch" && "$current_branch" != "HEAD" && "$current_branch" != "main" ]]; then
+              WORK_BRANCH="$current_branch"
             fi
 
-            repo_has_code="false"
-            for changed_file in "${changed_files[@]}"; do
-              if is_code_change "$changed_file"; then
-                repo_has_code="true"
-                CODE_CHANGED="true"
-              fi
-            done
-            printf 'Classified %s as %s (%s changed paths)\n' "$repo_dir" "$repo_has_code" "${#changed_files[@]}"
-            if [[ "$repo_has_code" != true ]]; then
-              printf 'No implementation code changes in %s; retaining analysis/documentation-only work on the issue.\n' "$repo_dir"
+            # Check if there are any changes to commit
+            if git diff --quiet HEAD 2>/dev/null && git diff --cached --quiet 2>/dev/null && [[ -z "$(git ls-files --others --exclude-standard)" ]]; then
+              printf 'No changes in %s\n' "$repo_dir"
               cd - >/dev/null
               continue
             fi
@@ -575,18 +533,19 @@ jobs:
             cd - >/dev/null
           done < <(find "$GITHUB_WORKSPACE" -maxdepth 5 -name ".git" -type d 2>/dev/null)
 
-          if [[ "$CODE_CHANGED" == true && -n "$PUSHED_REPOS" ]]; then
+          if [[ -n "$PUSHED_REPOS" ]]; then
             printf 'Pushed branches:\n%b' "$PUSHED_REPOS"
             {
               echo "pushed_repos<<EOF"
               printf '%b' "$PUSHED_REPOS"
               echo "EOF"
               echo "branch_name=${BRANCH_NAME}"
-              echo "code_changed=true"
-              } >> "$GITHUB_OUTPUT"
+            } >> "$GITHUB_OUTPUT"
           else
-            printf 'No implementation code changes to push.\n'
-            echo "code_changed=false" >> "$GITHUB_OUTPUT"
+            printf 'No changes to push.\n'
+            if [[ -n "$WORK_BRANCH" ]]; then
+              echo "branch_name=${WORK_BRANCH}" >> "$GITHUB_OUTPUT"
+            fi
           fi
 
       - name: Emit loop-termination metrics
@@ -635,6 +594,16 @@ jobs:
           if [[ -n "${BRANCH:-}" ]]; then
             PR_URL=$(gh pr list -R "$GITHUB_REPOSITORY" --head "$BRANCH" --json url --jq '.[0].url' 2>/dev/null || true)
           fi
+          # A run that changed no code belongs on the issue, not in a pull request.
+          # ponytail: warning only; the AGENTS.md prompt rule is the enforcement.
+          NO_CODE_PR=""
+          if [[ -n "$PR_URL" ]]; then
+            pr_files=$(gh pr view "$PR_URL" -R "$GITHUB_REPOSITORY" --json files --jq '.files[].path' 2>/dev/null || true)
+            if [[ -n "$pr_files" ]] && [[ -z "$(printf '%s\n' "$pr_files" | grep -Ev '(^docs/|\.md$)' || true)" ]]; then
+              NO_CODE_PR="run delivered as a docs-only pull request; the result belongs in the target issue"
+              printf '::warning::%s\n' "$NO_CODE_PR"
+            fi
+          fi
 
           if [[ -n "${BRANCH:-}" ]]; then
             RUN_SUMMARY="branch \`$BRANCH\`"
@@ -643,6 +612,9 @@ jobs:
           fi
           if [[ -n "${PUSHED_REPOS:-}" ]]; then
             RUN_SUMMARY="${RUN_SUMMARY}; pushed: ${PUSHED_REPOS//$'\n'/ }"
+          fi
+          if [[ -n "$NO_CODE_PR" ]]; then
+            RUN_SUMMARY="${RUN_SUMMARY}; ${NO_CODE_PR}"
           fi
 
           # The runner owns the single progress comment: the script replaces this run's
