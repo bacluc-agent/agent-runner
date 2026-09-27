@@ -82,6 +82,9 @@ idea (issue in agent-todo)
   result in a cache issue in the todo repository. Probing every model on
   every run would be slow and expensive; the cache makes it cheap.
 
+Selectors apply the shared `scripts/model-deny-list.txt` and stop instead of
+dispatching when no allowed model is available.
+
 ### Agents (the AI personas)
 
 - `issue-selector` — reads the candidate issues and picks one, avoiding

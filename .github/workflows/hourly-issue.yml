@@ -146,13 +146,8 @@ jobs:
             break
           done
           if [[ -z "$selection_model" ]]; then
-            # ponytail: a weak run beats no run; the cache marks a failing model ok:false so the next run probes another
             selection_model="$(grep -Ev -f scripts/model-deny-list.txt "$available_models_file" | head -n1 || true)"
             selection_source='last resort (deny-list filtered)'
-            if [[ -z "$selection_model" ]]; then
-              selection_model="$(head -n1 "$available_models_file")"
-              selection_source='last resort (deny-listed)'
-            fi
             if [[ -z "$selection_model" ]]; then
               printf '%s\n' 'No issue-selection model is available; not dispatching.' >&2
               exit 1
