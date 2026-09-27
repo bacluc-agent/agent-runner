@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-backend="$(command -v gh)" || { printf '%s\n' 'gh guard: real gh backend not found' >&2; exit 1; }
+backend="$(command -v gh)" || {
+  printf '%s\n' 'gh guard: real gh backend not found' >&2
+  exit 1
+}
 guard_dir="${RUNNER_TEMP:?}/gh-guard"
 backend="$(realpath "$backend")"
 if [[ ! -x "$backend" || "$backend" == "$(realpath -m "$guard_dir/gh")" ]]; then
