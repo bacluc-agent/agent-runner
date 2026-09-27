@@ -186,8 +186,11 @@ jobs:
               fi
 
               set +e
+              stop_token="$(openssl rand -hex 8)"
+              printf '::stop-commands::%s\n' "$stop_token"
               timeout 8m opencode run --agent issue-refiner --model "$selection_model" --title "issue-refiner" \
                 "$(< "$prompt")" 2> >(tee "${out}.stderr" >&2) | tee "$out"
+              printf '::%s::\n' "$stop_token"
               statuses=("${PIPESTATUS[@]}")
               opencode_status=${statuses[0]}
               tee_status=${statuses[1]}
