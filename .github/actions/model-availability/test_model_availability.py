@@ -1217,15 +1217,61 @@ class TestWorkflowOpenRouterSelection:
             assert "OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}" in content
             assert "model-deny-list.txt" in content
 
-    def test_last_resort_ordering(self):
-        # PR #110: the raw head -n1 must come after the deny-filtered attempt
-        # and before the give-up message.
+    def test_last_resort_is_deny_list_filtered_and_fails_closed(self):
         for path in self.WORKFLOWS:
             content = Path(path).read_text()
             mapfile = content.index("mapfile -t free_models")
-            raw = content.index('head -n1 "$available_models_file"')
-            give_up = content.index("not dispatching.' >&2")
-            assert mapfile < raw < give_up
+            give_up = content.rindex("not dispatching.' >&2")
+            filtered = min(
+                index
+                for index in (
+                    content.find(
+                        'grep -Ev -f scripts/model-deny-list.txt "$available_models_file"',
+                        mapfile,
+                    ),
+                    content.find(
+                        'grep -Ev -f "$RUNNER_TEMP/agent-runner/scripts/model-deny-list.txt" "$available_models_file"',
+                        mapfile,
+                    ),
+                )
+                if index >= 0
+            )
+            assert mapfile < filtered < give_up
+            assert 'head -n1 "$available_models_file"' not in content
+            assert "last resort (deny-listed)" not in content
+
+    def test_empty_filtered_candidates_exit_before_dispatch(self, tmp_path):
+        deny_list = tmp_path / "deny-list.txt"
+        deny_list.write_text("bad-model\n")
+        available = tmp_path / "available-models.txt"
+        available.write_text("bad-model\n")
+        result = subprocess.run(
+            [
+                "bash",
+                "-Eeuo",
+                "pipefail",
+                "-c",
+                """
+                selection_model="$(grep -Ev -f "$1" "$2" | head -n1 || true)"
+                if [[ -z "$selection_model" ]]; then
+                  printf '%s\n' 'No model is available; not dispatching.' >&2
+                  exit 1
+                fi
+                """,
+                "bash",
+                str(deny_list),
+                str(available),
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 1
+        assert "not dispatching" in result.stderr
+
+    def test_opencode_rejects_deny_list_model_override(self):
+        content = Path(".github/workflows/opencode.yml").read_text()
+        assert 'grep -Eq "$deny_re" <<<"$requested"' in content
+        assert "Requested model is deny-listed; not dispatching." in content
 
     def test_deny_list_file_exists(self):
         root = Path(__file__).parents[3]
