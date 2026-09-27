@@ -583,7 +583,7 @@ class TestIsCacheFresh:
 
     def test_fresh_failed(self):
         now = datetime(2026, 9, 6, 12, 0, tzinfo=timezone.utc)
-        entry = {"ok": False, "checked": "2026-09-06T11:00:00Z"}
+        entry = {"ok": False, "checked": "2026-09-06T11:30:00Z"}
         assert model_availability.is_cache_fresh(entry, now)
 
     def test_expired_failed(self):
@@ -601,6 +601,11 @@ class TestIsCacheFresh:
         assert not model_availability.is_cache_fresh(None, now)
         assert not model_availability.is_cache_fresh({"ok": "yes"}, now)
         assert not model_availability.is_cache_fresh({"ok": True}, now)
+
+    def test_failed_ttl_is_one_hour(self):
+        # bacluc-agent/agent-todo#311: re-probe failures within the hour so a
+        # wrongly-marked model recovers in half the time.
+        assert model_availability.FAILED_TTL_HOURS == 1
 
 
 class TestCandidatePriority:
@@ -705,7 +710,7 @@ class TestSelectPending:
         now = datetime(2026, 9, 6, 12, 0, tzinfo=timezone.utc)
         cache = {
             "opencode/big-pickle": {"ok": True, "checked": "2026-09-06T10:00:00Z"},
-            "opencode/a-free": {"ok": False, "checked": "2026-09-06T11:00:00Z"},
+            "opencode/a-free": {"ok": False, "checked": "2026-09-06T11:30:00Z"},
         }
         pending, skipped = model_availability.select_pending(list(cache), cache, now)
         assert pending == []
@@ -887,6 +892,14 @@ class TestWriteCache:
         err = capsys.readouterr().err
         assert "warning: cache body is" in err
         assert str(model_availability.GITHUB_ISSUE_BODY_LIMIT) in err
+
+    def test_warns_with_gh_stderr(self, monkeypatch, capsys):
+        def fail(*args):
+            raise subprocess.CalledProcessError(1, args, "", "gh: not authenticated (add-mask)")
+
+        monkeypatch.setattr(model_availability, "run_gh", fail)
+        model_availability.write_cache("49", {"a": 1})
+        assert "gh: not authenticated (add-mask)" in capsys.readouterr().err
 
 
 class TestModelsEndpointFor:

@@ -58,6 +58,11 @@ on:
         required: false
         type: number
         default: 120
+      discovery_timeout_minutes:
+        description: Model discovery timeout in minutes
+        required: false
+        type: number
+        default: 5
   workflow_call:
     inputs:
       prompt:
@@ -106,10 +111,12 @@ jobs:
           if [[ -z "$requested" && "${MODEL_CHOICE:-auto}" != auto ]]; then requested="$MODEL_CHOICE"; fi
           printf "requested_model: %s\n" "$requested"
           printf "timeout_minutes: %s\n" "$TIMEOUT_MINUTES"
+          printf 'discovery_timeout_minutes: %s\n' "$DISCOVERY_TIMEOUT_MINUTES"
         env:
           MODEL_TEXT: ${{ inputs.model }}
           MODEL_CHOICE: ${{ inputs.model_choice }}
           TIMEOUT_MINUTES: ${{ inputs.timeout_minutes }}
+          DISCOVERY_TIMEOUT_MINUTES: ${{ inputs.discovery_timeout_minutes }}
 
       - name: Check out target repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -156,6 +163,7 @@ jobs:
           AVAILABLE_MODELS: ${{ steps.model-availability.outputs.available-models }}
           GITHUB_TOKEN: ${{ secrets.BACLUC_AGENT_GITHUB_TOKEN }}
           BACLUC_AGENT_GITHUB_TOKEN: ${{ secrets.BACLUC_AGENT_GITHUB_TOKEN }}
+          DISCOVERY_TIMEOUT: ${{ inputs.discovery_timeout_minutes || 5 }}
         run: |
           set -Eeuo pipefail
 
@@ -224,7 +232,7 @@ jobs:
               'Output exactly one line: CARRIERS: coordinator: provider/model')"
             printf 'Model discovery prompt:\n%s\n' "$discovery_prompt"
             set +e
-            timeout 5m opencode run --agent model-discovery --model "$fallback_model" --title "model-discovery" "$discovery_prompt" 2> >(tee "${discovery_output}.stderr" >&2) | tee "$discovery_output"
+            timeout "${DISCOVERY_TIMEOUT}m" opencode run --agent model-discovery --model "$fallback_model" --title "model-discovery" "$discovery_prompt" 2> >(tee "${discovery_output}.stderr" >&2) | tee "$discovery_output"
             discovery_statuses=("${PIPESTATUS[@]}")
             discovery_status=${discovery_statuses[0]}
             discovery_tee_status=${discovery_statuses[1]}
@@ -300,7 +308,7 @@ jobs:
             exit 0
           fi
           if [[ "$model" == openai/* ]]; then
-            printf 'Model availability: requested %q is openai/* but no valid auth.json is present (OPENCODE_AUTH_CONTENT empty or invalid); cannot run openai models.\n' "$model" >&2
+            printf '::error::Model availability: requested %q is openai/* but no valid auth.json is present (OPENCODE_AUTH_CONTENT empty or invalid); cannot run openai models.\n' "$model" >&2
             exit 1
           fi
           IFS=$'\t' read -r resolution resolved < <(resolve_model "$requested_model")

@@ -9,6 +9,11 @@ on:
         description: Optional override for the selection instruction tail (the candidate list is always prepended)
         required: false
         type: string
+      selection_timeout_minutes:
+        description: Issue selector timeout in minutes
+        required: false
+        type: number
+        default: 10
   push:
     paths:
       - ".github/workflows/hourly-issue.yml"
@@ -69,6 +74,7 @@ jobs:
           SELECTION_PROMPT: ${{ inputs.selection_prompt }}
           AVAILABLE_MODELS: ${{ steps.model-availability.outputs.available-models }}
           OPENCODE_FATAL_STAGE: selection
+          SELECTION_TIMEOUT_MINUTES: ${{ inputs.selection_timeout_minutes || 10 }}
         run: |
           set -Eeuo pipefail
           rm -f "$RUNNER_TEMP/opencode-fatal.json"
@@ -242,7 +248,7 @@ jobs:
 
           selection="$RUNNER_TEMP/selection.out"
           set +e
-          timeout 10m opencode run --agent issue-selector --model "$selection_model" --title "issue-selector" "$(< "$prompt")" 2> >(tee "${selection}.stderr" >&2) | tee "$selection"
+          timeout "${SELECTION_TIMEOUT_MINUTES}m" opencode run --agent issue-selector --model "$selection_model" --title "issue-selector" "$(< "$prompt")" 2> >(tee "${selection}.stderr" >&2) | tee "$selection"
           selection_statuses=("${PIPESTATUS[@]}")
           selection_status=${selection_statuses[0]}
           selection_tee_status=${selection_statuses[1]}
@@ -253,6 +259,7 @@ jobs:
           fi
           if (( selection_status != 0 )); then
             printf 'Selection failed (opencode=%s); not dispatching.\n' "$selection_status" >&2
+            ((selection_status == 124)) && printf '::error::issue selection exceeded the %sm limit (opencode exit %s)\n' "$SELECTION_TIMEOUT_MINUTES" "$selection_status"
             exit 1
           fi
           if ! grep -q '[^[:space:]]' "$selection"; then
