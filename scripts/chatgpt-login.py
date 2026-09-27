@@ -1,0 +1,761 @@
+#!/usr/bin/env python3
+"""Refresh the opencode OpenAI (ChatGPT) OAuth credential.
+
+Drives the browser through opencode's own OAuth flow:
+  1. Generate PKCE verifier/challenge + state
+  2. Start a localhost callback server on port 1455
+  3. Open https://auth.openai.com/oauth/authorize (the same URL opencode uses)
+  4. Automate login: email -> password -> 2FA -> consent
+  5. Exchange the authorization code for tokens
+  6. Write ~/.local/share/opencode/auth.json and print the auth JSON
+
+Subcommands (agent-usable primitives):
+  start   Launch Chrome with a CDP port, open the authorize URL, and wait for
+          the OAuth callback. Prints the auth JSON and exits 0 on success.
+  status  Report the current login step (email/password/2fa/consent/...).
+  step    Perform one automation step (fill email/password/2FA/consent).
+
+Fallback protocol (when automation is stuck):
+  start & -> status -> step -> repeat
+  STUCK -> playwright-cli attach --cdp=http://localhost:9222
+           -> snapshot/fill/click -> detach -> step
+  or steer manually until the callback fires -> start exchanges and exits 0.
+  Sessions are sequential: only one start may run at a time.
+  Abort = kill the start process.
+
+Exit codes: 0 success, 1 setup/step failure, 2 blocked (captcha/device check).
+"""
+import argparse
+import base64
+import hashlib
+import http.server
+import json
+import os
+import secrets
+import socket
+import sys
+import threading
+import time
+import urllib.parse
+import urllib.request
+from pathlib import Path
+
+from opencode_auth import (
+    CLIENT_ID,
+    ISSUER,
+    SCOPE,
+    TOKEN_PATH,
+    USER_AGENT,
+    build_auth_json,
+    write_auth_file,
+)
+
+CALLBACK_PORT = 1455
+REDIRECT_URI = f"http://localhost:{CALLBACK_PORT}/auth/callback"
+AUTHORIZE_PATH = "/oauth/authorize"
+CALLBACK_PATH = "/auth/callback"
+
+ISSUER_HOST = urllib.parse.urlparse(ISSUER).netloc
+
+STEP_BY_PATH = {
+    "/log-in-or-create-account": "email",
+    "/log-in": "email",
+    "/log-in/password": "password",
+    "/mfa-challenge": "2fa",
+    "/choose-an-account": "choose-account",
+    "/sign-in-with-chatgpt": "consent",
+}
+
+OTP_SELECTORS = [
+    'input[name="otp"]',
+    'input[inputmode="numeric"]',
+    'input[autocomplete="one-time-code"]',
+    'input[type="tel"]',
+    'input[name="code"]',
+    'input[data-testid*="otp"]',
+    'input[data-testid*="code"]',
+]
+
+TWO_FA_TEXTS = ["Two-factor", "Two-factor authentication", "authenticator"]
+
+
+def _env(name: str, fallbacks: list[str]) -> str | None:
+    val = os.environ.get(name)
+    if val:
+        return val
+    for fb in fallbacks:
+        v = os.environ.get(fb)
+        if v:
+            return v
+    return None
+
+
+def _is_headless() -> bool:
+    return os.environ.get("CHATGPT_HEADLESS", "").lower() in ("1", "true")
+
+
+_DESKTOP_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.7103.92 Safari/537.36"
+_DESKTOP_VIEWPORT = {"width": 1440, "height": 900}
+
+
+def _launch_browser(p, headless: bool, cdp_port: int | None = None):
+    args = ["--disable-blink-features=AutomationControlled", "--no-sandbox"]
+    if cdp_port is not None:
+        args.append(f"--remote-debugging-port={cdp_port}")
+    try:
+        return p.chromium.launch(headless=headless, channel="chrome", args=args)
+    except Exception:
+        return p.chromium.launch(headless=headless, args=args)
+
+
+def _log_step(page, name: str) -> None:
+    try:
+        print(f"[chatgpt-login] step={name} url={page.url} title={page.title()}", file=sys.stderr)
+    except Exception:
+        print(f"[chatgpt-login] step={name} url=<unknown> title=<unknown>", file=sys.stderr)
+
+
+def _dump_page_state(page) -> None:
+    try:
+        print(f"[chatgpt-login] failure url={page.url} title={page.title()}", file=sys.stderr)
+    except Exception:
+        print("[chatgpt-login] failure url=<unknown> title=<unknown>", file=sys.stderr)
+    try:
+        text = " ".join(page.inner_text("body").split())
+        print(f"[chatgpt-login] body_text={text[:600]!r}", file=sys.stderr)
+    except Exception:
+        print("[chatgpt-login] body_text=<unavailable>", file=sys.stderr)
+
+
+def _has_blocking_screen(page) -> str | None:
+    checks = [
+        ("Verify you are human", 'text="Verify you are human"'),
+        ("captcha iframe", 'iframe[src*="captcha"]'),
+        ("Checking your browser", 'text="Checking your browser"'),
+        ("Verify your email", 'text="Verify your email"'),
+        ("Check your email", 'text="Check your email"'),
+        ("human verification", 'text="human verification"'),
+        ("device verification", 'text="device verification"'),
+    ]
+    content = page.content().lower()
+    if "captcha" in content or "human verification" in content or "device verification" in content:
+        return "captcha/device verification detected"
+    for label, sel in checks:
+        try:
+            if page.locator(sel).first.is_visible(timeout=1000):
+                return label
+        except Exception:
+            continue
+    return None
+
+
+def _wait_for_blocking_clear(page, timeout_s=60) -> str | None:
+    deadline = time.monotonic() + timeout_s
+    while True:
+        try:
+            blocking = _has_blocking_screen(page)
+        except Exception:
+            blocking = "challenge in progress"
+        if blocking is None:
+            return None
+        if time.monotonic() >= deadline:
+            return blocking
+        time.sleep(5)
+
+
+def _click_first_visible(page, selectors: list[str]) -> bool:
+    for sel in selectors:
+        try:
+            loc = page.locator(sel).first
+            if loc.is_visible(timeout=2000):
+                loc.click()
+                return True
+        except Exception:
+            continue
+    return False
+
+
+def _fill_first_visible(page, selectors: list[str], value: str) -> bool:
+    for sel in selectors:
+        try:
+            loc = page.locator(sel).first
+            if loc.is_visible(timeout=2000):
+                loc.fill(value)
+                return True
+        except Exception:
+            continue
+    return False
+
+
+def _is_error_page(page) -> bool:
+    try:
+        title = page.title()
+    except Exception:
+        title = ""
+    try:
+        body = page.inner_text("body")
+    except Exception:
+        body = ""
+    return "Oops, an error occurred" in title or "Oops, an error occurred" in body or "Route Error" in body
+
+
+def _page_path(page) -> str:
+    try:
+        return urllib.parse.urlparse(page.url).path
+    except Exception:
+        return ""
+
+
+def _find_auth_page(browser):
+    for context in browser.contexts:
+        for page in context.pages:
+            try:
+                if ISSUER_HOST in page.url or CALLBACK_PATH in page.url:
+                    return page
+            except Exception:
+                continue
+    for context in browser.contexts:
+        if context.pages:
+            return context.pages[-1]
+    return None
+
+
+def _generate_pkce() -> tuple[str, str]:
+    chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~"
+    verifier = "".join(secrets.choice(chars) for _ in range(43))
+    challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
+    return verifier, challenge
+
+
+STATE_FILE = Path.home() / ".local" / "share" / "opencode" / "chatgpt-login-state.json"
+
+
+def _state_path() -> Path:
+    return STATE_FILE
+
+
+def _read_state() -> dict | None:
+    try:
+        return json.loads(STATE_FILE.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def _write_state(data: dict) -> None:
+    STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    STATE_FILE.write_text(json.dumps(data), encoding="utf-8")
+
+
+def _authorize_url(verifier: str, state: str) -> str:
+    challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
+    params = {
+        "response_type": "code",
+        "client_id": CLIENT_ID,
+        "redirect_uri": REDIRECT_URI,
+        "scope": SCOPE,
+        "code_challenge": challenge,
+        "code_challenge_method": "S256",
+        "id_token_add_organizations": "true",
+        "codex_cli_simplified_flow": "true",
+        "state": state,
+        "originator": "opencode",
+    }
+    return f"{ISSUER}{AUTHORIZE_PATH}?{urllib.parse.urlencode(params)}"
+
+
+class _CallbackServer:
+    """Localhost server that captures the OAuth authorization code."""
+
+    def __init__(self, state: str):
+        self.state = state
+        self.code: str | None = None
+        self.error: str | None = None
+        self._server = http.server.HTTPServer(("localhost", CALLBACK_PORT), self._handler_factory())
+        self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
+
+    def _handler_factory(self):
+        server = self
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                url = urllib.parse.urlparse(self.path)
+                if url.path != CALLBACK_PATH:
+                    self.send_response(404)
+                    self.end_headers()
+                    return
+                qs = urllib.parse.parse_qs(url.query)
+                if qs.get("state", [None])[0] != server.state:
+                    server.error = "state mismatch"
+                elif qs.get("error_description") or qs.get("error"):
+                    server.error = (qs.get("error_description") or qs.get("error"))[0]
+                else:
+                    server.code = qs.get("code", [None])[0]
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html")
+                self.end_headers()
+                self.wfile.write(b"<html><body><h1>Success! You can close this window.</h1></body></html>")
+
+            def log_message(self, *args):
+                pass
+
+        return Handler
+
+    def start(self):
+        self._thread.start()
+
+    def wait(self, timeout_s=120) -> str | None:
+        """Wait for the callback. Returns the code, or None on timeout/error."""
+        deadline = time.monotonic() + timeout_s
+        while time.monotonic() < deadline:
+            if self.error:
+                return None
+            if self.code:
+                return self.code
+            time.sleep(0.5)
+        return None
+
+    def close(self):
+        self._server.shutdown()
+        self._server.server_close()
+
+
+def _exchange_code(code: str, verifier: str) -> dict:
+    body = urllib.parse.urlencode({
+        "grant_type": "authorization_code",
+        "code": code,
+        "redirect_uri": REDIRECT_URI,
+        "client_id": CLIENT_ID,
+        "code_verifier": verifier,
+    }).encode()
+    req = urllib.request.Request(
+        f"{ISSUER}{TOKEN_PATH}",
+        data=body,
+        headers={"Content-Type": "application/x-www-form-urlencoded", "User-Agent": USER_AGENT},
+    )
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        return json.load(resp)
+
+
+def _do_email_step(page, email: str) -> bool:
+    if not _fill_first_visible(page, ['input[type="email"]', 'input[name="email"]', 'input[id="email"]'], email):
+        return False
+    return _click_first_visible(page, ['button[type="submit"]', 'button:has-text("Continue")'])
+
+
+def _do_password_step(page, password: str) -> bool:
+    if not _fill_first_visible(page, ['input[type="password"]'], password):
+        return False
+    return _click_first_visible(page, ['button[type="submit"]', 'button:has-text("Continue")'])
+
+
+def _do_2fa_step(page, totp_key: str) -> bool:
+    try:
+        import pyotp
+
+        code = pyotp.TOTP(totp_key).now()
+    except ImportError:
+        print("pyotp not installed; run pip install pyotp", file=sys.stderr)
+        return False
+    except Exception as e:
+        print(f"Failed to generate TOTP: {e}", file=sys.stderr)
+        return False
+    if not _fill_first_visible(page, OTP_SELECTORS, code):
+        return False
+    return _click_first_visible(page, ['button[type="submit"]', 'button:has-text("Continue")', 'button:has-text("Verify")'])
+
+
+def _do_consent_step(page) -> bool:
+    return _click_first_visible(page, ['button[type="submit"]', 'button:has-text("Continue")', 'button:has-text("Allow")'])
+
+
+def _do_choose_account_step(page) -> bool:
+    return _click_first_visible(page, ['button[data-testid*="account"]', 'button:has-text("Select account")'])
+
+
+def _do_current_step(page, email: str, password: str, totp_key: str | None) -> bool:
+    path = _page_path(page)
+    if path.startswith("/log-in") and "password" not in path:
+        return _do_email_step(page, email)
+    if path == "/log-in/password":
+        return _do_password_step(page, password)
+    if path.startswith("/mfa-challenge"):
+        if not totp_key:
+            print("2FA required but no TOTP key (CHATGPT_2FA_KEY/OPENAI_2FA_KEY/CHATGPT_TOTP_KEY) set", file=sys.stderr)
+            return False
+        return _do_2fa_step(page, totp_key)
+    if path == "/choose-an-account":
+        return _do_choose_account_step(page)
+    if path.startswith("/sign-in-with-chatgpt"):
+        return _do_consent_step(page)
+    return False
+
+
+def cmd_start() -> int:
+    cdp_port = int(os.environ.get("CHATGPT_CDP_PORT", "9222"))
+
+    try:
+        probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        probe.bind(("localhost", cdp_port))
+        probe.close()
+    except OSError:
+        print(f"CDP port {cdp_port} already in use", file=sys.stderr)
+        return 1
+
+    verifier, _ = _generate_pkce()
+    state = base64.urlsafe_b64encode(secrets.token_bytes(32)).rstrip(b"=").decode()
+
+    callback = _CallbackServer(state)
+    try:
+        callback.start()
+    except OSError as e:
+        print(f"Failed to start callback server on port {CALLBACK_PORT}: {e}", file=sys.stderr)
+        return 1
+
+    _write_state({"verifier": verifier, "state": state, "cdp_port": cdp_port, "code": None})
+
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        print("playwright not installed; run pip install playwright", file=sys.stderr)
+        callback.close()
+        return 1
+
+    with sync_playwright() as p:
+        try:
+            browser = _launch_browser(p, _is_headless(), cdp_port=cdp_port)
+        except Exception as e:
+            print(f"Failed to launch browser: {e}. If chrome is not installed, run: playwright install chrome", file=sys.stderr)
+            callback.close()
+            return 1
+        context = browser.new_context(user_agent=_DESKTOP_UA, viewport=_DESKTOP_VIEWPORT)
+        page = context.new_page()
+        try:
+            page.goto(_authorize_url(verifier, state), wait_until="domcontentloaded")
+        except Exception as e:
+            print(f"Failed to reach auth.openai.com: {e}", file=sys.stderr)
+            browser.close()
+            callback.close()
+            return 1
+
+        _log_step(page, "authorize")
+        print(
+            f"[chatgpt-login] attach: playwright-cli attach --cdp=http://localhost:{cdp_port}; "
+            f"drive: scripts/chatgpt-login.py status|step",
+            file=sys.stderr,
+        )
+
+        while True:
+            if callback.error:
+                print(f"OAuth callback error: {callback.error}", file=sys.stderr)
+                browser.close()
+                callback.close()
+                return 1
+            if callback.code:
+                break
+            time.sleep(1)
+
+        _write_state({"verifier": verifier, "state": state, "cdp_port": cdp_port, "code": callback.code})
+
+        try:
+            tokens = _exchange_code(callback.code, verifier)
+        except Exception as e:
+            print(f"Token exchange failed: {e}", file=sys.stderr)
+            browser.close()
+            callback.close()
+            return 1
+
+        access = tokens.get("access_token", "")
+        refresh = tokens.get("refresh_token", "")
+        expires_in = tokens.get("expires_in", 3600)
+        if not access or not refresh:
+            print("Token exchange returned no access/refresh token", file=sys.stderr)
+            browser.close()
+            callback.close()
+            return 1
+
+        try:
+            auth = build_auth_json(access, refresh, int(time.time() * 1000) + int(expires_in) * 1000)
+        except ValueError as e:
+            print(str(e), file=sys.stderr)
+            browser.close()
+            callback.close()
+            return 1
+
+        write_auth_file(auth)
+        json.dump(auth, sys.stdout)
+        sys.stdout.write("\n")
+        browser.close()
+        callback.close()
+        STATE_FILE.unlink(missing_ok=True)
+        return 0
+
+
+def cmd_status() -> int:
+    state = _read_state()
+    if state is None:
+        json.dump({"error": "no login session"}, sys.stdout)
+        return 1
+
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        json.dump({"error": "playwright not installed"}, sys.stdout)
+        return 1
+
+    with sync_playwright() as p:
+        try:
+            browser = p.chromium.connect_over_cdp(f"http://localhost:{state['cdp_port']}")
+        except Exception:
+            json.dump({"error": "browser not running"}, sys.stdout)
+            return 1
+        page = _find_auth_page(browser)
+        if page is None:
+            json.dump({"error": "no pages"}, sys.stdout)
+            return 1
+        try:
+            step = STEP_BY_PATH.get(_page_path(page), "")
+            blocking = _has_blocking_screen(page)
+            code_ready = state.get("code") is not None
+            json.dump({"step": step, "url": page.url, "title": page.title(), "blocking": blocking, "code_ready": code_ready}, sys.stdout)
+        except Exception as e:
+            json.dump({"error": str(e)}, sys.stdout)
+            return 1
+        return 0
+
+
+def cmd_step() -> int:
+    state = _read_state()
+    if state is None:
+        json.dump({"error": "no login session"}, sys.stdout)
+        return 1
+
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        json.dump({"error": "playwright not installed"}, sys.stdout)
+        return 1
+
+    with sync_playwright() as p:
+        try:
+            browser = p.chromium.connect_over_cdp(f"http://localhost:{state['cdp_port']}")
+        except Exception:
+            json.dump({"error": "browser not running"}, sys.stdout)
+            return 1
+        page = _find_auth_page(browser)
+        if page is None:
+            json.dump({"error": "no pages"}, sys.stdout)
+            return 1
+
+        if state.get("code") is not None:
+            json.dump({"step": "done"}, sys.stdout)
+            return 0
+
+        email = _env("CHATGPT_EMAIL", ["OPENAI_USERNAME"])
+        password = _env("CHATGPT_PASSWORD", ["OPENAI_PASSWORD"])
+        totp_key = _env("CHATGPT_2FA_KEY", ["OPENAI_2FA_KEY", "CHATGPT_TOTP_KEY"])
+        if not email or not password:
+            print("CHATGPT_EMAIL/OPENAI_USERNAME and CHATGPT_PASSWORD/OPENAI_PASSWORD must be set", file=sys.stderr)
+            return 1
+
+        ok = _do_current_step(page, email, password, totp_key)
+        if not ok:
+            step_name = STEP_BY_PATH.get(_page_path(page), "unknown")
+            print(
+                f"[chatgpt-login] no progress at step {step_name} — attach with playwright-cli attach --cdp=http://localhost:{state.get('cdp_port', 9222)}",
+                file=sys.stderr,
+            )
+            return 1
+        try:
+            step = STEP_BY_PATH.get(_page_path(page), "")
+            blocking = _has_blocking_screen(page)
+            code_ready = state.get("code") is not None
+            json.dump({"step": step, "url": page.url, "title": page.title(), "blocking": blocking, "code_ready": code_ready}, sys.stdout)
+        except Exception as e:
+            json.dump({"error": str(e)}, sys.stdout)
+            return 1
+        return 0
+
+
+def _full_login() -> int:
+    email = _env("CHATGPT_EMAIL", ["OPENAI_USERNAME"])
+    password = _env("CHATGPT_PASSWORD", ["OPENAI_PASSWORD"])
+    totp_key = _env("CHATGPT_2FA_KEY", ["OPENAI_2FA_KEY", "CHATGPT_TOTP_KEY"])
+
+    if not email or not password:
+        print("CHATGPT_EMAIL/OPENAI_USERNAME and CHATGPT_PASSWORD/OPENAI_PASSWORD must be set", file=sys.stderr)
+        return 1
+
+    verifier, _ = _generate_pkce()
+    state = base64.urlsafe_b64encode(secrets.token_bytes(32)).rstrip(b"=").decode()
+
+    callback = _CallbackServer(state)
+    try:
+        callback.start()
+    except OSError as e:
+        print(f"Failed to start callback server on port {CALLBACK_PORT}: {e}", file=sys.stderr)
+        return 1
+
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        print("playwright not installed; run pip install playwright", file=sys.stderr)
+        callback.close()
+        return 1
+
+    with sync_playwright() as p:
+        try:
+            browser = _launch_browser(p, _is_headless())
+        except Exception as e:
+            print(f"Failed to launch browser: {e}. If chrome is not installed, run: playwright install chrome", file=sys.stderr)
+            callback.close()
+            return 1
+        context = browser.new_context(user_agent=_DESKTOP_UA, viewport=_DESKTOP_VIEWPORT)
+        page = context.new_page()
+        try:
+            page.goto(_authorize_url(verifier, state), wait_until="domcontentloaded")
+        except Exception as e:
+            print(f"Failed to reach auth.openai.com: {e}", file=sys.stderr)
+            browser.close()
+            callback.close()
+            return 1
+
+        _log_step(page, "authorize")
+
+        blocking = _has_blocking_screen(page)
+        if blocking:
+            print(f"Login blocked: {blocking} — cannot automate with credentials alone", file=sys.stderr)
+            browser.close()
+            callback.close()
+            return 2
+
+        # Drive the login state machine until the callback fires. Step
+        # functions may "fail" even when the click worked (playwright raises
+        # when the element detaches during navigation), so the loop just
+        # re-checks the page state each iteration and only gives up when a
+        # step makes no progress.
+        deadline = time.monotonic() + 180
+        last_step = ""
+        attempts: dict[str, int] = {}
+        while time.monotonic() < deadline:
+            if callback.code or callback.error:
+                break
+            path = _page_path(page)
+            step = STEP_BY_PATH.get(path, "")
+            if step and step != last_step:
+                _log_step(page, step)
+                last_step = step
+                attempts[step] = 0
+            if step:
+                attempts[step] = attempts.get(step, 0) + 1
+                if attempts[step] > 5:
+                    print(f"Stuck at step {step}", file=sys.stderr)
+                    _dump_page_state(page)
+                    browser.close()
+                    callback.close()
+                    return 1
+
+            try:
+                if path.startswith("/log-in") and "password" not in path:
+                    _do_email_step(page, email)
+                elif path == "/log-in/password":
+                    _do_password_step(page, password)
+                    # The SPA may show an error page; retry a couple of times.
+                    for attempt in range(2):
+                        blocking = _wait_for_blocking_clear(page, timeout_s=30)
+                        if blocking:
+                            print(f"Login blocked after password: {blocking}", file=sys.stderr)
+                            browser.close()
+                            callback.close()
+                            return 2
+                        if not _is_error_page(page):
+                            break
+                        print(f"[chatgpt-login] OpenAI error page after password submit, retry {attempt + 1}/2", file=sys.stderr)
+                        time.sleep(2)
+                        _click_first_visible(page, ['a:has-text("Try again")', 'button:has-text("Try again")'])
+                        time.sleep(1)
+                        _do_password_step(page, password)
+                elif path.startswith("/mfa-challenge"):
+                    if not totp_key:
+                        print("2FA required but no TOTP key (CHATGPT_2FA_KEY/OPENAI_2FA_KEY/CHATGPT_TOTP_KEY) set", file=sys.stderr)
+                        browser.close()
+                        callback.close()
+                        return 1
+                    _do_2fa_step(page, totp_key)
+                elif path == "/choose-an-account":
+                    _do_choose_account_step(page)
+                elif path.startswith("/sign-in-with-chatgpt"):
+                    _do_consent_step(page)
+                elif path == CALLBACK_PATH:
+                    break
+            except Exception as e:
+                print(f"Failed at step {step or path}: {e}", file=sys.stderr)
+                _dump_page_state(page)
+                browser.close()
+                callback.close()
+                return 1
+
+            time.sleep(1)
+
+        code = callback.wait(timeout_s=10)
+        if callback.error:
+            print(f"OAuth callback error: {callback.error}", file=sys.stderr)
+            browser.close()
+            callback.close()
+            return 1
+        if not code:
+            print("Timed out waiting for OAuth callback", file=sys.stderr)
+            _dump_page_state(page)
+            browser.close()
+            callback.close()
+            return 1
+
+        _log_step(page, "callback")
+
+        try:
+            tokens = _exchange_code(code, verifier)
+        except Exception as e:
+            print(f"Token exchange failed: {e}", file=sys.stderr)
+            browser.close()
+            callback.close()
+            return 1
+
+        access = tokens.get("access_token", "")
+        refresh = tokens.get("refresh_token", "")
+        expires_in = tokens.get("expires_in", 3600)
+        if not access or not refresh:
+            print("Token exchange returned no access/refresh token", file=sys.stderr)
+            browser.close()
+            callback.close()
+            return 1
+
+        try:
+            auth = build_auth_json(access, refresh, int(time.time() * 1000) + int(expires_in) * 1000)
+        except ValueError as e:
+            print(str(e), file=sys.stderr)
+            browser.close()
+            callback.close()
+            return 1
+
+        write_auth_file(auth)
+        json.dump(auth, sys.stdout)
+        sys.stdout.write("\n")
+        browser.close()
+        callback.close()
+        return 0
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("command", nargs="?", choices=["start", "status", "step"])
+    args = parser.parse_args()
+    if args.command == "start":
+        return cmd_start()
+    if args.command == "status":
+        return cmd_status()
+    if args.command == "step":
+        return cmd_step()
+    return _full_login()
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

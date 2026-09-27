@@ -1,2 +1,4 @@
-.idea
-.vscode
+.venv/
+.pytest_cache/
+__pycache__/
+loop-metrics.json

@@ -1,0 +1,125 @@
+name: Set up OpenCode
+description: >-
+  Installs the OpenCode CLI and prepares the shared OpenCode configuration
+  from the provision-machines repository. Relies on the job-level
+  GITHUB_TOKEN set by the caller.
+runs:
+  using: composite
+  steps:
+    - name: Install GitHub CLI wrapper
+      shell: bash
+      run: bash "$GITHUB_ACTION_PATH/../../../scripts/install-gh-cli-wrapper.sh"
+
+    - name: Install OpenCode
+      shell: bash
+      run: npm install --global opencode-ai@1.18.30
+
+    - name: Fetch and prepare OpenCode configuration
+      id: config
+      shell: bash
+      env:
+        SOURCE_REPOSITORY: https://github.com/bacluc/provision-machines.git
+        CONFIG_PATH: deploys/development_tools/ai_agent_devcontainer/files/opencode
+        SKILLS_PATH: deploys/development_tools/ai_agent_devcontainer/files/claude/skills
+      run: |
+        set -Eeuo pipefail
+
+        printf '::add-mask::%s\n' "$GITHUB_TOKEN"
+        printf '::add-mask::%s\n' "${OPENCODE_GO_API_KEY:-}"
+        printf '::add-mask::%s\n' "${OPENCODE_GO_2_API_KEY:-}"
+        printf '::add-mask::%s\n' "${BRAVE_API_KEY:-}"
+        source_dir="$RUNNER_TEMP/provision-machines"
+        config_dir="$RUNNER_TEMP/opencode-config"
+        source_resolved=0
+        if [[ -n "${SOURCE_BRANCH:-}" ]]; then
+          branch_rc=0
+          branch_line="$(git ls-remote --exit-code --heads "$SOURCE_REPOSITORY" "$SOURCE_BRANCH")" || branch_rc=$?
+          if ((branch_rc == 0)); then
+            branch_sha="${branch_line%%$'\t'*}"
+            git clone --quiet --branch "$SOURCE_BRANCH" "$SOURCE_REPOSITORY" "$source_dir"
+            cloned_branch_sha="$(git -C "$source_dir" rev-parse --verify "refs/heads/$SOURCE_BRANCH^{commit}" 2>/dev/null || true)"
+            if [[ "$cloned_branch_sha" != "$branch_sha" ]]; then
+              printf 'Source config branch changed while cloning: expected %s, got %s\n' "$branch_sha" "${cloned_branch_sha:-unresolved}" >&2
+              exit 1
+            fi
+            git -C "$source_dir" checkout --quiet --detach "$branch_sha"
+            printf 'Using source config BRANCH: %s (commit %s, resolution: resolved)\n' "$SOURCE_BRANCH" "$branch_sha"
+            source_resolved=1
+          else
+            printf '::error::could not resolve SOURCE_BRANCH %s in %s (exit %s); the ref may be transient — it may have just been deleted or renamed\n' "$SOURCE_BRANCH" "$SOURCE_REPOSITORY" "$branch_rc"
+            git ls-remote --heads "$SOURCE_REPOSITORY" 2>&1 | tail -n 20 || true
+            printf 'SOURCE_BRANCH resolution: unresolved (exit %s); fell back to tag\n' "$branch_rc"
+          fi
+        fi
+        # The tag path below keeps its original indentation on purpose: bash
+        # ignores leading whitespace, so this fix stays a pure addition.
+        if ((source_resolved == 0)); then
+        mapfile -t tags < <(git ls-remote --tags "$SOURCE_REPOSITORY" \
+          | awk '$2 !~ /\^\{\}$/ { sub("refs/tags/", "", $2); print $2 }' \
+          | grep -E '^[vV]?[0-9]+([.][0-9]+){1,2}([-.][0-9A-Za-z.-]+)?$' \
+          | sort -V)
+
+        if ((${#tags[@]} == 0)); then
+          printf '%s\n' 'No semver tags found in the source repository' >&2
+          exit 1
+        fi
+
+        tag="${tags[${#tags[@]}-1]}"
+        tag_refs="$(git ls-remote --tags "$SOURCE_REPOSITORY" "refs/tags/$tag" "refs/tags/$tag^{}")"
+        tag_sha="$(printf '%s\n' "$tag_refs" | awk -v tag="$tag" \
+          '$2 == "refs/tags/" tag "^{}" { peeled=$1 } $2 == "refs/tags/" tag { direct=$1 } END { print peeled ? peeled : direct }')"
+        if [[ ! "$tag_sha" =~ ^[0-9a-f]{40}$ ]]; then
+          printf 'Unable to resolve source config tag to a commit: %s\n' "$tag" >&2
+          exit 1
+        fi
+        printf 'Using source config tag: %s (commit %s)\n' "$tag" "$tag_sha"
+        git clone --quiet "$SOURCE_REPOSITORY" "$source_dir"
+        cloned_tag_sha="$(git -C "$source_dir" rev-parse --verify "refs/tags/$tag^{commit}" 2>/dev/null || true)"
+        if [[ "$cloned_tag_sha" != "$tag_sha" ]]; then
+          printf 'Source config tag changed while cloning: expected %s, got %s\n' "$tag_sha" "${cloned_tag_sha:-unresolved}" >&2
+          exit 1
+        fi
+        git -C "$source_dir" checkout --quiet --detach "$tag_sha"
+        fi
+        if [[ ! -d "$source_dir/$CONFIG_PATH" ]]; then
+          printf 'Missing OpenCode configuration directory: %s\n' "$CONFIG_PATH" >&2
+          exit 1
+        fi
+        rm -rf "$config_dir"
+        cp -a "$source_dir/$CONFIG_PATH" "$config_dir"
+
+        if [[ ! -d "$source_dir/$SKILLS_PATH" ]]; then
+          printf 'Missing skills directory: %s\n' "$SKILLS_PATH" >&2
+          exit 1
+        fi
+        if [[ -z "$(compgen -G "$source_dir/$SKILLS_PATH/*/SKILL.md" 2>/dev/null)" ]]; then
+          printf 'No SKILL.md files found in skills directory: %s\n' "$SKILLS_PATH" >&2
+          exit 1
+        fi
+        cp -a "$source_dir/$SKILLS_PATH" "$config_dir/skills"
+        printf 'Copied skills: %s\n' "$(ls "$config_dir/skills" | tr '\n' ' ')"
+
+        [[ -f "$config_dir/agents/model-discovery.md" ]] || { echo "Missing model-discovery agent file"; exit 1; }
+
+        mkdir -p "$HOME/.config"
+        rm -rf "$HOME/.config/opencode"
+        cp -a "$config_dir" "$HOME/.config/opencode"
+
+    - name: Materialize OpenCode auth
+      shell: bash
+      run: |
+        set -Eeuo pipefail
+        umask 077
+        if [[ -n "${OPENCODE_AUTH_CONTENT:-}" ]]; then
+          printf '::add-mask::%s\n' "$OPENCODE_AUTH_CONTENT"
+          printf '%s' "$OPENCODE_AUTH_CONTENT" | while IFS= read -r line || [[ -n "$line" ]]; do [[ -n "$line" ]] && printf '::add-mask::%s\n' "$line"; done
+          mkdir -p ~/.local/share/opencode
+          printf '%s' "$OPENCODE_AUTH_CONTENT" > ~/.local/share/opencode/auth.json
+          if ! jq -e '.openai.type == "oauth" and .openai.access != "" and .openai.refresh != "" and (.openai.expires | type == "number")' ~/.local/share/opencode/auth.json >/dev/null 2>&1; then
+            echo "::warning::OPENCODE_AUTH_CONTENT is not valid opencode auth JSON (expected {openai:{type:oauth,access,refresh,expires:number}}); removing auth.json and continuing without it" >&2
+            rm -f ~/.local/share/opencode/auth.json
+          elif command -v opencode >/dev/null 2>&1 && ! opencode --help >/dev/null 2>&1; then
+            echo "::warning::opencode config check failed with provided auth.json; removing auth.json and continuing" >&2
+            rm -f ~/.local/share/opencode/auth.json
+          fi
+        fi

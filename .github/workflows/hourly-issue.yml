@@ -1,0 +1,364 @@
+name: Hourly issue runner
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+    inputs:
+      selection_prompt:
+        description: Optional override for the selection instruction tail (the candidate list is always prepended)
+        required: false
+        type: string
+      selection_timeout_minutes:
+        description: Issue selector timeout in minutes
+        required: false
+        type: number
+        default: 10
+  push:
+    paths:
+      - ".github/workflows/hourly-issue.yml"
+      - ".github/workflows/opencode.yml"
+      - ".github/actions/**"
+      - ".opencode/**"
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  select:
+    # ponytail: the release step does not run if the job is killed at timeout-minutes, so the
+    # claim leaks and the issue stays out of selection until a human unlabels it. Upgrade path:
+    # timeout-based claims — encode the run id in the claim (agent-running:<run_id>) and treat a
+    # claim whose run is no longer in-progress as expired at selection time.
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    outputs:
+      prompt: ${{ steps.pick.outputs.prompt }}
+      issue_number: ${{ steps.pick.outputs.issue_number }}
+    env:
+      GITHUB_TOKEN: ${{ secrets.BACLUC_AGENT_GITHUB_TOKEN }}
+      OPENCODE_GO_API_KEY: ${{ secrets.OPENCODE_GO_API_KEY }}
+      OPENCODE_GO_2_API_KEY: ${{ secrets.OPENCODE_GO_2_API_KEY }}
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      BRAVE_API_KEY: ${{ secrets.BRAVE_API_KEY }}
+      OPENCODE_AUTH_CONTENT: ${{ secrets.OPENCODE_AUTH_JSON }}
+      ISSUE_REPOSITORY: ${{ vars.ISSUE_REPOSITORY || github.repository }}
+      MODEL_AVAILABILITY_CACHE_ISSUE: ${{ vars.MODEL_AVAILABILITY_CACHE_ISSUE }}
+      GITHUB_FORK_INVITE_USER: ${{ vars.FORK_INVITE_USER || secrets.FORK_INVITE_USER }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          token: ${{ secrets.BACLUC_AGENT_GITHUB_TOKEN }}
+
+      - name: Set up OpenCode
+        uses: ./.github/actions/setup-opencode
+
+      - name: Check model availability
+        id: model-availability
+        uses: ./.github/actions/model-availability
+
+      - name: Dump model probe debug output
+        if: always()
+        shell: bash
+        run: |
+          cat "$RUNNER_TEMP"/model-probes/*.log 2>/dev/null || true
+
+      - name: Pick issue and dispatch
+        id: pick
+        shell: bash
+        env:
+          SELECTION_PROMPT: ${{ inputs.selection_prompt }}
+          AVAILABLE_MODELS: ${{ steps.model-availability.outputs.available-models }}
+          OPENCODE_FATAL_STAGE: selection
+          SELECTION_TIMEOUT_MINUTES: ${{ inputs.selection_timeout_minutes || 10 }}
+        run: |
+          set -Eeuo pipefail
+          rm -f "$RUNNER_TEMP/opencode-fatal.json"
+
+          printf '::add-mask::%s\n' "$GITHUB_TOKEN"
+          printf '::add-mask::%s\n' "$OPENCODE_GO_API_KEY"
+          printf '::add-mask::%s\n' "$OPENCODE_GO_2_API_KEY"
+          printf '::add-mask::%s\n' "$OPENCODE_AUTH_CONTENT"
+
+          if ! gh label create agent-running -R "$ISSUE_REPOSITORY" \
+            --color 0E8A16 --description 'Selected by the hourly issue runner' --force; then
+            printf '::warning::could not ensure the agent-running label exists; the claim may not apply\n'
+          fi
+
+          printf '\n\n\n\n\n\n'
+          printf 'Fetching github issues...\n'
+          printf '\n\n\n\n\n\n'
+
+          # Oldest-first: the 50-item page keeps the OLDEST 50 unclaimed issues instead of the
+          # newest 50, so backlog items beyond the cap are the newest, not the oldest.
+          search_json="$RUNNER_TEMP/candidates.json"
+          gh api "search/issues?q=repo:${ISSUE_REPOSITORY}+is:open+is:issue+label:ready-for-implementation+-label:agent-running+sort:created-asc&per_page=50" \
+            --jq '.items' > "$search_json"
+
+          candidates="$RUNNER_TEMP/candidate-numbers.txt"
+          jq -r '.[].number | tostring' "$search_json" > "$candidates"
+          if [[ ! -s "$candidates" ]]; then
+            printf '%s\n' 'No unclaimed open issues; nothing to do.'
+            exit 0
+          fi
+          printf 'Unclaimed candidate issues (oldest first):\n'
+          cat "$candidates"
+          printf '\n\n\n\n\n\n'
+          printf 'Selecting model...\n'
+          printf '\n\n\n\n\n\n'
+
+          available_models_file="$RUNNER_TEMP/available-models.txt"
+          printf '%s\n' "$AVAILABLE_MODELS" > "$available_models_file"
+
+          selection_model=''
+          # Exclude known-weak free models (ling-3.0-flash-fin-free, mimo-v2.5-free, nemotron-*, muse-spark-*)
+          # per model-discovery.md (provision-machines devel branch); they pass the trivial OK
+          # probe but fail as coordinator/selector in 10+ runs (e.g. 34029380869, 34042660858).
+          mapfile -t free_models < <(grep -E '^(opencode|openrouter)/[^[:space:]]+(-free|:free)$' "$available_models_file" | grep -Ev '/(ling-3\.0-flash-fin|mimo-v2\.5)(-free|:free)$|/nemotron-|/muse-spark-' | awk '!seen[$0]++')
+          for candidate in \
+            'opencode-go-openai/qwen3.8-flash' \
+            'opencode-go-openai-2/qwen3.8-flash' \
+            'opencode/big-pickle' \
+            "${free_models[@]}"; do
+            case "$candidate" in
+              opencode-go-openai/qwen3.8-flash)
+                grep -Fxq "$candidate" "$available_models_file" && [[ -n "$OPENCODE_GO_API_KEY" ]] || continue
+                ;;
+              opencode-go-openai-2/qwen3.8-flash)
+                grep -Fxq "$candidate" "$available_models_file" && [[ -n "$OPENCODE_GO_2_API_KEY" ]] || continue
+                ;;
+              opencode/big-pickle)
+                grep -Fxq "$candidate" "$available_models_file" || continue
+                ;;
+              opencode/*-free) ;;
+              openrouter/*)
+                [[ -n "$OPENROUTER_API_KEY" ]] || continue
+                ;;
+              *) continue ;;
+            esac
+            selection_model="$candidate"
+            break
+          done
+          if [[ -z "$selection_model" ]]; then
+            selection_model=$(head -n1 "$available_models_file")
+            if [[ -z "$selection_model" ]]; then
+              printf '%s\n' 'No issue-selection model is available; not dispatching.' >&2
+              exit 1
+            fi
+            printf '%s\n' "Using fallback model: $selection_model" >&2
+          fi
+          printf 'Issue selection model: %s\n' "$selection_model"
+          echo "selection_model=${selection_model}" >> "$GITHUB_OUTPUT"
+          export MODEL="$selection_model"
+          printf '\n\n\n\n\n\n'
+          printf 'Choosing issue...\n'
+          printf '\n\n\n\n\n\n'
+
+          default_tail="$(cat scripts/issue-selection-tail.txt)"
+          tail_instruction="${SELECTION_PROMPT:-$default_tail}"
+
+          enriched="$RUNNER_TEMP/candidates.enriched.txt"
+          : > "$enriched"
+
+          # Repos to check for open agent PRs: the known agent repos plus any repos
+          # referenced in candidate issue bodies (e.g. upstream ecamp/ecamp3).
+          # Extracted mentions are filtered by existence on GitHub to drop path-like
+          # noise (e.g. api/camps, e2e/tests) that the grep pattern also matches.
+          repo_list=("$GITHUB_REPOSITORY" "$ISSUE_REPOSITORY" bacluc/provision-machines bacluc-agent/ecamp3)
+          mapfile -t body_repos < <(jq -r '.[].body // ""' "$search_json" \
+            | sed 's|https\?://[^/]*/||g; s|git@[^:]*:||g; s|github\.com/||g; s|\.git\b||g' \
+            | grep -oE '[A-Za-z0-9][A-Za-z0-9-]{2,}/[A-Za-z0-9][A-Za-z0-9_.-]{1,}' \
+            | grep -vE '^(github|www|http|https)\.com$' \
+            | sort -u)
+          existing_repos=()
+          for repo in "${body_repos[@]}"; do
+            if gh repo view "$repo" --json nameWithOwner --jq .nameWithOwner >/dev/null 2>&1; then
+              existing_repos+=("$repo")
+            fi
+          done
+          body_repos=("${existing_repos[@]}")
+          for repo in "${body_repos[@]}"; do
+            case " ${repo_list[*]} " in
+              *" $repo "*) ;;
+              *) repo_list+=("$repo") ;;
+            esac
+          done
+          if (( ${#repo_list[@]} > 20 )); then
+            repo_list=("${repo_list[@]:0:20}")
+          fi
+
+          pr_lookup_dir="$RUNNER_TEMP/pr-lookup"
+          mkdir -p "$pr_lookup_dir"
+          for repo in "${repo_list[@]}"; do
+            key="$(echo "$repo" | tr '/' '_')"
+            gh pr list -R "$repo" --state all --limit 200 --json number,updatedAt,headRefName,state,title \
+              --jq '.[] | "\(.headRefName)|#\(.number)|\(.updatedAt)|\(.state)|\(.title)"' 2>/dev/null \
+              | sort -t'|' -k3 -r > "$pr_lookup_dir/$key.lookup" || true
+          done
+
+          # Shuffle candidates so enrichment order (and the debug dump) is random.
+          while IFS= read -r num; do
+            pr_info="none"
+            for repo in "${repo_list[@]}"; do
+              key="$(echo "$repo" | tr '/' '_')"
+              match="$(grep -m1 -E "issue-${num}([-_]|[^0-9A-Za-z_-]|$)|${ISSUE_REPOSITORY}#${num}([^0-9]|$)" "$pr_lookup_dir/$key.lookup" 2>/dev/null || true)"
+              if [[ -n "$match" ]]; then
+                pr_number="$(echo "$match" | cut -d'|' -f2 | tr -d '#')"
+                pr_updated="$(echo "$match" | cut -d'|' -f3)"
+                pr_state="$(echo "$match" | cut -d'|' -f4)"
+                case "$pr_state" in
+                  MERGED) pr_info="merged #${pr_number} updated:${pr_updated}" ;;
+                  CLOSED) pr_info="closed #${pr_number} updated:${pr_updated}" ;;
+                  *) pr_info="open #${pr_number} updated:${pr_updated}" ;;
+                esac
+                break
+              fi
+            done
+            human_ts="$(gh issue view "$num" -R "$ISSUE_REPOSITORY" --json comments --jq '[.comments[] | select(.author.login != "bacluc-agent")] | max_by(.createdAt) | .createdAt // "none"' 2>/dev/null || echo "none")"
+            if [[ -z "$human_ts" || "$human_ts" == "null" ]]; then
+              human_ts="none"
+            fi
+            printf '%s|%s|%s\n' "$num" "$pr_info" "$human_ts" >> "$enriched"
+          done < <(shuf "$candidates")
+          printf 'Candidate enrichment (PR + feedback):\n'
+          cat "$enriched"
+          printf '\n'
+
+          candidate_lines="$RUNNER_TEMP/candidate-lines.txt"
+          : > "$candidate_lines"
+          while IFS='|' read -r num pr_info human_ts; do
+            line="$(jq -r --arg num "$num" --arg pr_info "$pr_info" --arg human_ts "$human_ts" '.[] | select((.number | tostring) == $num) | "\(.number): \(.title) [labels: \([.labels[].name] | join(","))] [created: \(.created_at)] [PR: \($pr_info)] [last-human-feedback:\($human_ts)] | \((.body // "" | gsub("[\\r\\n\\t]+"; " ") | .[0:300]))"' "$search_json")"
+            printf '%s\n' "$line" >> "$candidate_lines"
+          done < "$enriched"
+
+          recent_issues="$(gh pr list -R "$GITHUB_REPOSITORY" --state all --limit 30 --json headRefName --jq '.[].headRefName' | grep -oE 'issue-[0-9]+' | grep -oE '[0-9]+' | awk '!seen[$0]++' | head -n 10 | paste -sd, - || true)"
+          recent_issues="${recent_issues:-none}"
+
+          prompt="$RUNNER_TEMP/selection-prompt.txt"
+          {
+            printf '%s\n' 'Open issue candidates in this repository (number: title [labels] [created] [PR: none|open|merged|closed #<n> updated:<ts>] [last-human-feedback:<ts|none>] | body-excerpt), RANDOM ORDER — position carries no priority:'
+            cat "$candidate_lines" | shuf
+            printf '%s\n' "Recently selected — avoid: ${recent_issues}"
+            printf '%s\n' "$tail_instruction"
+          } > "$prompt"
+
+          selection="$RUNNER_TEMP/selection.out"
+          set +e
+          timeout "${SELECTION_TIMEOUT_MINUTES}m" opencode run --agent issue-selector --model "$selection_model" --title "issue-selector" "$(< "$prompt")" 2> >(tee "${selection}.stderr" >&2) | tee "$selection"
+          selection_statuses=("${PIPESTATUS[@]}")
+          selection_status=${selection_statuses[0]}
+          selection_tee_status=${selection_statuses[1]}
+          set -e
+          printf 'Model selection statuses: opencode=%s tee=%s\n' "$selection_status" "$selection_tee_status"
+          if (( selection_tee_status != 0 )); then
+            exit "$selection_tee_status"
+          fi
+          if (( selection_status != 0 )); then
+            printf 'Selection failed (opencode=%s); not dispatching.\n' "$selection_status" >&2
+            ((selection_status == 124)) && printf '::error::issue selection exceeded the %sm limit (opencode exit %s)\n' "$SELECTION_TIMEOUT_MINUTES" "$selection_status"
+            exit 1
+          fi
+          if ! grep -q '[^[:space:]]' "$selection"; then
+            printf '%s\n' 'Selection produced no output; not dispatching.' >&2
+            exit 1
+          fi
+
+          eof="EOF_PROMPT_$(openssl rand -hex 32)"
+          if grep -Fqx -- "$eof" "$selection"; then
+            printf '%s\n' 'Selection output contained the output delimiter; not dispatching.' >&2
+            exit 1
+          fi
+          # `|| true` is required: under `set -Eeuo pipefail` a non-matching grep fails the whole
+          # pipeline, and the assignment would abort the step before the dispatch happens.
+          issue_number="$(grep -E '^SELECTED_ISSUE:[[:space:]]*[0-9]+[[:space:]]*$' "$selection" | tail -1 | grep -oE '[0-9]+' || true)"
+          if [[ -z "$issue_number" ]] || ! grep -qxF "$issue_number" "$candidates"; then
+            printf '::warning::could not determine selected issue; dispatching without a claim\n'
+          else
+            printf 'issue_number=%s\n' "$issue_number" >> "$GITHUB_OUTPUT"
+            if ! gh issue edit "$issue_number" -R "$ISSUE_REPOSITORY" --add-label agent-running; then
+              printf '::warning::could not claim issue %s; dispatching unclaimed\n' "$issue_number"
+            fi
+          fi
+          {
+            printf 'prompt<<%s\n' "$eof"
+            printf '%s\n' "$(< "$selection")"
+            printf '%s\n' "$eof"
+          } >> "$GITHUB_OUTPUT"
+
+          printf '%s\n' 'Implementation prompt:'
+          cat "$selection"
+
+      - name: Update cache on selection failure
+        if: failure() && steps.pick.outputs.selection_model != '' && steps.model-availability.outputs.cache-issue != ''
+        shell: bash
+        env:
+          MODEL: ${{ steps.pick.outputs.selection_model }}
+          CACHE_ISSUE: ${{ steps.model-availability.outputs.cache-issue }}
+          GITHUB_TOKEN: ${{ secrets.BACLUC_AGENT_GITHUB_TOKEN }}
+        run: |
+          set -Eeuo pipefail
+          cache_json=$(gh issue view "$CACHE_ISSUE" -R "$ISSUE_REPOSITORY" --json body --jq '.body' 2>/dev/null || echo '{}')
+          checked="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          fatal_model=""
+          fatal_reason=""
+          if [[ -f "$RUNNER_TEMP/opencode-fatal.json" ]]; then
+            fatal_model=$(jq -r '.model' "$RUNNER_TEMP/opencode-fatal.json")
+            fatal_reason=$(jq -r '.reason' "$RUNNER_TEMP/opencode-fatal.json")
+            fatal_message=$(jq -r '(.message // empty) | tostring | gsub("%"; "%25") | gsub("[\r\n]+"; " ")' "$RUNNER_TEMP/opencode-fatal.json")
+            printf '::error::fatal provider error (%s) from model %s: %s\n' "$fatal_reason" "$fatal_model" "${fatal_message:-unknown}"
+          fi
+          fatal_provider="${fatal_model%/*}"
+          MODEL="${fatal_model:-$MODEL}"
+          if [[ "$fatal_reason" == balance || "$fatal_reason" == auth ]]; then
+            new_cache=$(echo "$cache_json" | jq --arg provider "$fatal_provider" --arg checked "$checked" \
+              'with_entries(if (.key | split("/")[0]) == $provider then .value = {"ok": false, "checked": $checked} else . end)')
+          else
+            new_cache=$(echo "$cache_json" | jq --arg model "$MODEL" --arg checked "$checked" \
+              '. + {($model): {"ok": false, "checked": $checked}}')
+          fi
+          gh issue edit "$CACHE_ISSUE" -R "$ISSUE_REPOSITORY" --body "$new_cache" || true
+
+      - name: Dump debug output
+        if: always()
+        shell: bash
+        env:
+          COORDINATOR_SESSION_TITLE: issue-selector
+        run: |
+          python3 scripts/dump_subagent_transcripts.py || true
+
+  run:
+    needs: select
+    if: needs.select.outputs.prompt != ''
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    uses: ./.github/workflows/opencode.yml
+    with:
+      prompt: ${{ needs.select.outputs.prompt }}
+    secrets: inherit
+
+  release:
+    needs: [select, run]
+    if: always() && needs.select.outputs.issue_number != ''
+    permissions:
+      issues: write
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_TOKEN: ${{ secrets.BACLUC_AGENT_GITHUB_TOKEN }}
+      ISSUE_REPOSITORY: ${{ vars.ISSUE_REPOSITORY || github.repository }}
+    steps:
+      - name: Release the issue claim
+        shell: bash
+        env:
+          ISSUE_NUMBER: ${{ needs.select.outputs.issue_number }}
+        run: |
+          set -Eeuo pipefail
+          printf '::add-mask::%s\n' "$GITHUB_TOKEN"
+          if ! gh issue edit "$ISSUE_NUMBER" -R "$ISSUE_REPOSITORY" --remove-label agent-running; then
+            printf '::warning::could not remove agent-running from #%s; it stays claimed until unlabelled by hand\n' "$ISSUE_NUMBER"
+          fi
