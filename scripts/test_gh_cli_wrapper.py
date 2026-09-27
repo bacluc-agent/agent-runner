@@ -45,19 +45,19 @@ def verify_installed():
         result = subprocess.run(["bash", "-c", 'gh pr create -R ecamp/ecamp3 --base devel --head bacluc-agent:issue-221-move-doctrine-validate-to-required-ci'],
                                 cwd=directory, env=env, capture_output=True, text=True)
         assert result.returncode != 0
-        assert "gh guard:" in result.stderr
+        assert "gh cli wrapper:" in result.stderr
         assert not log.exists()
         for denied in ("gh pr create -R ecamp/ecamp3 --repo ecamp/ecamp3",
                        "gh pr create --repo ecamp/ecamp3 --base devel --head bacluc-agent:issue-221-move-doctrine-validate-to-required-ci"):
             result = subprocess.run(["bash", "-c", denied], cwd=directory, env=env,
                                     capture_output=True, text=True)
             assert result.returncode != 0, denied
-            assert "gh guard:" in result.stderr, denied
+            assert "gh cli wrapper:" in result.stderr, denied
             assert not log.exists(), denied
-    print("Installed composite guard: forwarding and historical denial passed")
+    print("Installed composite wrapper: forwarding and historical denial passed")
 
 
-class GuardTest(unittest.TestCase):
+class CliWrapperTest(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
@@ -67,7 +67,7 @@ class GuardTest(unittest.TestCase):
                         GITHUB_PATH=str(self.directory / "path"),
                         PATH=f"{self.backend.parent}:{os.environ['PATH']}",
                         TEST_LOG=str(self.directory / "log"), GH_HOST="github.com")
-        result = subprocess.run(["bash", str(ROOT / "scripts/install-gh-guard.sh")],
+        result = subprocess.run(["bash", str(ROOT / "scripts/install-gh-cli-wrapper.sh")],
                                 env=self.env, capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.env["PATH"] = f"{(self.directory / 'path').read_text().strip()}:{self.env['PATH']}"
@@ -85,7 +85,7 @@ class GuardTest(unittest.TestCase):
             self.assertEqual(log.read_text().splitlines(), [json.dumps(argv)])
         else:
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn("gh guard:", result.stderr)
+            self.assertIn("gh cli wrapper:", result.stderr)
             self.assertFalse(log.exists(), result.stdout)
 
     def test_creation(self):
@@ -112,7 +112,7 @@ class GuardTest(unittest.TestCase):
             self.call(["api", endpoint])
             self.call(["api", endpoint, "-XGET", "-f", "q=hello"])
         for endpoint in ("graphql", "/graphql", "https://api.github.com/graphql", "repos/{owner}/{repo}/pulls",
-                         "repos/BacLuc/r/pulls/", "repos/BacLuc/r/../r/pulls", "repos/BacLuc/r/%70ulls",
+                         "repos/ecamp/ecamp3/pulls/", "repos/BacLuc/r/../r/pulls", "repos/BacLuc/r/%70ulls",
                          "repos/BacLuc/r//pulls", "repos/BacLuc/r/pulls?x=1", "https://evil.com/repos/BacLuc/r/pulls",
                          "https://api.github.com//repos/BacLuc/r/pulls", "repositories/123/pulls",
                          "api/v3/repos/BacLuc/r/pulls"):
@@ -121,6 +121,8 @@ class GuardTest(unittest.TestCase):
                       ["-XPOST", "-XGET"], ["-HHost:evil.com"], ["-HX-HTTP-Method-Override:POST"],
                       ["--unknown"], ["repos/BacLuc/r/pulls"]):
             self.call(["api", "repos/ecamp/ecamp3/pulls", *flags], False)
+        self.call(["api", "repos/BacLuc/r/pulls/", "-X", "POST", "-f", "title=test"])
+        self.call(["api", "repos/BacLuc/r/contents/", "--jq", ".[].name"])
         self.call(["api", "graphql", "-XGET"], False)
         self.call(["api", "repos/BacLuc/r/pulls", "-f", "body=--hostname=evil.com", "--hostname=github.com"])
 
@@ -172,18 +174,18 @@ class GuardTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_installer_recursion_and_missing_backend(self):
-        result = subprocess.run(["bash", str(ROOT / "scripts/install-gh-guard.sh")],
+        result = subprocess.run(["bash", str(ROOT / "scripts/install-gh-cli-wrapper.sh")],
                                 env=self.env, capture_output=True, text=True)
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("gh guard:", result.stderr)
+        self.assertIn("gh cli wrapper:", result.stderr)
         self.backend.unlink()
         self.call(["pr", "view"], False)
         empty = self.directory / "empty"
         empty.mkdir()
-        result = subprocess.run(["/bin/bash", str(ROOT / "scripts/install-gh-guard.sh")],
+        result = subprocess.run(["/bin/bash", str(ROOT / "scripts/install-gh-cli-wrapper.sh")],
                                 env=dict(self.env, PATH=str(empty)), capture_output=True, text=True)
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("gh guard:", result.stderr)
+        self.assertIn("gh cli wrapper:", result.stderr)
 
 
 if __name__ == "__main__":

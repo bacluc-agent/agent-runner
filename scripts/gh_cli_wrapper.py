@@ -127,6 +127,7 @@ def validate_api(args):
     else:
         endpoint = endpoint.removeprefix("/")
     path, query, _ = endpoint.partition("?")
+    path = path.rstrip("/")
     if path.lower() == "graphql":
         deny("direct GraphQL is disabled; use guarded gh pr create -R or REST instead")
     if not re.fullmatch(r"[A-Za-z0-9_{}.-]+(?:/[A-Za-z0-9_{}.-]+)*", path) or any(
@@ -176,5 +177,5 @@ if __name__ == "__main__":
     try:
         main()
     except (ValueError, OSError) as error:
-        print(f"gh guard: {error}", file=sys.stderr)
+        print(f"gh cli wrapper: {error}", file=sys.stderr)
         sys.exit(1)

@@ -109,11 +109,11 @@ idea (issue in agent-todo)
 - `issue-selection-tail.txt` — the default selection instructions appended to
   the issue-selector prompt.
 
-## GitHub CLI PR destination guard
+## GitHub CLI wrapper
 
 `setup-opencode` installs a Python-stdlib `gh` wrapper in
-`$RUNNER_TEMP/gh-guard` before starting OpenCode. `GITHUB_PATH` makes it apply
-to subsequent steps and child shells, including work in other checkouts.
+`$RUNNER_TEMP/gh-cli-wrapper` before starting OpenCode. `GITHUB_PATH` makes it
+apply to subsequent steps and child shells, including work in other checkouts.
 The installer saves the real CLI's absolute path before changing PATH.
 
 - `gh pr create` and `gh pr new` require exactly one explicit `-R`/`--repo`
@@ -139,7 +139,7 @@ the wrapper can bypass it. CLI builtin commands may internally use GraphQL;
 only direct `gh api graphql` is denied.
 
 Regression tests use a fake backend and never create forbidden PRs. Run
-`python3 -m unittest discover -s scripts -p test_gh_guard.py` locally. The
+`python3 -m unittest discover -s scripts -p test_gh_cli_wrapper.py` locally. The
 dispatchable CI workflow also runs the actual setup composite with a fake backend
 and verifies forwarding and historical denial in a later step outside the checkout.
 

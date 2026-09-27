@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 jobs:
-  gh-guard-integration:
+  gh-cli-wrapper-integration:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -27,15 +27,15 @@ jobs:
           PY
 
       - name: Prepare fake GitHub CLI backend
-        run: python3 scripts/test_gh_guard.py --prepare-backend "$RUNNER_TEMP/fake-gh" >> "$GITHUB_PATH"
+        run: python3 scripts/test_gh_cli_wrapper.py --prepare-backend "$RUNNER_TEMP/fake-gh" >> "$GITHUB_PATH"
 
       - name: Run actual OpenCode setup
         uses: ./.github/actions/setup-opencode
         env:
           GITHUB_TOKEN: ${{ github.token }}
 
-      - name: Verify guard in subsequent step and child shell outside checkout
-        run: python3 scripts/test_gh_guard.py --verify-installed
+      - name: Verify wrapper in subsequent step and child shell outside checkout
+        run: python3 scripts/test_gh_cli_wrapper.py --verify-installed
 
   completion-check:
     runs-on: ubuntu-latest
