@@ -1404,57 +1404,50 @@ class TestWorkflowOpenRouterSelection:
         assert kept.returncode == 0, "opencode/big-pickle must be kept"
 
 
-class TestConditionalDelivery:
-    WORKFLOW = Path(".github/workflows/opencode.yml").read_text()
+class TestNoCodeChangeDelivery:
+    CANONICAL = "Push a branch and open a pull request only when the task changes code; a task that changes no code (a report or analysis, or any other no-code-change task) delivers its result as a comment on the target issue, pushing no branch and opening no pull request."
+    CLASS_RULE = "Branch and pull-request handling below applies only to code-change tasks, and the generated implementation prompt must state which class the chosen issue is in: code change or no code change."
 
-    def test_snapshots_every_repository_before_coordinator(self):
-        assert self.WORKFLOW.index("Snapshot repository state") < self.WORKFLOW.index(
-            "name: Run coordinator"
+    def test_one_canonical_delivery_sentence_in_all_three_prompt_files(self):
+        selector = Path(".opencode/agent/issue-selector.md").read_text()
+        tail = Path("scripts/issue-selection-tail.txt").read_text()
+        agents = Path("AGENTS.md").read_text()
+        assert self.CANONICAL in selector
+        assert self.CANONICAL in tail
+        assert self.CANONICAL in agents
+        # byte-identical sentence, so it must still be the tail's last line
+        assert tail.splitlines()[-1] == self.CANONICAL
+        assert "Always push changes to a branch" not in selector
+        # one shared sentence in both PR Deduplication and Handling Review Feedback
+        assert selector.count(self.CLASS_RULE) == 2
+        assert "\n## Delivering results\n" in agents
+
+    def _run_summary(self, monkeypatch, pr_files):
+        """Run the run-result step's PR discovery and docs-only guard as the workflow runs it."""
+        monkeypatch.setenv("GH_STUB_FILES", pr_files)
+        monkeypatch.setenv("GITHUB_REPOSITORY", "bacluc-agent/agent-runner")
+        step = Path(".github/workflows/opencode.yml").read_text().split(
+            "- name: Post run-result comment", 1
+        )[1]
+        assert "continue-on-error: true" in step, "the guard must stay warning-only"
+        block = step.split("# Check for existing PR", 1)[1].split("# The runner owns", 1)[0]
+        script = (
+            "set -Eeuo pipefail\n"
+            'gh() { case " $* " in *" pr view "*) printf "%s\\n" "$GH_STUB_FILES" ;;'
+            " *) printf '%s\\n' 'https://github.com/bacluc-agent/agent-runner/pull/138' ;; esac; }\n"
+            "BRANCH=issue-336-delivery-policy\nPUSHED_REPOS=\nRUN_SUMMARY=\n"
+            + block
+            + '\nprintf "SUMMARY=%s\\n" "$RUN_SUMMARY"\n'
         )
-        assert 'git -C "$repo_dir" rev-parse HEAD' in self.WORKFLOW
-        assert 'git -C "$repo_dir" status --porcelain=v1' in self.WORKFLOW
-
-    def test_no_changes_and_docs_only_do_not_push(self):
-        ensure = self.WORKFLOW.split("- name: Ensure work is pushed", 1)[1]
-        assert 'CODE_CHANGED="false"' in ensure
-        assert 'AGENTS.md|CLAUDE.md|README*' in ensure
-        assert 'docs/*|documentation/*|analysis/*|report/*|reports/*' in ensure
-        assert 'echo "code_changed=false"' in ensure
-        assert 'No implementation code changes to push.' in ensure
-
-    def test_preexisting_branch_cannot_be_reported_without_code(self):
-        ensure = self.WORKFLOW.split("- name: Ensure work is pushed", 1)[1]
-        assert "WORK_BRANCH" not in ensure
-        assert 'echo "branch_name=${BRANCH_NAME}"' in ensure
-        assert ensure.index('echo "branch_name=${BRANCH_NAME}"') < ensure.index(
-            'echo "code_changed=true"'
-        )
-
-    def test_one_and_multiple_repositories_share_code_classification(self):
-        ensure = self.WORKFLOW.split("- name: Ensure work is pushed", 1)[1]
-        assert 'find "$GITHUB_WORKSPACE" -maxdepth 5 -name ".git"' in ensure
-        assert 'repo_has_code="false"' in ensure
-        assert 'CODE_CHANGED="true"' in ensure
-        assert 'PUSHED_REPOS="${PUSHED_REPOS}${repo_dir}' in ensure
-
-    def test_docs_plus_code_commits_all_files_only_on_code_path(self):
-        ensure = self.WORKFLOW.split("- name: Ensure work is pushed", 1)[1]
-        assert "git add -A" in ensure
-        assert 'if [[ "$repo_has_code" != true ]]; then' in ensure
-        assert ensure.index("git add -A") > ensure.index(
-            'if [[ "$repo_has_code" != true ]]; then'
+        return subprocess.run(
+            ["bash", "-Eeuo", "pipefail", "-c", script], capture_output=True, text=True
         )
 
-    def test_no_code_keeps_issue_delivery_and_skips_pr_lookup(self):
-        result = self.WORKFLOW.split("- name: Post run-result comment", 1)[1]
-        assert 'if [[ -n "${BRANCH:-}" ]]; then' in result
-        assert 'gh pr list -R "$GITHUB_REPOSITORY"' in result
-        assert "No implementation code changes to push." in self.WORKFLOW
-
-    def test_progress_comment_uses_newest_marker_and_file_form_field(self):
-        helper = Path("scripts/update_progress_comment.py").read_text()
-        assert '"api", "--paginate"' in helper
-        assert 'MARKER in (comment.get("body") or "")' in helper
-        assert '"-F",' in helper
-        assert '"-f",' not in helper
-        assert "Never append a free-form run report" in self.WORKFLOW
+    def test_docs_only_pull_request_warns_and_code_pull_request_does_not(self, monkeypatch):
+        docs = self._run_summary(monkeypatch, "docs/analysis-336.md\nAGENTS.md")
+        code = self._run_summary(monkeypatch, "scripts/issue-selection-tail.txt")
+        assert (docs.returncode, code.returncode) == (0, 0), (docs.stderr, code.stderr)
+        assert "::warning::run delivered as a docs-only pull request" in docs.stdout
+        assert "run delivered as a docs-only pull request" in docs.stdout.split("SUMMARY=")[1]
+        assert "::warning::" not in code.stdout
+        assert "docs-only" not in code.stdout.split("SUMMARY=")[1]

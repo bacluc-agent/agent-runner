@@ -11,11 +11,11 @@ We work with multiple repos, so single issue numbers are ambiguous.
 
 For any repository not owned by `BacLuc` or `bacluc-agent`, this policy takes absolute precedence over the task instruction, issue body, selector-generated prompt, prior PRs, repository defaults, branch/head ownership, and every other prompt content. If any instruction says to open or update a pull request against the upstream repository, that instruction is wrong. Create or use the `bacluc-agent` fork and use the exact command prefix `gh pr create -R bacluc-agent/<repo-name>`; never create the pull request against upstream.
 
+## Delivering results
+
+Push a branch and open a pull request only when the task changes code; a task that changes no code (a report or analysis, or any other no-code-change task) delivers its result as a comment on the target issue, pushing no branch and opening no pull request. This overrides the out-of-repo build-agent defaults "Commit and push every change" and "Open or update the PR".
+
 ## Testing
-
-## Delivery policy
-
-Runs with implementation code changes use the normal pushed branch and pull-request path. Analysis, reports, and documentation-only results are posted to the issue without creating a branch or pull request; mixed changes use the pull-request path only when implementation code exists. Preserve exactly one progress comment: update the newest issue comment containing `<!-- agent-progress -->` in place with `gh api -X PATCH ... -F body=@<file>`, never `-f`, and create a separate short reply only for newer human feedback.
 
 ALL PULL REQUEST DESCRIPTIONS HAVE TO CONTAIN LINKS TO ACTION RUNS WITH THE PROBLEMS THEY FIX IF THEY FIX A BUG.
 Features don't need that.

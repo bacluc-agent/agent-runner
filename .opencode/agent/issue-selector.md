@@ -41,12 +41,15 @@ Before generating the prompt, check for a PR (open, merged, or closed) for the i
 
 Known limitation: the batched lookup covers the four agent repos plus repos referenced in candidate issue bodies, matching `issue-<n>` in head refs or PR titles and `<issue-repo>#<n>` in titles; a PR whose branch, title, and body never mention `issue-<n>` or `<issue-repo>#<n>` (e.g. a branch `fix/clientPrint-flake-36` whose PR only says `Fixes #36`) can still be missed — when in doubt, run `gh pr list -R <repo> --state all --search "issue-<n>"` or `gh pr list -R <repo> --state all --search "<issue-repo>#<n>"` across the referenced repos before concluding `[PR: none]`; treat `[PR: none]` as "no PR found in the queried repos", not as proof no agent PR exists; `last-human-feedback` counts issue comments only, not PR review comments.
 
+Branch and pull-request handling below applies only to code-change tasks, and the generated implementation prompt must state which class the chosen issue is in: code change or no code change.
+
 ## Handling Review Feedback
 
 If previous runs produced review feedback, incorporate that feedback into the implementation prompt
 and improve the existing PR.
 Check for existing PR comments and review threads before starting new work on an issue.
-Deliver the result according to what the run changed: when implementation code changes exist, push a branch and open or update the PR; for analysis, reports, or documentation-only work, post the result to the issue without creating a branch or PR. Mixed changes use the PR path only when implementation code changes are present. Preserve the existing deduplication and review-feedback rules.
+Push a branch and open a pull request only when the task changes code; a task that changes no code (a report or analysis, or any other no-code-change task) delivers its result as a comment on the target issue, pushing no branch and opening no pull request.
+Branch and pull-request handling below applies only to code-change tasks, and the generated implementation prompt must state which class the chosen issue is in: code change or no code change.
 
 ## Diversity and anti-repeat
 
