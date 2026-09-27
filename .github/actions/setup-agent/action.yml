@@ -21,7 +21,7 @@ runs:
         CONFIG_PATH: deploys/development_tools/ai_agent_devcontainer/files/opencode
         SKILLS_PATH: deploys/development_tools/ai_agent_devcontainer/files/claude/skills
         # renovate: datasource=github-tags depName=bacluc/provision-machines
-        BACLUC_PROVISION_MACHINES_VERSION: 1.28
+        BACLUC_PROVISION_MACHINES_VERSION: 1.27
       run: |
         set -Eeuo pipefail
 
