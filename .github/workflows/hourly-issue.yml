@@ -251,7 +251,10 @@ jobs:
 
           selection="$RUNNER_TEMP/selection.out"
           set +e
+          stop_token="$(openssl rand -hex 8)"
+          printf '::stop-commands::%s\n' "$stop_token"
           timeout "${SELECTION_TIMEOUT_MINUTES}m" opencode run --agent issue-selector --model "$selection_model" --title "issue-selector" "$(< "$prompt")" 2> >(tee "${selection}.stderr" >&2) | tee "$selection"
+          printf '::%s::\n' "$stop_token"
           selection_statuses=("${PIPESTATUS[@]}")
           selection_status=${selection_statuses[0]}
           selection_tee_status=${selection_statuses[1]}
@@ -292,8 +295,11 @@ jobs:
             printf '%s\n' "$eof"
           } >> "$GITHUB_OUTPUT"
 
+          stop_token="$(openssl rand -hex 8)"
+          printf '::stop-commands::%s\n' "$stop_token"
           printf '%s\n' 'Implementation prompt:'
           cat "$selection"
+          printf '::%s::\n' "$stop_token"
 
       - name: Update cache on selection failure
         if: failure() && steps.pick.outputs.selection_model != '' && steps.model-availability.outputs.cache-issue != ''
