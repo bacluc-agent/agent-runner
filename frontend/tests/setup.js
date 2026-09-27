@@ -1,7 +1,7 @@
 import { expect, afterEach } from 'vitest'
 import { cleanup } from '@testing-library/vue'
 import '@testing-library/jest-dom/vitest'
-import snapshotSerializer from 'jest-serializer-vue-tjw'
+import * as vueSnapshotSerializer from 'vue3-snapshot-serializer'
 import 'vitest-canvas-mock'
 
 // jsdom does not implement elementFromPoint, but tiptap's placeholder extension
@@ -39,4 +39,18 @@ afterEach(() => {
   cleanup()
 })
 
-expect.addSnapshotSerializer(snapshotSerializer)
+// Settings used to live in vue.config.js pluginOptions, which Vite never loaded.
+globalThis.vueSnapshots = {
+  attributesToClear: ['id', 'for'],
+  formatter: 'classic',
+  classicFormatting: {
+    indent_char: ' ',
+    indent_inner_html: true,
+    indent_size: 5,
+    inline: [],
+    sep: '\n',
+    wrap_attributes: 'force-aligned',
+  },
+}
+
+expect.addSnapshotSerializer(vueSnapshotSerializer)
