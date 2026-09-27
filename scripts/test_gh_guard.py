@@ -47,6 +47,13 @@ def verify_installed():
         assert result.returncode != 0
         assert "gh guard:" in result.stderr
         assert not log.exists()
+        for denied in ("gh pr create -R ecamp/ecamp3 --repo ecamp/ecamp3",
+                       "gh pr create --repo ecamp/ecamp3 --base devel --head bacluc-agent:issue-221-move-doctrine-validate-to-required-ci"):
+            result = subprocess.run(["bash", "-c", denied], cwd=directory, env=env,
+                                    capture_output=True, text=True)
+            assert result.returncode != 0, denied
+            assert "gh guard:" in result.stderr, denied
+            assert not log.exists(), denied
     print("Installed composite guard: forwarding and historical denial passed")
 
 
@@ -90,6 +97,7 @@ class GuardTest(unittest.TestCase):
                     self.call(["pr", command, *flags, "--title", "--repo=outsider/r", "--body", "-Rbad/r"])
             for flags in ([], ["-R", "outsider/r"], ["-R", "BacLuc-evil/r"],
                           ["-R", "evil.com/BacLuc/r"], ["-R", "BacLuc/r", "--repo", "BacLuc/r"],
+                          ["-R", "ecamp/ecamp3", "--repo", "ecamp/ecamp3"], ["--repo", "ecamp/ecamp3"],
                           ["--body", "--repo=BacLuc/r"], ["--title=-RBacLuc/r"],
                           ["-R", "BacLuc/r", "--unknown"], ["-R"], ["--", "-R", "BacLuc/r"]):
                 self.call(["pr", command, *flags], False)
