@@ -223,7 +223,7 @@ jobs:
             break
           done
           if [[ -z "$fallback_model" && -z "${requested:-}" ]]; then
-            fallback_model="$(grep -Ev -f "$RUNNER_TEMP/agent-runner/scripts/model-deny-list.txt" "$available_models_file" | head -n1 || true)"
+            fallback_model="$(grep -Ev -f "$deny_list_file" "$available_models_file" | head -n1 || true)"
             model_source='fallback: last resort (deny-list filtered)'
             if [[ -z "$fallback_model" ]]; then
               printf '%s\n' 'No coordinator fallback model is available; not dispatching.' >&2

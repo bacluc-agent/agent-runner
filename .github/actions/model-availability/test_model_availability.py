@@ -1246,6 +1246,7 @@ class TestWorkflowOpenRouterSelection:
                         'grep -Ev -f "$RUNNER_TEMP/agent-runner/scripts/model-deny-list.txt" "$available_models_file"',
                         mapfile,
                     ),
+                    content.find('grep -Ev -f "$deny_list_file" "$available_models_file"', mapfile),
                 )
                 if index >= 0
             )
@@ -1295,6 +1296,40 @@ class TestWorkflowOpenRouterSelection:
             'grep -Eq "$deny_re" <<<"$requested"'
         ), "a missing or empty deny-list must fail closed before deny_re is used"
         assert "Deny-list %s loaded: %s pattern(s)" in content
+
+    def test_opencode_deny_list_load_guard_fails_closed_when_executed(self, tmp_path, monkeypatch):
+        content = Path(".github/workflows/opencode.yml").read_text()
+        start = content.index('deny_list_file="$RUNNER_TEMP/agent-runner/scripts/model-deny-list.txt"')
+        end = content.index("\n", content.index("loaded: %s pattern(s)", start))
+        guard = content[start:end] + "\nprintf 'dispatched\\n'\n"
+        deny_list = tmp_path / "agent-runner" / "scripts" / "model-deny-list.txt"
+        monkeypatch.setenv("RUNNER_TEMP", str(tmp_path))
+
+        def run(body):
+            if body is None:
+                deny_list.unlink(missing_ok=True)
+            else:
+                deny_list.parent.mkdir(parents=True, exist_ok=True)
+                deny_list.write_text(body)
+            return subprocess.run(
+                ["bash", "-Eeuo", "pipefail", "-c", guard],
+                capture_output=True,
+                text=True,
+            )
+
+        missing = run(None)
+        assert missing.returncode == 1
+        assert "missing or empty" in missing.stderr
+        assert "dispatched" not in missing.stdout
+
+        comments_only = run("# only a comment\n\n")
+        assert comments_only.returncode == 1
+        assert "dispatched" not in comments_only.stdout
+
+        loaded = run("weak-model-a\nweak-model-b\n")
+        assert loaded.returncode == 0
+        assert "loaded: 2 pattern(s)" in loaded.stderr
+        assert "dispatched" in loaded.stdout
 
     def test_deny_list_file_exists(self):
         root = Path(__file__).parents[3]
