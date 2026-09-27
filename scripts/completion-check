@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
+
+# renovate: datasource=docker depName=ghcr.io/bacluc/prettier-image/prettier-image
+PRETTIER_VERSION=5.1.0
+# renovate: datasource=docker depName=rhysd/actionlint
+ACTIONLINT_VERSION=1.7.12
+
+mount=(-v "$PWD:/workspace" -w /workspace)
+status=0
+
+check() {
+  local name="$1"
+  shift
+  printf '==> %s\n' "$name"
+  if "$@"; then
+    printf 'PASS: %s\n' "$name"
+  else
+    printf 'FAIL: %s\n' "$name" >&2
+    status=1
+  fi
+}
+
+check 'formatting (prettier --check .)' docker run --rm "${mount[@]}" "ghcr.io/bacluc/prettier-image/prettier-image:${PRETTIER_VERSION}" --check .
+check 'actionlint (workflows + used actions)' docker run --rm "${mount[@]}" "rhysd/actionlint:${ACTIONLINT_VERSION}" -color
+if [[ ! -d .opencode/node_modules/@opencode-ai/plugin ]]; then
+  check 'opencode node dependencies (npm install)' npm install --prefix .opencode
+fi
+check 'opencode plugin tests (node --test)' node --test ".opencode/plugin/*.test.mjs"
+check 'opencode tool tests (node --test)' node --test ".opencode/tool/*.test.mjs"
+if command -v uv > /dev/null 2>&1; then
+  check 'pytest (scripts tests)' uv run --group dev pytest -q
+elif command -v pytest > /dev/null 2>&1; then
+  check 'pytest (scripts tests)' pytest -q
+else
+  check 'pytest (scripts tests)' bash -c 'python3 -m pip install --quiet pytest && python3 -m pytest -q'
+fi
+
+exit "$status"
