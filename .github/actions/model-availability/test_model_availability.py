@@ -1402,3 +1402,59 @@ class TestWorkflowOpenRouterSelection:
             text=True,
         )
         assert kept.returncode == 0, "opencode/big-pickle must be kept"
+
+
+class TestConditionalDelivery:
+    WORKFLOW = Path(".github/workflows/opencode.yml").read_text()
+
+    def test_snapshots_every_repository_before_coordinator(self):
+        assert self.WORKFLOW.index("Snapshot repository state") < self.WORKFLOW.index(
+            "name: Run coordinator"
+        )
+        assert 'git -C "$repo_dir" rev-parse HEAD' in self.WORKFLOW
+        assert 'git -C "$repo_dir" status --porcelain=v1' in self.WORKFLOW
+
+    def test_no_changes_and_docs_only_do_not_push(self):
+        ensure = self.WORKFLOW.split("- name: Ensure work is pushed", 1)[1]
+        assert 'CODE_CHANGED="false"' in ensure
+        assert 'AGENTS.md|CLAUDE.md|README*' in ensure
+        assert 'docs/*|documentation/*|analysis/*|report/*|reports/*' in ensure
+        assert 'echo "code_changed=false"' in ensure
+        assert 'No implementation code changes to push.' in ensure
+
+    def test_preexisting_branch_cannot_be_reported_without_code(self):
+        ensure = self.WORKFLOW.split("- name: Ensure work is pushed", 1)[1]
+        assert "WORK_BRANCH" not in ensure
+        assert 'echo "branch_name=${BRANCH_NAME}"' in ensure
+        assert ensure.index('echo "branch_name=${BRANCH_NAME}"') < ensure.index(
+            'echo "code_changed=true"'
+        )
+
+    def test_one_and_multiple_repositories_share_code_classification(self):
+        ensure = self.WORKFLOW.split("- name: Ensure work is pushed", 1)[1]
+        assert 'find "$GITHUB_WORKSPACE" -maxdepth 5 -name ".git"' in ensure
+        assert 'repo_has_code="false"' in ensure
+        assert 'CODE_CHANGED="true"' in ensure
+        assert 'PUSHED_REPOS="${PUSHED_REPOS}${repo_dir}' in ensure
+
+    def test_docs_plus_code_commits_all_files_only_on_code_path(self):
+        ensure = self.WORKFLOW.split("- name: Ensure work is pushed", 1)[1]
+        assert "git add -A" in ensure
+        assert 'if [[ "$repo_has_code" != true ]]; then' in ensure
+        assert ensure.index("git add -A") > ensure.index(
+            'if [[ "$repo_has_code" != true ]]; then'
+        )
+
+    def test_no_code_keeps_issue_delivery_and_skips_pr_lookup(self):
+        result = self.WORKFLOW.split("- name: Post run-result comment", 1)[1]
+        assert 'if [[ -n "${BRANCH:-}" ]]; then' in result
+        assert 'gh pr list -R "$GITHUB_REPOSITORY"' in result
+        assert "No implementation code changes to push." in self.WORKFLOW
+
+    def test_progress_comment_uses_newest_marker_and_file_form_field(self):
+        helper = Path("scripts/update_progress_comment.py").read_text()
+        assert '"api", "--paginate"' in helper
+        assert 'MARKER in (comment.get("body") or "")' in helper
+        assert '"-F",' in helper
+        assert '"-f",' not in helper
+        assert "Never append a free-form run report" in self.WORKFLOW

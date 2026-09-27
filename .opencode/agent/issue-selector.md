@@ -46,7 +46,7 @@ Known limitation: the batched lookup covers the four agent repos plus repos refe
 If previous runs produced review feedback, incorporate that feedback into the implementation prompt
 and improve the existing PR.
 Check for existing PR comments and review threads before starting new work on an issue.
-Always push changes to a branch so work is not lost, and record the branch name in the issue.
+Deliver the result according to what the run changed: when implementation code changes exist, push a branch and open or update the PR; for analysis, reports, or documentation-only work, post the result to the issue without creating a branch or PR. Mixed changes use the PR path only when implementation code changes are present. Preserve the existing deduplication and review-feedback rules.
 
 ## Diversity and anti-repeat
 

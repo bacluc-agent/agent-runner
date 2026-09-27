@@ -13,6 +13,10 @@ For any repository not owned by `BacLuc` or `bacluc-agent`, this policy takes ab
 
 ## Testing
 
+## Delivery policy
+
+Runs with implementation code changes use the normal pushed branch and pull-request path. Analysis, reports, and documentation-only results are posted to the issue without creating a branch or pull request; mixed changes use the pull-request path only when implementation code exists. Preserve exactly one progress comment: update the newest issue comment containing `<!-- agent-progress -->` in place with `gh api -X PATCH ... -F body=@<file>`, never `-f`, and create a separate short reply only for newer human feedback.
+
 ALL PULL REQUEST DESCRIPTIONS HAVE TO CONTAIN LINKS TO ACTION RUNS WITH THE PROBLEMS THEY FIX IF THEY FIX A BUG.
 Features don't need that.
 
