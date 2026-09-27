@@ -1372,10 +1372,34 @@ class TestHourlySelectionTail:
             if "tail -n 200" in line and "selection" in line
         )
 
-    def test_tail_names_no_capture_the_process_substitution_may_not_have_written(self):
-        tail = self._tail()
-        assert ".stderr" not in tail, f"{self.WORKFLOW}: the tail races the process substitution's .stderr capture again: {tail}"
-        assert '"$RUNNER_TEMP/selection.out"' in tail, tail
+    def test_selector_timeout_is_configurable_and_defaults_to_ten_minutes(self):
+        content = Path(self.WORKFLOW).read_text()
+        assert "selection_timeout_minutes:" in content
+        assert "default: 10" in content
+        assert 'SELECTION_TIMEOUT_MINUTES: ${{ inputs.selection_timeout_minutes || 10 }}' in content
+        assert 'timeout "${SELECTION_TIMEOUT_MINUTES}m"' in content
+
+    def test_tail_summarizes_stdout_and_stderr_captures(self):
+        content = Path(self.WORKFLOW).read_text()
+        tail_lines = [line.strip() for line in content.splitlines() if "tail -n 200" in line]
+        assert any('"$RUNNER_TEMP/selection.out"' in line for line in tail_lines)
+        assert any('"$RUNNER_TEMP/selection.out.stderr"' in line for line in tail_lines)
+        assert all("|| true" in line for line in tail_lines)
+
+    def test_timeout_annotation_uses_configured_limit(self):
+        content = Path(self.WORKFLOW).read_text()
+        line = next(
+            line.strip()
+            for line in content.splitlines()
+            if "((selection_status == 124))" in line and "printf" in line
+        )
+        result = subprocess.run(
+            ["bash", "-c", f"selection_status=124\nSELECTION_TIMEOUT_MINUTES=17\n{line}"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        assert "::error::issue selection exceeded the 17m limit" in result.stdout
 
     def test_missing_capture_does_not_mask_the_selection_exit_status(self, tmp_path):
         """The `|| true` is load-bearing: with no capture on disk the step must still exit 124."""
@@ -1391,10 +1415,34 @@ class TestHourlySelectionTail:
                 "PATH": "/usr/bin:/bin",
                 "RUNNER_TEMP": str(tmp_path),  # deliberately empty: no selection.out
                 "GITHUB_STEP_SUMMARY": str(tmp_path / "summary.md"),
+                "SELECTION_TIMEOUT_MINUTES": "10",
             },
         )
         assert "No such file" in result.stderr, "the harness must really be missing the capture"
         assert result.returncode == 124, f"exit {result.returncode}, expected the real status 124"
+
+    def test_summary_includes_stdout_and_stderr_tails(self, tmp_path):
+        lines = Path(self.WORKFLOW).read_text().splitlines()
+        start = next(n for n, line in enumerate(lines) if "if (( selection_status != 0 )); then" in line)
+        end = next(n for n, line in enumerate(lines[start:], start) if line.strip() == "fi")
+        block = "\n".join(line.strip() for line in lines[start : end + 1])
+        (tmp_path / "selection.out").write_text("stdout tail\n")
+        (tmp_path / "selection.out.stderr").write_text("stderr tail\n")
+        result = subprocess.run(
+            ["bash", "-c", f"set -Eeuo pipefail\nselection_status=124\n{block}"],
+            capture_output=True,
+            text=True,
+            env={
+                "PATH": "/usr/bin:/bin",
+                "RUNNER_TEMP": str(tmp_path),
+                "GITHUB_STEP_SUMMARY": str(tmp_path / "summary.md"),
+                "SELECTION_TIMEOUT_MINUTES": "10",
+            },
+        )
+        assert result.returncode == 124
+        summary = (tmp_path / "summary.md").read_text()
+        assert "stdout tail" in summary
+        assert "stderr tail" in summary
 
 
 class TestCoordinatorOutputTail:
@@ -1894,6 +1942,7 @@ class TestWorkflowTimeoutDiagnostics:
                         "RUNNER_TEMP": directory,
                         "GITHUB_STEP_SUMMARY": str(Path(directory) / "summary.md"),
                         "COORDINATOR_TIMEOUT": "120",
+                        "SELECTION_TIMEOUT_MINUTES": "10",
                         "number": "42",
                         "out": str(Path(directory) / "refine.out"),
                         "failed": "0",
@@ -1967,6 +2016,7 @@ class TestWorkflowTimeoutDiagnostics:
                         "RUNNER_TEMP": directory,
                         "GITHUB_STEP_SUMMARY": str(Path(directory) / "summary.md"),
                         "COORDINATOR_TIMEOUT": "120",
+                        "SELECTION_TIMEOUT_MINUTES": "10",
                         "number": "42",
                         "out": str(Path(directory) / "refine.out"),
                         "failed": "0",
@@ -1978,7 +2028,10 @@ class TestWorkflowTimeoutDiagnostics:
             ]
             content = Path(path).read_text()
             assert capture_path in content
-            assert f"{capture_path}.stderr" not in content, (
-                f"{path}: the tail must not name the process substitution's .stderr capture; "
-                "that file is written asynchronously and the read races it"
-            )
+            if path.endswith("hourly-issue.yml"):
+                assert f"{capture_path}.stderr" in content
+            else:
+                assert f"{capture_path}.stderr" not in content, (
+                    f"{path}: the tail must not name the process substitution's .stderr capture; "
+                    "that file is written asynchronously and the read races it"
+                )
