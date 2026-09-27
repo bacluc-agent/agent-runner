@@ -39,7 +39,8 @@ afterEach(() => {
   cleanup()
 })
 
-// Settings used to live in vue.config.js pluginOptions, which Vite never loaded.
+// Settings used to live in vue.config.js pluginOptions.jestSerializer, which
+// jest-serializer-vue-tjw loaded itself from process.cwd().
 globalThis.vueSnapshots = {
   attributesToClear: ['id', 'for'],
   formatter: 'classic',
