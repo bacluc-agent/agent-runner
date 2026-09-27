@@ -39,4 +39,9 @@ def test_main_reads_env(monkeypatch, capsys):
     monkeypatch.setenv("COORDINATOR_TEE_STATUS", "0")
     monkeypatch.setenv("FATAL_REASON", "")
     assert run_status.main() == 0
-    assert capsys.readouterr().out.strip() == "⏱️ timed out (coordinator exit 124)"
+    captured = capsys.readouterr()
+    assert captured.out.strip() == "⏱️ timed out (coordinator exit 124)"
+    assert (
+        captured.err.strip()
+        == "run_status: outcome='failure' status='124' tee='0' fatal='' -> ⏱️ timed out (coordinator exit 124)"
+    )
