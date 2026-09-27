@@ -258,7 +258,7 @@ jobs:
           stop_token="$(openssl rand -hex 32)"
           : "${stop_token:?stop-commands fence token generation failed}"
           printf '::stop-commands::%s\n' "$stop_token"
-          timeout "${SELECTION_TIMEOUT_MINUTES}m" opencode run --agent issue-selector --model "$selection_model" --title "issue-selector" "$(< "$prompt")" 2> >(tee "${selection}.stderr" >&2) | tee "$selection"
+          timeout "${SELECTION_TIMEOUT_MINUTES}m" opencode run --agent issue-selector --model "$selection_model" --title "issue-selector" "$(< "$prompt")" | tee "$selection"
           selection_statuses=("${PIPESTATUS[@]}")
           printf '::%s::\n' "$stop_token"
           selection_status=${selection_statuses[0]}
