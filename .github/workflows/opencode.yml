@@ -73,6 +73,11 @@ on:
         required: false
         type: number
         default: 120
+      continue_on_error:
+        description: Continue the caller workflow when the run job fails
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   actions: write
@@ -85,6 +90,7 @@ jobs:
   run:
     runs-on: ubuntu-latest
     timeout-minutes: 130
+    continue-on-error: ${{ inputs.continue_on_error == true }}
     env:
       GITHUB_TOKEN: ${{ secrets.BACLUC_AGENT_GITHUB_TOKEN }}
       OPENCODE_GO_API_KEY: ${{ secrets.OPENCODE_GO_API_KEY }}
