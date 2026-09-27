@@ -189,8 +189,8 @@ jobs:
               printf '::stop-commands::%s\n' "$stop_token"
               timeout 8m opencode run --agent issue-refiner --model "$selection_model" --title "issue-refiner" \
                 "$(< "$prompt")" 2> >(tee "${out}.stderr" >&2) | tee "$out"
-              printf '::%s::\n' "$stop_token"
               statuses=("${PIPESTATUS[@]}")
+              printf '::%s::\n' "$stop_token"
               opencode_status=${statuses[0]}
               tee_status=${statuses[1]}
               validation_out="$(python3 scripts/validate_refined_issue.py --file "$out" 2>&1)"
