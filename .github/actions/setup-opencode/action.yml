@@ -6,9 +6,9 @@ description: >-
 runs:
   using: composite
   steps:
-    - name: Install GitHub CLI PR destination guard
+    - name: Install GitHub CLI wrapper
       shell: bash
-      run: bash "$GITHUB_ACTION_PATH/../../../scripts/install-gh-guard.sh"
+      run: bash "$GITHUB_ACTION_PATH/../../../scripts/install-gh-cli-wrapper.sh"
 
     - name: Install OpenCode
       shell: bash
