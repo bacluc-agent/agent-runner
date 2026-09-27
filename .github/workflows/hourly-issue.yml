@@ -17,8 +17,6 @@ on:
       - ".opencode/**"
 
 permissions:
-  actions: write
-  checks: read
   contents: write
   issues: write
   pull-requests: write
@@ -329,8 +327,6 @@ jobs:
     needs: select
     if: needs.select.outputs.prompt != ''
     permissions:
-      actions: write
-      checks: read
       contents: write
       issues: write
       pull-requests: write
