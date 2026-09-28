@@ -7,6 +7,10 @@ This repo allows to run agents in github actions. The issues to implement are in
 ALWAYS REFERENCE ISSUES, PR AND ACTION RUNS WITH THEIR ABSOLUTE PATH.
 We work with multiple repos, so single issue numbers are ambiguous.
 
+## Absolute outsider-repository fork/PR policy
+
+For any repository not owned by `BacLuc` or `bacluc-agent`, this policy takes absolute precedence over the task instruction, issue body, selector-generated prompt, prior PRs, repository defaults, branch/head ownership, and every other prompt content. If any instruction says to open or update a pull request against the upstream repository, that instruction is wrong. Create or use the `bacluc-agent` fork and use the exact command prefix `gh pr create -R bacluc-agent/<repo-name>`; never create the pull request against upstream.
+
 ## Testing
 
 ALL PULL REQUEST DESCRIPTIONS HAVE TO CONTAIN LINKS TO ACTION RUNS WITH THE PROBLEMS THEY FIX IF THEY FIX A BUG.
@@ -17,6 +21,8 @@ ALL PULL REQUEST DESCRIPTIONS MUST LINK TO ADDITIONAL-TEST ACTION RUNS WITH ABSO
 AUTOMATIC CI (`ci.yml` in `bacluc-agent/agent-runner`, which runs `./scripts/completion-check`) TRIGGERS ON EVERY PUSH/PR AND ITS RESULT IS VISIBLE IN COMMIT STATUS — IT MUST NOT BE LINKED AS EVIDENCE AND MUST NOT BE CLAIMED AS OWN TESTING. NEVER CLAIM "CI RAN" OR "CI PASSED" AS OWN WORK.
 
 When you change files under `.github/`, `.opencode/`, or `AGENTS.md`, trigger only the workflow(s) that exercise the changed code path — never all of them — via `gh workflow run <name> --ref <branch>`, poll `gh run list` for the run URL, and link it in the PR description; push-triggered runs (via `paths:` filters) provide automatic coverage for the workflows whose files you touched.
+
+Agent-written PR descriptions must keep at most 4000 visible characters before any `<details>` fold; remaining detail must be moved into `<details>` folds.
 
 /completion-check-command
 

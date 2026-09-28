@@ -583,7 +583,7 @@ class TestIsCacheFresh:
 
     def test_fresh_failed(self):
         now = datetime(2026, 9, 6, 12, 0, tzinfo=timezone.utc)
-        entry = {"ok": False, "checked": "2026-09-06T11:00:00Z"}
+        entry = {"ok": False, "checked": "2026-09-06T11:30:00Z"}
         assert model_availability.is_cache_fresh(entry, now)
 
     def test_expired_failed(self):
@@ -601,6 +601,11 @@ class TestIsCacheFresh:
         assert not model_availability.is_cache_fresh(None, now)
         assert not model_availability.is_cache_fresh({"ok": "yes"}, now)
         assert not model_availability.is_cache_fresh({"ok": True}, now)
+
+    def test_failed_ttl_is_one_hour(self):
+        # bacluc-agent/agent-todo#311: re-probe failures within the hour so a
+        # wrongly-marked model recovers in half the time.
+        assert model_availability.FAILED_TTL_HOURS == 1
 
 
 class TestCandidatePriority:
@@ -705,7 +710,7 @@ class TestSelectPending:
         now = datetime(2026, 9, 6, 12, 0, tzinfo=timezone.utc)
         cache = {
             "opencode/big-pickle": {"ok": True, "checked": "2026-09-06T10:00:00Z"},
-            "opencode/a-free": {"ok": False, "checked": "2026-09-06T11:00:00Z"},
+            "opencode/a-free": {"ok": False, "checked": "2026-09-06T11:30:00Z"},
         }
         pending, skipped = model_availability.select_pending(list(cache), cache, now)
         assert pending == []
@@ -887,6 +892,14 @@ class TestWriteCache:
         err = capsys.readouterr().err
         assert "warning: cache body is" in err
         assert str(model_availability.GITHUB_ISSUE_BODY_LIMIT) in err
+
+    def test_warns_with_gh_stderr(self, monkeypatch, capsys):
+        def fail(*args):
+            raise subprocess.CalledProcessError(1, args, "", "gh: not authenticated (add-mask)")
+
+        monkeypatch.setattr(model_availability, "run_gh", fail)
+        model_availability.write_cache("49", {"a": 1})
+        assert "gh: not authenticated (add-mask)" in capsys.readouterr().err
 
 
 class TestModelsEndpointFor:
@@ -1245,4 +1258,104 @@ class TestWorkflowOpenRouterSelection:
             assert "openrouter/*)" in content
             assert '[[ -n "$OPENROUTER_API_KEY" ]]' in content
             assert "OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}" in content
-            assert "/(ling-3\\.0-flash-fin|mimo-v2\\.5)(-free|:free)$|/nemotron-|/muse-spark-" in content
+            assert "model-deny-list.txt" in content
+
+    def test_last_resort_is_deny_list_filtered_and_fails_closed(self):
+        for path in self.WORKFLOWS:
+            content = Path(path).read_text()
+            mapfile = content.index("mapfile -t free_models")
+            give_up = content.rindex("not dispatching.' >&2")
+            filtered = min(
+                index
+                for index in (
+                    content.find(
+                        'grep -Ev -f scripts/model-deny-list.txt "$available_models_file"',
+                        mapfile,
+                    ),
+                    content.find(
+                        'grep -Ev -f "$RUNNER_TEMP/agent-runner/scripts/model-deny-list.txt" "$available_models_file"',
+                        mapfile,
+                    ),
+                )
+                if index >= 0
+            )
+            assert mapfile < filtered < give_up
+            assert 'head -n1 "$available_models_file"' not in content
+            assert "last resort (deny-listed)" not in content
+
+    def test_empty_filtered_candidates_exit_before_dispatch(self, tmp_path):
+        deny_list = tmp_path / "deny-list.txt"
+        deny_list.write_text("bad-model\n")
+        available = tmp_path / "available-models.txt"
+        available.write_text("bad-model\n")
+        result = subprocess.run(
+            [
+                "bash",
+                "-Eeuo",
+                "pipefail",
+                "-c",
+                """
+                selection_model="$(grep -Ev -f "$1" "$2" | head -n1 || true)"
+                if [[ -z "$selection_model" ]]; then
+                  printf '%s\n' 'No model is available; not dispatching.' >&2
+                  exit 1
+                fi
+                """,
+                "bash",
+                str(deny_list),
+                str(available),
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 1
+        assert "not dispatching" in result.stderr
+
+    def test_opencode_rejects_deny_list_model_override(self):
+        content = Path(".github/workflows/opencode.yml").read_text()
+        assert 'grep -Eq "$deny_re" <<<"$requested"' in content
+        assert "Requested model is deny-listed; not dispatching." in content
+
+    def test_deny_list_file_exists(self):
+        root = Path(__file__).parents[3]
+        deny_list = root / "scripts/model-deny-list.txt"
+        assert deny_list.is_file()
+        lines = deny_list.read_text().splitlines()
+        assert lines, "deny-list must not be empty"
+        for line in lines:
+            assert line.strip(), "deny-list must not contain blank lines"
+            assert "|" not in line, (
+                "grep -f reads every line as a live pattern; comments must stay pipe-free"
+            )
+
+    def test_deny_list_excludes_known_weak_models_and_keeps_big_pickle(self):
+        root = Path(__file__).parents[3]
+        deny_list = root / "scripts/model-deny-list.txt"
+        weak_models = [
+            "opencode/nemotron-3-ultra-free",
+            "opencode/muse-spark-1.3-contributor-free",
+            "opencode/ling-3.0-flash-fin-free",
+            "opencode/mimo-v2.5-free",
+            "openrouter/cohere/north-mini-code:free",
+            "openrouter/poolside/laguna-xs-2.1:free",
+            "openrouter/thinkingmachines/inkling:free",
+            "openrouter/dots-studio/dots-3-note-preview:free",
+            "openrouter/nex-agi/nex-n2.5-pro:free",
+            "openrouter/liquid/lfm-2.5:free",
+            "openrouter/inclusionai/ling-3.0-flash-sante:free",
+        ]
+        for model in weak_models:
+            result = subprocess.run(
+                ["grep", "-Ev", "-f", str(deny_list)],
+                input=model,
+                capture_output=True,
+                text=True,
+            )
+            assert result.returncode == 1, f"{model} must be deny-listed"
+        kept = subprocess.run(
+            ["grep", "-Ev", "-f", str(deny_list)],
+            input="opencode/big-pickle",
+            capture_output=True,
+            text=True,
+        )
+        assert kept.returncode == 0, "opencode/big-pickle must be kept"
