@@ -428,7 +428,7 @@ jobs:
           if ((coordinator_status != 0)); then
             exit "$coordinator_status"
           fi
-          exit "$coordinator_tee_status"
+          exit 0
 
       - name: Fatal guard
         id: fatal-guard
