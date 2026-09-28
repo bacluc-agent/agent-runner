@@ -6,11 +6,14 @@ import sys
 
 def classify(outcome: str, status: str, tee: str, fatal: str) -> str:
     if outcome == "success":
+        # The coordinator step ends in `exit 0` whenever the coordinator itself
+        # succeeded, so a non-success outcome can never pair with status "0" and
+        # the tee diagnostic is only reachable from here.
+        if tee not in ("", "0"):
+            return f"✅ completed (log capture failed, tee exit {tee})"
         return "✅ completed"
     if fatal:
         return f"❌ fatal error: {fatal}"
-    if status == "0":
-        return f"✅ completed (log capture failed, tee exit {tee})"
     if outcome in ("cancelled", "skipped"):
         return "⚠️ cancelled before the coordinator finished"
     if status == "124":

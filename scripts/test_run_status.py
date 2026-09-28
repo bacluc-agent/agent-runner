@@ -13,8 +13,15 @@ def test_success_beats_fatal_reason():
     assert run_status.classify("success", "0", "0", "auth") == "✅ completed"
 
 
-def test_completed_coordinator_with_failing_tee_is_completed():
-    assert run_status.classify("failure", "0", "2", "") == "✅ completed (log capture failed, tee exit 2)"
+def test_completed_coordinator_with_failing_tee_still_says_completed():
+    assert run_status.classify("success", "0", "2", "") == "✅ completed (log capture failed, tee exit 2)"
+
+
+def test_non_success_outcome_is_not_disguised_by_a_zero_status():
+    # bacluc-agent/agent-todo#296: with `exit 0` the step conclusion is success
+    # whenever the coordinator succeeded, so a non-success outcome can never
+    # pair with status 0.
+    assert run_status.classify("failure", "0", "2", "") == "⚠️ failed (coordinator exit 0)"
 
 
 def test_timeout():
