@@ -208,7 +208,9 @@ class TestFinish:
         assert "the workflow replaces this line" not in body
 
     def test_replaces_the_open_pr_section_at_the_agents_heading_level(self, fake_gh):
-        body = upc.TEMPLATE.read_text(encoding="utf-8").replace("### ", "## ")
+        # Mixed levels: the agent wrote '## Open PR' where the template has '### ';
+        # the section must end at the next heading of any level, not at the next '## '.
+        body = upc.TEMPLATE.read_text(encoding="utf-8").replace("### Open PR", "## Open PR")
         gh = fake_gh([_comment(333, body)])
 
         assert (
@@ -216,10 +218,27 @@ class TestFinish:
         )
 
         written = gh.written[0]
-        section = written.split("## Open PR\n")[1].split("\n## ")[0]
+        section = written.split("## Open PR\n")[1].split("\n### ")[0]
         assert section.strip() == PR_URL
         assert "the workflow replaces this line" not in written
-        assert "### Open PR" not in written
+        # The rest of the comment survives, the run-result row included.
+        assert "### Verification evidence" in written
+        assert "### Action runs" in written
+        assert RUN_URL in [row.split("|")[1].strip() for row in _rows(written)]
+
+    def test_ignores_open_pr_lookalikes(self, fake_gh):
+        body = upc.TEMPLATE.read_text(encoding="utf-8").replace(
+            "### Open PR", "##Open PR\n\nOpen PR"
+        )
+        gh = fake_gh([_comment(333, body)])
+
+        assert (
+            upc.main(_argv("--result", "✅ completed", "--pr-url", PR_URL, "--mode", "finish")) == 0
+        )
+
+        written = gh.written[0]
+        assert "##Open PR\n\nOpen PR" in written
+        assert PR_URL not in written
 
     def test_creates_comment_when_missing(self, fake_gh):
         gh = fake_gh(
