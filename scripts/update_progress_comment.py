@@ -63,9 +63,9 @@ def upsert_row(lines: list[str], row: str) -> None:
 def set_open_pr(lines: list[str], pr_url: str) -> None:
     """Replace the whole 'Open PR' section with the bare pull request URL.
 
-    The heading level is whatever the agent wrote, so match the heading and the
-    section end at that level: a comment that says '## Open PR' must not abort the
-    run-result row. ponytail: a comment with no 'Open PR' heading at all keeps its
+    The heading level is whatever the agent wrote, so match the heading at any
+    level and end the section at the next heading of any level: a comment that
+    says '## Open PR' must not abort the run-result row. ponytail: a comment with no 'Open PR' heading at all keeps its
     placeholder silently; match any prefix, not just this one text, if that starts
     to vary.
     """
