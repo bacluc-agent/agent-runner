@@ -119,6 +119,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
-
-
-# Temporary evidence commit for the scripts/** push filter; reverted after the workflow-trigger check.
