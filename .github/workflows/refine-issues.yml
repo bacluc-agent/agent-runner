@@ -9,6 +9,7 @@ on:
       - ".github/workflows/refine-issues.yml"
       - ".github/actions/**"
       - ".opencode/**"
+      - "scripts/**"
 
 permissions:
   contents: read

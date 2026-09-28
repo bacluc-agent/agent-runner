@@ -21,6 +21,7 @@ on:
       - ".github/workflows/opencode.yml"
       - ".github/actions/**"
       - ".opencode/**"
+      - "scripts/**"
 
 permissions:
   contents: write

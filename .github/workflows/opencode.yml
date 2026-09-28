@@ -8,6 +8,7 @@ on:
       - ".github/workflows/review-fixes.yml"
       - ".github/actions/**"
       - ".opencode/**"
+      - "scripts/**"
       - "AGENTS.md"
       - "README.md"
   workflow_dispatch:
