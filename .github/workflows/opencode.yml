@@ -603,11 +603,16 @@ jobs:
             STATUS="⚠️ failed (coordinator exit ${COORDINATOR_OUTCOME:-})"
           fi
 
-          # Check for existing PR
+          # Check for existing PR. Only a branch this run pushed is provably this run's:
+          # `Ensure work is pushed` names it agent-run/<issue>-<run id> and reports
+          # branch_name only together with pushed_repos. When the agent pushed its own
+          # branch, BRANCH is that branch, so leave the section to the coordinator —
+          # `set_open_pr` no-ops on an empty pull request URL.
           PR_URL=""
-          if [[ -n "${BRANCH:-}" ]]; then
+          if [[ -n "${PUSHED_REPOS:-}" && -n "${BRANCH:-}" ]]; then
             PR_URL=$(gh pr list -R "$GITHUB_REPOSITORY" --head "$BRANCH" --json url --jq '.[0].url' 2>/dev/null || true)
           fi
+          printf 'run pull request: %s\n' "${PR_URL:-none}"
 
           if [[ -n "${BRANCH:-}" ]]; then
             RUN_SUMMARY="branch \`$BRANCH\`"
