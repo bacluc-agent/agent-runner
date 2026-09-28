@@ -39,9 +39,10 @@ anything.
    when the run ends.
 4. **The issue is implemented** (right after selection). The _coordinator_
    agent checks which AI models are currently available (using a cache so it
-   stays fast), picks a model, and implements the issue. When the work changes
-   code it pushes the work to a branch named `agent-run/<issue-number>-<run-id>`.
-   It keeps a single structured progress comment on the issue.
+   stays fast), picks a model, and implements the issue. It keeps a single
+   structured progress comment on the issue. When the work changes code, the
+   workflow commits and pushes it to a branch named
+   `agent-run/<issue-number>-<run-id>`.
 5. **A pull request is opened, when code changed.** The coordinator agent opens
    the pull request itself. Its description links the GitHub Actions runs that
    prove the change works.
