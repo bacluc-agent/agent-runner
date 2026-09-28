@@ -1245,6 +1245,46 @@ class TestRefineIssuesExitCode:
         assert self._run(self._completion_tail(), 1, 2).returncode == 0
 
 
+class TestRefineIssuesNoCandidates:
+    WORKFLOW = Path(__file__).parents[3] / ".github/workflows/refine-issues.yml"
+
+    @classmethod
+    def _no_candidates_block(cls):
+        lines = cls.WORKFLOW.read_text().splitlines()
+        start = next(
+            i
+            for i, line in enumerate(lines)
+            if line.strip() == 'if [[ ! -s "$candidates" ]]; then'
+        )
+        end = next(i for i in range(start + 1, len(lines)) if lines[i].strip() == "fi")
+        return "\n".join(lines[start : end + 1])
+
+    def test_no_candidates_exits_zero_before_the_guard(self, tmp_path):
+        search_json = tmp_path / "candidates.json"
+        search_json.write_text("[]")
+        candidates = tmp_path / "candidate-numbers.txt"
+        block = self._no_candidates_block()
+        script = (
+            f"search_json={str(search_json)!r}\n"
+            f"candidates={str(candidates)!r}\n"
+            "jq -r '.[].number | tostring' \"$search_json\" > \"$candidates\"\n"
+            f"{block}"
+        )
+        result = subprocess.run(
+            ["bash", "-Eeuo", "pipefail", "-c", script],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0
+        assert "No unrefined open issues; nothing to do." in result.stdout
+
+    def test_no_candidates_exit_precedes_the_guard(self):
+        content = self.WORKFLOW.read_text()
+        assert content.index("No unrefined open issues; nothing to do.") < content.index(
+            "(( refined > 0 )) || exit 1"
+        )
+
+
 class TestWorkflowOpenRouterSelection:
     WORKFLOWS = [
         ".github/workflows/opencode.yml",
