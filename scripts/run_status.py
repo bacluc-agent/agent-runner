@@ -14,7 +14,7 @@ def classify(outcome: str, status: str, tee: str, fatal: str) -> str:
         return "✅ completed"
     if fatal:
         return f"❌ fatal error: {fatal}"
-    if outcome in ("cancelled", "skipped"):
+    if outcome == "cancelled":
         return "⚠️ cancelled before the coordinator finished"
     if status == "124":
         return "⏱️ timed out (coordinator exit 124)"

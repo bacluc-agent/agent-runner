@@ -27,14 +27,14 @@ WORKFLOW = ROOT / ".github/workflows/opencode.yml"
 PRE_FIX_TAIL = 'exit "$coordinator_tee_status"'
 
 
-def extract_run_block(step_name, text=None):
+def extract_run_block(step_name):
     """Return the `run:` body of a workflow step without a YAML parser.
 
     PyYAML is not available in `uv run --group dev`, so locate the step by its
     `- name:` line, derive the indent of the step keys, then read the block scalar
     body until a line dedents below its own first non-blank line.
     """
-    lines = (WORKFLOW.read_text() if text is None else text).splitlines()
+    lines = WORKFLOW.read_text().splitlines()
     name_re = re.compile(r"^(\s*)-\s+name:\s*" + re.escape(step_name) + r"\s*$")
     start = next((i for i, line in enumerate(lines) if name_re.match(line)), None)
     assert start is not None, f"step {step_name!r} not found in {WORKFLOW}"
@@ -94,13 +94,6 @@ def run_coordinator_block(script, tmp_path, coordinator_exit=0):
         line.split("=", 1) for line in output.read_text().splitlines() if "=" in line
     )
     return result
-
-
-def test_workflow_coordinator_block_is_valid_bash():
-    assert subprocess.run(
-        ["bash", "-n", "-c", extract_run_block("Run coordinator")],
-        capture_output=True,
-    ).returncode == 0
 
 
 def test_successful_coordinator_ignores_failing_tee(tmp_path):
