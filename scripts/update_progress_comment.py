@@ -60,12 +60,24 @@ def upsert_row(lines: list[str], row: str) -> None:
 
 
 def set_open_pr(lines: list[str], pr_url: str) -> None:
-    """Replace the whole '### Open PR' section with the bare pull request URL."""
+    """Replace the whole 'Open PR' section with the bare pull request URL.
+
+    The heading level is whatever the agent wrote, so match the heading and the
+    section end at that level: a comment that says '## Open PR' must not abort the
+    run-result row. ponytail: a comment with no 'Open PR' heading at all keeps its
+    placeholder silently; match any prefix, not just this one text, if that starts
+    to vary.
+    """
     if not pr_url:
         return
-    start = lines.index("### Open PR")
+    start = next(
+        (i for i, line in enumerate(lines) if line.lstrip("# ").strip() == "Open PR"), None
+    )
+    if start is None:
+        return
+    level = lines[start].split(" ", 1)[0]
     end = next(
-        (i for i in range(start + 1, len(lines)) if lines[i].startswith("### ")),
+        (i for i in range(start + 1, len(lines)) if lines[i].startswith(f"{level} ")),
         len(lines),
     )
     lines[start + 1 : end] = ["", pr_url, ""]
