@@ -207,6 +207,20 @@ class TestFinish:
         assert section.strip() == PR_URL
         assert "the workflow replaces this line" not in body
 
+    def test_replaces_the_open_pr_section_at_the_agents_heading_level(self, fake_gh):
+        body = upc.TEMPLATE.read_text(encoding="utf-8").replace("### Open PR", "## Open PR")
+        gh = fake_gh([_comment(333, body)])
+
+        assert (
+            upc.main(_argv("--result", "✅ completed", "--pr-url", PR_URL, "--mode", "finish")) == 0
+        )
+
+        written = gh.written[0]
+        section = written.split("## Open PR\n")[1].split("\n## ")[0]
+        assert section.strip() == PR_URL
+        assert "the workflow replaces this line" not in written
+        assert "### Open PR" not in written
+
     def test_creates_comment_when_missing(self, fake_gh):
         gh = fake_gh(
             [_comment(999, "unrelated", login="someone-else", created_at="2026-09-27T00:00:00Z")]
