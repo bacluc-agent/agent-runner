@@ -13,7 +13,7 @@ For any repository not owned by `BacLuc` or `bacluc-agent`, this policy takes ab
 
 ## Delivering results
 
-Push a branch and open a pull request only when the task changes code, and record the branch name on the target issue; a task that changes no code (a report or analysis, or any other no-code-change task) delivers its result as a comment on the target issue, pushing no branch and opening no pull request. This overrides the out-of-repo build-agent defaults "Commit and push every change" and "Open or update the PR".
+Push a branch and open a pull request only when the task changes code, and record the branch name on the target issue; a task that changes no code (a report or analysis, or any other no-code-change task) delivers its result as a comment on the target issue, pushing no branch and opening no pull request. This overrides the out-of-repo build-agent defaults "Commit and push every change" and "Open or update the PR". When the run has no target issue, report the result in the run's own output instead.
 
 ## Testing
 
