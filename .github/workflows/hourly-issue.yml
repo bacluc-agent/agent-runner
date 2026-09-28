@@ -90,10 +90,9 @@ jobs:
           printf '::add-mask::%s\n' "$OPENCODE_AUTH_CONTENT"
 
           # Free quota probe (/rate_limit does not count against the quota); stands down loudly, never silently.
-          source scripts/gh-retry.sh
-          gh_preflight "issue selection, the agent-running claim, and dispatch" core graphql
+          python3 scripts/gh_retry.py preflight "issue selection, the agent-running claim, and dispatch" core graphql
 
-          if ! gh_retry label create agent-running -R "$ISSUE_REPOSITORY" \
+          if ! python3 scripts/gh_retry.py retry label create agent-running -R "$ISSUE_REPOSITORY" \
             --color 0E8A16 --description 'Selected by the hourly issue runner' --force; then
             printf '::warning::could not ensure the agent-running label exists; the claim may not apply\n'
           fi
@@ -107,7 +106,7 @@ jobs:
           # (30/min): oldest ready issues first; PRs and agent-running claims are
           # dropped client-side. per_page=100 > the 50 kept, so the selection is unchanged.
           # ponytail: REST list vs Search can diverge if >100 stale claimed issues crowd the page — upgrade path: keep per_page ahead of growth.
-          if ! gh_retry api "repos/${ISSUE_REPOSITORY}/issues?state=open&labels=ready-for-implementation&sort=created&direction=asc&per_page=100" \
+          if ! python3 scripts/gh_retry.py retry api "repos/${ISSUE_REPOSITORY}/issues?state=open&labels=ready-for-implementation&sort=created&direction=asc&per_page=100" \
             --jq 'map(select(.pull_request == null)) | map(select(.labels | map(.name) | index("agent-running") == null)) | .[0:50]' > "$search_json"; then
             printf '::warning::could not list candidate issues; skipping this run.\n' >&2
             exit 0
@@ -205,7 +204,7 @@ jobs:
           # ponytail: single page per repo; a repo whose newest 100 PRs all postdate the candidate hides its PR — upgrade path: per-candidate gh pr list --search "issue-<n>" on lookup miss.
           for repo in "${repo_list[@]}"; do
             key="$(echo "$repo" | tr '/' '_')"
-            gh_retry pr list -R "$repo" --state all --limit 100 --json number,updatedAt,headRefName,state,title \
+            python3 scripts/gh_retry.py retry pr list -R "$repo" --state all --limit 100 --json number,updatedAt,headRefName,state,title \
               --jq '.[] | "\(.headRefName)|#\(.number)|\(.updatedAt)|\(.state)|\(.title)"' \
               | sort -t'|' -k3 -r > "$pr_lookup_dir/$key.lookup" || true
           done
@@ -225,7 +224,7 @@ jobs:
             for ((i = chunk; i < chunk + 25 && i < ${#cand_nums[@]}; i++)); do
               aliases+="i${cand_nums[$i]}: issue(number: ${cand_nums[$i]}) { comments(last: 100) { nodes { author { login } createdAt } } } "
             done
-            if ! gh_retry api graphql -f query="query { repository(owner: \"${repo_owner}\", name: \"${repo_name}\") { ${aliases} } }" \
+            if ! python3 scripts/gh_retry.py retry api graphql -f query="query { repository(owner: \"${repo_owner}\", name: \"${repo_name}\") { ${aliases} } }" \
               --jq '.data.repository | to_entries[] | "\(.key[1:])|\([(.value.comments.nodes // [])[] | select(.author.login != "bacluc-agent") | .createdAt] | max // "none")"' \
               >> "$human_ts_file"; then
               printf '::warning::human-feedback batch failed; affected candidates fall back to none\n' >&2
@@ -269,7 +268,7 @@ jobs:
             printf '%s\n' "$line" >> "$candidate_lines"
           done < "$enriched"
 
-          recent_issues="$(gh_retry pr list -R "$GITHUB_REPOSITORY" --state all --limit 30 --json headRefName --jq '.[].headRefName' | grep -oE 'issue-[0-9]+' | grep -oE '[0-9]+' | awk '!seen[$0]++' | head -n 10 | paste -sd, - || true)"
+          recent_issues="$(python3 scripts/gh_retry.py retry pr list -R "$GITHUB_REPOSITORY" --state all --limit 30 --json headRefName --jq '.[].headRefName' | grep -oE 'issue-[0-9]+' | grep -oE '[0-9]+' | awk '!seen[$0]++' | head -n 10 | paste -sd, - || true)"
           recent_issues="${recent_issues:-none}"
 
           prompt="$RUNNER_TEMP/selection-prompt.txt"
@@ -343,8 +342,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.BACLUC_AGENT_GITHUB_TOKEN }}
         run: |
           set -Eeuo pipefail
-          source scripts/gh-retry.sh
-          cache_json=$(gh_retry issue view "$CACHE_ISSUE" -R "$ISSUE_REPOSITORY" --json body --jq '.body' || echo '{}')
+          cache_json=$(python3 scripts/gh_retry.py retry issue view "$CACHE_ISSUE" -R "$ISSUE_REPOSITORY" --json body --jq '.body' || echo '{}')
           checked="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           fatal_model=""
           fatal_reason=""
@@ -363,7 +361,7 @@ jobs:
             new_cache=$(echo "$cache_json" | jq --arg model "$MODEL" --arg checked "$checked" \
               '. + {($model): {"ok": false, "checked": $checked}}')
           fi
-          gh_retry issue edit "$CACHE_ISSUE" -R "$ISSUE_REPOSITORY" --body "$new_cache" || true
+          python3 scripts/gh_retry.py retry issue edit "$CACHE_ISSUE" -R "$ISSUE_REPOSITORY" --body "$new_cache" || true
 
       - name: Dump debug output
         if: always()
