@@ -1268,7 +1268,9 @@ class TestRefineIssuesNoCandidates:
             f"search_json={str(search_json)!r}\n"
             f"candidates={str(candidates)!r}\n"
             "jq -r '.[].number | tostring' \"$search_json\" > \"$candidates\"\n"
-            f"{block}"
+            f"{block}\n"
+            # canary: the block's own `exit 0` must stop the script before the guard
+            "printf 'GUARD-REACHED\\n'\n"
         )
         result = subprocess.run(
             ["bash", "-Eeuo", "pipefail", "-c", script],
@@ -1277,6 +1279,7 @@ class TestRefineIssuesNoCandidates:
         )
         assert result.returncode == 0
         assert "No unrefined open issues; nothing to do." in result.stdout
+        assert "GUARD-REACHED" not in result.stdout
 
     def test_no_candidates_exit_precedes_the_guard(self):
         content = self.WORKFLOW.read_text()
