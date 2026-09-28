@@ -208,7 +208,7 @@ class TestFinish:
         assert "the workflow replaces this line" not in body
 
     def test_replaces_the_open_pr_section_at_the_agents_heading_level(self, fake_gh):
-        body = upc.TEMPLATE.read_text(encoding="utf-8").replace("### Open PR", "## Open PR")
+        body = upc.TEMPLATE.read_text(encoding="utf-8").replace("### ", "## ")
         gh = fake_gh([_comment(333, body)])
 
         assert (

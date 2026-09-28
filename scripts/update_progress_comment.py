@@ -4,6 +4,7 @@
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -71,13 +72,12 @@ def set_open_pr(lines: list[str], pr_url: str) -> None:
     if not pr_url:
         return
     start = next(
-        (i for i, line in enumerate(lines) if line.lstrip("# ").strip() == "Open PR"), None
+        (i for i, line in enumerate(lines) if re.match(r"^#{1,6} Open PR$", line)), None
     )
     if start is None:
         return
-    level = lines[start].split(" ", 1)[0]
     end = next(
-        (i for i in range(start + 1, len(lines)) if lines[i].startswith(f"{level} ")),
+        (i for i in range(start + 1, len(lines)) if lines[i].startswith("#")),
         len(lines),
     )
     lines[start + 1 : end] = ["", pr_url, ""]
