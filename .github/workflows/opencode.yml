@@ -590,10 +590,11 @@ jobs:
           fi
 
           # Check for existing PR. Only a branch this run pushed is provably this run's:
-          # `Ensure work is pushed` names it agent-run/<issue>-<run id> and reports
-          # branch_name only together with pushed_repos. When the agent pushed its own
-          # branch, BRANCH is that branch, so leave the section to the coordinator —
-          # `set_open_pr` no-ops on an empty pull request URL.
+          # `Ensure work is pushed` reports pushed_repos only when it pushed
+          # agent-run/<issue>-<run id>, but it reports branch_name even when nothing
+          # was pushed (the current work branch). Require both: BRANCH alone is a
+          # branch this run did not push, so leave the section to the coordinator
+          # (`set_open_pr` no-ops on an empty pull request URL).
           PR_URL=""
           if [[ -n "${PUSHED_REPOS:-}" && -n "${BRANCH:-}" ]]; then
             PR_URL=$(gh pr list -R "$GITHUB_REPOSITORY" --head "$BRANCH" --json url --jq '.[0].url' 2>/dev/null || true)
