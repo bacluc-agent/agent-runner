@@ -48,7 +48,7 @@ Branch and pull-request handling below applies only to code-change tasks, and th
 If previous runs produced review feedback, incorporate that feedback into the implementation prompt
 and improve the existing PR.
 Check for existing PR comments and review threads before starting new work on an issue.
-Push a branch and open a pull request only when the task changes code; a task that changes no code (a report or analysis, or any other no-code-change task) delivers its result as a comment on the target issue, pushing no branch and opening no pull request.
+Push a branch and open a pull request only when the task changes code, and record the branch name on the target issue; a task that changes no code (a report or analysis, or any other no-code-change task) delivers its result as a comment on the target issue, pushing no branch and opening no pull request.
 
 ## Diversity and anti-repeat
 
