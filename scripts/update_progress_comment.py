@@ -65,9 +65,10 @@ def set_open_pr(lines: list[str], pr_url: str) -> None:
 
     The heading level is whatever the agent wrote, so match the heading at any
     level and end the section at the next heading of any level: a comment that
-    says '## Open PR' must not abort the run-result row. ponytail: a comment with no 'Open PR' heading at all keeps its
-    placeholder silently; match any prefix, not just this one text, if that starts
-    to vary.
+    says '## Open PR' must not abort the run-result row.
+
+    ponytail: a comment with no 'Open PR' heading at all keeps its placeholder
+    silently; match any prefix, not just this one text, if that starts to vary.
     """
     if not pr_url:
         return
