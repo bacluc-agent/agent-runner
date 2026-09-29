@@ -5,7 +5,7 @@ requires-python = ">=3.12"
 
 [dependency-groups]
 dev = [
-    "playwright==1.62.0",
+    "playwright==1.63.0",
     "pyotp==2.10.0",
     "pytest==9.1.1",
 ]
