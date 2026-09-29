@@ -4,7 +4,6 @@
 import argparse
 import json
 import os
-import re
 import subprocess
 import sys
 import tempfile
@@ -61,24 +60,12 @@ def upsert_row(lines: list[str], row: str) -> None:
 
 
 def set_open_pr(lines: list[str], pr_url: str) -> None:
-    """Replace the whole 'Open PR' section with the bare pull request URL.
-
-    The heading level is whatever the agent wrote, so match the heading at any
-    level and end the section at the next heading of any level: a comment that
-    says '## Open PR' must not abort the run-result row.
-
-    ponytail: a comment with no 'Open PR' heading at all keeps its placeholder
-    silently; match any prefix, not just this one text, if that starts to vary.
-    """
+    """Replace the whole '### Open PR' section with the bare pull request URL."""
     if not pr_url:
         return
-    start = next(
-        (i for i, line in enumerate(lines) if re.match(r"^#{1,6} Open PR$", line)), None
-    )
-    if start is None:
-        return
+    start = lines.index("### Open PR")
     end = next(
-        (i for i in range(start + 1, len(lines)) if lines[i].startswith("#")),
+        (i for i in range(start + 1, len(lines)) if lines[i].startswith("### ")),
         len(lines),
     )
     lines[start + 1 : end] = ["", pr_url, ""]
