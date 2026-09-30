@@ -43,16 +43,6 @@ jobs:
         timeout-minutes: 10
         uses: ./.github/actions/model-availability
 
-      - name: Test the rate-limit gh wrapper
-        timeout-minutes: 10
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          venv="$RUNNER_TEMP/gh-retry-venv"
-          python3 -m venv "$venv"
-          "$venv/bin/python" -m pip install --quiet pytest
-          "$venv/bin/python" -m pytest -q scripts/test_gh_retry.py
-
       - name: Refine issues
         id: refine
         timeout-minutes: 22
@@ -67,15 +57,12 @@ jobs:
           printf '::add-mask::%s\n' "$OPENCODE_GO_2_API_KEY"
           printf '::add-mask::%s\n' "$OPENCODE_AUTH_CONTENT"
 
-          # Free quota probe (/rate_limit does not count against the quota); stands down loudly, never silently.
-          python3 scripts/gh_retry.py preflight "issue refinement and labelling" core search
-
           printf '::group::ensure agent labels\n'
-          if ! python3 scripts/gh_retry.py retry label create agent-refined -R "$ISSUE_REPOSITORY" \
+          if ! gh label create agent-refined -R "$ISSUE_REPOSITORY" \
             --color 1D76DB --description 'Refined by the issue-refiner agent' --force; then
             printf '::warning::could not ensure the agent-refined label exists; the label may not be applied\n'
           fi
-          if ! python3 scripts/gh_retry.py retry label create ready-for-implementation -R "$ISSUE_REPOSITORY" \
+          if ! gh label create ready-for-implementation -R "$ISSUE_REPOSITORY" \
             --color 0E8A16 --description 'Approved for agent implementation' --force; then
             printf '::warning::could not ensure the ready-for-implementation label exists; the label may not be applied\n'
           fi
@@ -86,13 +73,8 @@ jobs:
           printf '\n\n\n\n\n\n'
 
           search_json="$RUNNER_TEMP/candidates.json"
-          # Negative-only label filters (-label:x) cannot be expressed as list-with-filters,
-          # so this stays on the Search API (30/min); gh_retry backs off — search resets in ≤60s.
-          if ! python3 scripts/gh_retry.py retry api "search/issues?q=repo:${ISSUE_REPOSITORY}+is:open+is:issue+-label:agent-refined+-label:ready-for-implementation+-label:agent-ignore+sort:created-asc&per_page=5" \
-            --jq '.items' > "$search_json"; then
-            printf '::warning::could not list candidate issues; skipping this run.\n' >&2
-            exit 0
-          fi
+          gh api "search/issues?q=repo:${ISSUE_REPOSITORY}+is:open+is:issue+-label:agent-refined+-label:ready-for-implementation+-label:agent-ignore+sort:created-asc&per_page=5" \
+            --jq '.items' > "$search_json"
 
           candidates="$RUNNER_TEMP/candidate-numbers.txt"
           jq -r '.[].number | tostring' "$search_json" > "$candidates"
@@ -165,10 +147,8 @@ jobs:
             fi
             printf '\n\n\n\n\n\n'
 
-            # One call instead of two: --json title,body returns the same fields.
-            issue_json="$(python3 scripts/gh_retry.py retry issue view "$number" -R "$ISSUE_REPOSITORY" --json title,body --jq '{title: .title, body: .body}')" || { echo "::warning::skip $number: view title/body failed" >&2; ((failed++)) || true; continue; }
-            title="$(jq -r '.title' <<< "$issue_json")"
-            body="$(jq -r '.body' <<< "$issue_json")"
+            title="$(gh issue view "$number" -R "$ISSUE_REPOSITORY" --json title --jq '.title')" || { echo "::warning::skip $number: view title failed" >&2; ((failed++)) || true; continue; }
+            body="$(gh issue view "$number" -R "$ISSUE_REPOSITORY" --json body --jq '.body')" || { echo "::warning::skip $number: view body failed" >&2; ((failed++)) || true; continue; }
 
             prompt="$RUNNER_TEMP/refine-prompt.txt"
             {
@@ -230,14 +210,10 @@ jobs:
                 break
               fi
               if (( validation_status == 0 )); then
-                if python3 scripts/gh_retry.py retry issue edit "$number" --body-file "$out" -R "$ISSUE_REPOSITORY" \
-                  && python3 scripts/gh_retry.py retry issue edit "$number" --add-label "agent-refined" -R "$ISSUE_REPOSITORY"; then
-                  printf 'Issue #%s refined and labeled.\n' "$number"
-                  (( refined++ )) || true
-                else
-                  printf '::warning::could not save issue #%s; it stays unrefined for the next run.\n' "$number" >&2
-                  (( failed++ )) || true
-                fi
+                gh issue edit "$number" --body-file "$out" -R "$ISSUE_REPOSITORY"
+                gh issue edit "$number" --add-label "agent-refined" -R "$ISSUE_REPOSITORY"
+                printf 'Issue #%s refined and labeled.\n' "$number"
+                (( refined++ )) || true
                 break
               fi
 
