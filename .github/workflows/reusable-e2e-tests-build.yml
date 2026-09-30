@@ -11,6 +11,17 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
+      - name: Set up PHP and Composer
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5.9'
+          tools: composer:2.10.3
+          coverage: none
+
+      - name: Check api/composer.lock is in sync with api/composer.json
+        run: composer validate -n --no-check-all --no-check-publish --strict
+        working-directory: api
+
       - name: Set up Docker Buildx
         id: buildx
         uses: docker/setup-buildx-action@v4
