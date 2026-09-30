@@ -110,12 +110,6 @@ dispatching when no allowed model is available.
   `<details>` fold inside the implementation section.
 - `dump_subagent_transcripts.py` — dumps agent session transcripts for
   debugging.
-- `gh_retry.py` — rate-limit-aware `gh` wrapper used by the issue workflows.
-  `preflight` probes the free `/rate_limit` endpoint and stands down loudly when a
-  bucket the step needs is exhausted; `retry` backs off (sleep-until-reset when a
-  reset is near, exponential backoff otherwise) and propagates `gh`'s exit
-  status. Tune with `GH_RETRY_MAX_ATTEMPTS`, `GH_RETRY_MAX_SLEEP`,
-  `GH_RETRY_BACKOFF_BASE`.
 - `refresh-token.py` / `chatgpt-login.py` — refresh the OpenAI login without
   a browser, or fall back to a browser login.
 - `issue-selection-tail.txt` — the default selection instructions appended to
@@ -144,6 +138,9 @@ The installer saves the real CLI's absolute path before changing PATH.
   extension commands are denied. Use builtin CLI commands or canonical REST
   endpoints instead. Unknown builtin commands/options on guarded routes require
   review before adding support; this is not a complete CLI parser.
+- A rate-limited call is retried with the identical argv and stdin; the output of a
+  failed attempt is never shown, and after `GH_CLI_WRAPPER_MAX_ATTEMPTS` (default 4)
+  attempts the wrapper prints `::warning::` and exits with the real CLI's status.
 
 This is an accidental-misrouting guardrail, **not a sandbox or universal PR
 prevention**. An absolute executable path, direct HTTP, changing PATH or changing
