@@ -220,7 +220,7 @@ jobs:
           human_ts_file="$RUNNER_TEMP/human-timestamps.txt"
           if ! python3 scripts/gh_retry.py retry api \
             "repos/${ISSUE_REPOSITORY}/issues/comments?sort=created&direction=desc&per_page=100" \
-            --jq '.[] | select(.user.login != "bacluc-agent") | (.issue_url | split("/") | last) as $n | "\($n)\t\(.created_at)"' \
+            --jq '.[] | select(.user.login != "bacluc-agent") | "\(.issue_url | split("/") | last)\t\(.created_at)"' \
             > "$human_ts_file"; then
             printf '::warning::human-feedback lookup failed; candidates fall back to none\n' >&2
             : > "$human_ts_file"
