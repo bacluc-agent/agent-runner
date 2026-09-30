@@ -43,6 +43,16 @@ jobs:
         timeout-minutes: 10
         uses: ./.github/actions/model-availability
 
+      - name: Test the rate-limit gh wrapper
+        timeout-minutes: 10
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          venv="$RUNNER_TEMP/gh-retry-venv"
+          python3 -m venv "$venv"
+          "$venv/bin/python" -m pip install --quiet pytest
+          "$venv/bin/python" -m pytest -q scripts/test_gh_retry.py
+
       - name: Refine issues
         id: refine
         timeout-minutes: 22
