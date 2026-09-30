@@ -589,17 +589,11 @@ jobs:
             STATUS="⚠️ failed (coordinator exit ${COORDINATOR_OUTCOME:-})"
           fi
 
-          # Check for existing PR. Only a branch this run pushed is provably this run's:
-          # `Ensure work is pushed` reports pushed_repos only when it pushed
-          # agent-run/<issue>-<run id>, but it reports branch_name even when nothing
-          # was pushed (the current work branch). Require both: BRANCH alone is a
-          # branch this run did not push, so leave the section to the coordinator
-          # (`set_open_pr` no-ops on an empty pull request URL).
+          # Check for existing PR
           PR_URL=""
-          if [[ -n "${PUSHED_REPOS:-}" && -n "${BRANCH:-}" ]]; then
+          if [[ -n "${BRANCH:-}" ]]; then
             PR_URL=$(gh pr list -R "$GITHUB_REPOSITORY" --head "$BRANCH" --json url --jq '.[0].url' 2>/dev/null || true)
           fi
-          printf 'run pull request: %s\n' "${PR_URL:-none}"
 
           if [[ -n "${BRANCH:-}" ]]; then
             RUN_SUMMARY="branch \`$BRANCH\`"
