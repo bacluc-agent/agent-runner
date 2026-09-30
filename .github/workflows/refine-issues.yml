@@ -58,7 +58,7 @@ jobs:
           printf '::add-mask::%s\n' "$OPENCODE_AUTH_CONTENT"
 
           # Free quota probe (/rate_limit does not count against the quota); stands down loudly, never silently.
-          python3 scripts/gh_retry.py preflight "issue refinement and labelling" core search graphql
+          python3 scripts/gh_retry.py preflight "issue refinement and labelling" core search
 
           printf '::group::ensure agent labels\n'
           if ! python3 scripts/gh_retry.py retry label create agent-refined -R "$ISSUE_REPOSITORY" \
