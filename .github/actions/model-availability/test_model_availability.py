@@ -1169,6 +1169,12 @@ class TestModelAvailabilityAction:
         assert "auth.json" not in action
         assert "python3" in action
 
+    def test_setup_opencode_keeps_shape_check_but_not_the_binary_probe(self):
+        root = Path(__file__).parents[3]
+        setup = (root / ".github/actions/setup-opencode/action.yml").read_text()
+        assert "opencode --help" not in setup
+        assert "::warning::OPENCODE_AUTH_CONTENT is not valid opencode auth JSON" in setup
+
 
 class TestMainProbeSummary:
     def test_prints_fresh_cache_summary_without_probing(self, monkeypatch, capsys):
@@ -1222,6 +1228,55 @@ class TestMainProbeSummary:
         monkeypatch.setattr(model_availability, "write_outputs", lambda *args: None)
         assert model_availability.main() == 0
         assert "probe results: 2 checked, 1 ok, 1 failed" in capsys.readouterr().out
+
+
+class TestOpenAIStateLine:
+    def test_zero_available_with_credential_present(self, monkeypatch, capsys, tmp_path):
+        auth_json = tmp_path / "auth.json"
+        auth_json.write_text("{}")
+        monkeypatch.setattr(model_availability.os.path, "expanduser", lambda _: str(auth_json))
+        model_availability.emit_openai_state([], ["openai/gpt-5.6-luna", "openai/gpt-5.5"])
+        out = capsys.readouterr().out
+        assert "credential=present" in out
+        assert "openai models usable 0/2 candidates" in out
+        assert "auto-selection never picks openai/*, so no ChatGPT tokens are used" in out
+        assert "inputs.model=openai/<model>" in out
+
+    def test_absent_credential_is_reported(self, monkeypatch, capsys, tmp_path):
+        monkeypatch.setattr(
+            model_availability.os.path, "expanduser", lambda _: str(tmp_path / "missing.json")
+        )
+        model_availability.emit_openai_state(["openai/gpt-5.6-luna"], ["openai/gpt-5.6-luna"])
+        assert "credential=absent" in capsys.readouterr().out
+
+    def test_usable_openai_model_is_counted_without_the_override_hint(self, monkeypatch, capsys):
+        monkeypatch.setattr(model_availability.os.path, "exists", lambda _: True)
+        model_availability.emit_openai_state(["openai/gpt-5.6-luna"], ["openai/gpt-5.6-luna"])
+        out = capsys.readouterr().out
+        assert "openai models usable 1/1 candidates" in out
+        assert "auto-selection never picks" not in out
+
+    def test_line_is_appended_to_the_step_summary(self, monkeypatch, capsys, tmp_path):
+        summary = tmp_path / "summary.md"
+        monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
+        monkeypatch.setattr(model_availability.os.path, "exists", lambda _: True)
+        model_availability.emit_openai_state([], ["openai/gpt-5.6-luna"])
+        line = capsys.readouterr().out.strip()
+        assert summary.read_text() == f"{line}\n"
+
+    def test_main_emits_the_line(self, monkeypatch, capsys):
+        monkeypatch.setattr(model_availability, "resolve_cache_issue", lambda: None)
+        monkeypatch.setattr(
+            model_availability, "discover_models", lambda: (["openai/gpt-5.6-luna"], {})
+        )
+        monkeypatch.setattr(
+            model_availability, "build_candidates", lambda *args: ["openai/gpt-5.6-luna"]
+        )
+        monkeypatch.setattr(model_availability, "select_pending", lambda *args: ([], 0))
+        monkeypatch.setattr(model_availability, "probe_candidates", lambda *args: {})
+        monkeypatch.setattr(model_availability, "write_outputs", lambda *args: None)
+        assert model_availability.main() == 0
+        assert "openai state: credential=" in capsys.readouterr().out
 
 
 class TestDiscoveryTimeout:

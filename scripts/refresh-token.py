@@ -34,7 +34,8 @@ def _current_auth() -> dict | None:
     if content:
         try:
             return json.loads(content)
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as e:
+            print(f"OPENCODE_AUTH_CONTENT is not valid JSON: {e}", file=sys.stderr)
             return None
     path = Path.home() / ".local" / "share" / "opencode" / "auth.json"
     try:
@@ -65,7 +66,7 @@ def refresh_tokens(refresh_token: str) -> dict:
 
 def main() -> int:
     auth = _current_auth()
-    if not auth or not isinstance(auth.get("openai"), dict):
+    if not isinstance(auth, dict) or not isinstance(auth.get("openai"), dict):
         print("No current OpenAI credential found (OPENCODE_AUTH_CONTENT or auth.json)", file=sys.stderr)
         return 1
     refresh = auth["openai"].get("refresh")

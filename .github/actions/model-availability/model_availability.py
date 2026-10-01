@@ -429,6 +429,26 @@ def write_outputs(cache_issue: str | None, cache: dict, available: list[str]) ->
         print(output, end="")
 
 
+def emit_openai_state(available: list[str], candidates: list[str]) -> None:
+    """Report why openai/* models are or are not selectable, without leaking credential material."""
+    # ponytail: auth.json path duplicated from setup-opencode/action.yml; share one constant if a third reader appears.
+    auth_json = os.path.expanduser("~/.local/share/opencode/auth.json")
+    credential = "present" if os.path.exists(auth_json) else "absent"
+    total = sum(1 for c in candidates if c.startswith("openai/"))
+    usable = sum(1 for m in available if m.startswith("openai/"))
+    line = f"openai state: credential={credential}, openai models usable {usable}/{total} candidates"
+    if usable == 0:
+        line += (
+            "; auto-selection never picks openai/*, so no ChatGPT tokens are used"
+            " - set inputs.model=openai/<model> to override"
+        )
+    print(line)
+    summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
+    if summary_path:
+        with open(summary_path, "a") as handle:
+            handle.write(f"{line}\n")
+
+
 def main() -> int:
     cache_issue = resolve_cache_issue()
     cache = {}
@@ -462,6 +482,7 @@ def main() -> int:
     write_outputs(cache_issue, cache, available)
     print("Available models:")
     print("\n".join(available) if available else "(none)")
+    emit_openai_state(available, candidates)
     return 0
 
 
