@@ -18,6 +18,7 @@ HEADINGS = (
 OLD_URL = "https://github.com/bacluc-agent/agent-runner/actions/runs/100"
 RUN_URL = "https://github.com/bacluc-agent/agent-runner/actions/runs/200"
 PR_URL = "https://github.com/bacluc-agent/agent-runner/pull/7"
+FORK_PR_URL = "https://github.com/bacluc-agent/paratest/pull/1"
 
 
 def _comment(comment_id, body, login="bacluc-agent", created_at="2026-09-26T20:00:00Z"):
@@ -195,17 +196,38 @@ class TestFinish:
         ]
         assert "comment_id=333" in output.read_text()
 
-    def test_sets_open_pr_section(self, fake_gh):
+    def test_sets_open_pr_section_for_every_pr(self, fake_gh):
         gh = fake_gh([_comment(333, upc.TEMPLATE.read_text(encoding="utf-8"))])
 
         assert (
-            upc.main(_argv("--result", "✅ completed", "--pr-url", PR_URL, "--mode", "finish")) == 0
+            upc.main(
+                _argv(
+                    "--result",
+                    "✅ completed",
+                    "--pr-url",
+                    f"{FORK_PR_URL} {PR_URL}",
+                    "--mode",
+                    "finish",
+                )
+            )
+            == 0
         )
 
         body = gh.written[0]
         section = body.split("### Open PR\n")[1].split("\n### ")[0]
-        assert section.strip() == PR_URL
+        assert section.strip().split("\n") == [FORK_PR_URL, PR_URL]
         assert "the workflow replaces this line" not in body
+
+    def test_keeps_placeholder_when_no_pr_url(self, fake_gh):
+        gh = fake_gh([_comment(333, upc.TEMPLATE.read_text(encoding="utf-8"))])
+
+        assert upc.main(_argv("--result", "✅ completed", "--pr-url", "", "--mode", "finish")) == 0
+
+        body = gh.written[0]
+        assert (
+            "the workflow replaces this line"
+            in body.split("### Open PR\n")[1].split("\n### ")[0]
+        )
 
     def test_creates_comment_when_missing(self, fake_gh):
         gh = fake_gh(
