@@ -356,6 +356,7 @@ jobs:
     uses: ./.github/workflows/opencode.yml
     with:
       prompt: ${{ needs.select.outputs.prompt }}
+      issue_number: ${{ needs.select.outputs.issue_number }}
     secrets: inherit
 
   release:
