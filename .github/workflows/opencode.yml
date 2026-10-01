@@ -241,6 +241,9 @@ jobs:
             model_source='fallback: preferred list'
             break
           done
+          stop_token="$(openssl rand -hex 32)"
+          : "${stop_token:?stop-commands fence token generation failed}"
+          printf '::stop-commands::%s\n' "$stop_token"
           if [[ -z "$fallback_model" && -z "${requested:-}" ]]; then
             fallback_model="$(grep -Ev -f "$RUNNER_TEMP/agent-runner/scripts/model-deny-list.txt" "$available_models_file" | head -n1 || true)"
             model_source='fallback: last resort (deny-list filtered)'
@@ -250,6 +253,7 @@ jobs:
             fi
             printf '%s\n' "Using fallback model: $fallback_model" >&2
           fi
+          printf '::%s::\n' "$stop_token"
 
           printf '%s\n' 'Model selection reasoning: use the requested model unchanged when provided; otherwise discover an available coordinator model.'
           model="$requested"
@@ -281,6 +285,9 @@ jobs:
             if ((discovery_tee_status != 0)); then
               exit "$discovery_tee_status"
             fi
+            stop_token="$(openssl rand -hex 32)"
+            : "${stop_token:?stop-commands fence token generation failed}"
+            printf '::stop-commands::%s\n' "$stop_token"
             if ((discovery_status != 0)); then
               printf 'Model discovery failed with status %s; falling back to the verified model %q.\n' "$discovery_status" "$fallback_model"
               model="$fallback_model"
@@ -350,10 +357,14 @@ jobs:
             printf '\n\n\n\n\n\n'
             exit 0
           fi
+          printf '::%s::\n' "$stop_token"
           if [[ "$model" == openai/* ]]; then
             printf '::error::Model availability: requested %q is openai/* but no valid auth.json is present (OPENCODE_AUTH_CONTENT empty or invalid); cannot run openai models.\n' "$model" >&2
             exit 1
           fi
+          stop_token="$(openssl rand -hex 32)"
+          : "${stop_token:?stop-commands fence token generation failed}"
+          printf '::stop-commands::%s\n' "$stop_token"
           IFS=$'\t' read -r resolution resolved < <(resolve_model "$requested_model")
           if [[ "$resolution" == available ]]; then
             printf 'Model availability: requested %q is available; resolved model %q\n' "$requested_model" "$resolved"
@@ -379,6 +390,7 @@ jobs:
           printf 'Chosen model is %s (source: %s)\n' "$model" "$model_source"
           printf 'Now dispatching agent\n'
           printf '\n\n\n\n\n\n'
+          printf '::%s::\n' "$stop_token"
 
           echo "model=${model}" >> "$GITHUB_OUTPUT"
 
@@ -439,10 +451,10 @@ jobs:
 
           coordinator_session_title='coordinator-run'
           PROMPT=$(printf 'model: %s \n%s\n\n%s' "$MODEL" "$PROMPT" "$(cat "$RUNNER_TEMP/agent-runner/scripts/progress-reporting.txt")")
-          printf 'Final coordinator command: opencode run --agent coordinator --model %q --title %q\n' "$MODEL" "$coordinator_session_title"
           stop_token="$(openssl rand -hex 32)"
           : "${stop_token:?stop-commands fence token generation failed}"
           printf '::stop-commands::%s\n' "$stop_token"
+          printf 'Final coordinator command: opencode run --agent coordinator --model %q --title %q\n' "$MODEL" "$coordinator_session_title"
           printf 'Coordinator prompt:\n%s\n' "$PROMPT"
           set +e
           timeout "${COORDINATOR_TIMEOUT}m" opencode run --agent coordinator --model "$MODEL" --title "$coordinator_session_title" "$PROMPT" 2>&1 | tee "$RUNNER_TEMP/coordinator.out"
@@ -534,6 +546,9 @@ jobs:
           WORK_BRANCH=""
 
           # Find all git repos in the workspace (including subdirs)
+          stop_token="$(openssl rand -hex 32)"
+          : "${stop_token:?stop-commands fence token generation failed}"
+          printf '::stop-commands::%s\n' "$stop_token"
           while IFS= read -r gitdir; do
             repo_dir="$(dirname "$gitdir")"
             cd "$repo_dir"
@@ -586,6 +601,7 @@ jobs:
               echo "branch_name=${WORK_BRANCH}" >> "$GITHUB_OUTPUT"
             fi
           fi
+          printf '::%s::\n' "$stop_token"
 
       - name: Emit loop-termination metrics
         if: always()
@@ -598,7 +614,11 @@ jobs:
           LOOP_TOKEN_ESTIMATE: "${{ steps.coordinator.outputs.token_estimate || '' }}"
         run: |
           set -Eeuo pipefail
+          stop_token="$(openssl rand -hex 32)"
+          : "${stop_token:?stop-commands fence token generation failed}"
+          printf '::stop-commands::%s\n' "$stop_token"
           python3 "$RUNNER_TEMP/agent-runner/scripts/loop_metrics.py"
+          printf '::%s::\n' "$stop_token"
 
       - name: Post run-result comment
         if: always() && steps.target-issue.outputs.issue_number != ''
