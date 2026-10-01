@@ -10,7 +10,7 @@
 
 ### Open PR
 
-<!-- agent-progress: the workflow replaces this line with the pull request of this run; otherwise write "none - this run pushed no pull request". -->
+<!-- agent-progress: the workflow replaces this line with the pull request(s) of this run, one per line; otherwise write "none - this run pushed no pull request". -->
 
 ### Verification evidence
 

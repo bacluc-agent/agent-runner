@@ -530,6 +530,7 @@ jobs:
           printf '::add-mask::%s\n' "$GITHUB_TOKEN"
           BRANCH_NAME="agent-run/${ISSUE_NUMBER}-${GITHUB_RUN_ID}"
           PUSHED_REPOS=""
+          PUSHED_SLUGS=""
           WORK_BRANCH=""
 
           # Find all git repos in the workspace (including subdirs)
@@ -554,22 +555,28 @@ jobs:
             git checkout -B "$BRANCH_NAME" 2>/dev/null || git checkout "$BRANCH_NAME"
             git add -A
             git commit -m "agent-run: automated commit for issue #${ISSUE_NUMBER} (run ${GITHUB_RUN_ID})" || true
+            remote_url=$(git remote get-url origin 2>/dev/null || true)
             git push -u origin "$BRANCH_NAME" 2>/dev/null || {
               # If origin push fails, try with token
-              remote_url=$(git remote get-url origin)
               token_url="${remote_url/https:\/\//https:\/\/x-access-token:${GITHUB_TOKEN}@}"
               git remote set-url origin "$token_url"
               git push -u origin "$BRANCH_NAME"
             }
             PUSHED_REPOS="${PUSHED_REPOS}${repo_dir} (${BRANCH_NAME})\n"
+            # owner/repo slug of the pushed remote, for the org-wide PR lookup
+            PUSHED_SLUGS="${PUSHED_SLUGS}$(printf '%s' "$remote_url" | sed -E 's#^.*github\.com[:/]+##; s#\.git$##')\n"
             cd - >/dev/null
           done < <(find "$GITHUB_WORKSPACE" -maxdepth 5 -name ".git" -type d 2>/dev/null)
 
           if [[ -n "$PUSHED_REPOS" ]]; then
             printf 'Pushed branches:\n%b' "$PUSHED_REPOS"
+            printf 'Pushed repo slugs: %b' "$PUSHED_SLUGS"
             {
               echo "pushed_repos<<EOF"
               printf '%b' "$PUSHED_REPOS"
+              echo "EOF"
+              echo "pushed_slugs<<EOF"
+              printf '%b' "$PUSHED_SLUGS"
               echo "EOF"
               echo "branch_name=${BRANCH_NAME}"
             } >> "$GITHUB_OUTPUT"
@@ -606,6 +613,7 @@ jobs:
           FATAL_REASON: ${{ steps.fatal-guard.outputs.fatal-reason }}
           BRANCH: ${{ steps.push-work.outputs.branch_name }}
           PUSHED_REPOS: ${{ steps.push-work.outputs.pushed_repos }}
+          PUSHED_SLUGS: ${{ steps.push-work.outputs.pushed_slugs }}
         run: |
           set -Eeuo pipefail
           printf '::add-mask::%s\n' "$GITHUB_TOKEN"
@@ -621,10 +629,24 @@ jobs:
             STATUS="⚠️ failed (coordinator exit ${COORDINATOR_OUTCOME:-})"
           fi
 
-          # Check for existing PR
+          # Check for existing PRs in every repo this run pushed to, not just this one.
+          # ponytail: 34 repos scanned per run, cache the repo list in an artifact if this shows up in run times
           PR_URL=""
           if [[ -n "${BRANCH:-}" ]]; then
-            PR_URL=$(gh pr list -R "$GITHUB_REPOSITORY" --head "$BRANCH" --json url --jq '.[0].url' 2>/dev/null || true)
+            if [[ -n "${PUSHED_SLUGS:-}" ]]; then
+              SLUGS="$PUSHED_SLUGS"
+            else
+              SLUGS=$(gh repo list bacluc-agent --limit 200 --json nameWithOwner --jq '.[].nameWithOwner' 2>/dev/null || true)
+            fi
+            URLS=""
+            while IFS= read -r repo; do
+              [[ -n "$repo" ]] || continue
+              url=$(gh pr list -R "$repo" --head "$BRANCH" --json url --jq '.[0].url' 2>/dev/null || true)
+              if [[ -n "$url" ]]; then
+                URLS="${URLS:+$URLS$'\n'}$url"
+              fi
+            done < <(printf '%s\n' "$GITHUB_REPOSITORY" "$SLUGS" | sort -u)
+            PR_URL="${URLS//$'\n'/ }"
           fi
 
           if [[ -n "${BRANCH:-}" ]]; then
