@@ -50,6 +50,7 @@ globalThis.vueSnapshots = {
     indent_size: 5,
     inline: [],
     sep: '\n',
+    unformatted: [],
     wrap_attributes: 'force-aligned',
   },
 }
