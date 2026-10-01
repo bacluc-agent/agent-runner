@@ -47,7 +47,11 @@ jobs:
             echo "refreshed=true" >> "$GITHUB_OUTPUT"
             printf 'Auth candidate produced via refresh token, validating with opencode\n'
           else
+            stop_token="$(openssl rand -hex 32)"
+            : "${stop_token:?stop-commands fence token generation failed}"
+            printf '::stop-commands::%s\n' "$stop_token"
             cat "$RUNNER_TEMP/refresh-token.stderr" >&2
+            printf '::%s::\n' "$stop_token"
             printf 'Refresh token invalid, falling back to browser login\n'
           fi
 
@@ -64,7 +68,11 @@ jobs:
           status=$?
           set -e
           if (( status != 0 )); then
+            stop_token="$(openssl rand -hex 32)"
+            : "${stop_token:?stop-commands fence token generation failed}"
+            printf '::stop-commands::%s\n' "$stop_token"
             cat "$RUNNER_TEMP/opencode-validate.log"
+            printf '::%s::\n' "$stop_token"
             echo "refreshed=false" >> "$GITHUB_OUTPUT"
             printf 'Refreshed token rejected by opencode, falling back to browser login\n'
             exit 1
@@ -99,8 +107,12 @@ jobs:
           status=$?
           set -e
           if (( status != 0 )); then
+            stop_token="$(openssl rand -hex 32)"
+            : "${stop_token:?stop-commands fence token generation failed}"
+            printf '::stop-commands::%s\n' "$stop_token"
             cat "$RUNNER_TEMP/auth.json" >&2
             cat "$RUNNER_TEMP/chatgpt-login.stderr" >&2
+            printf '::%s::\n' "$stop_token"
             exit "$status"
           fi
           # xvfb-run merges the script's stderr into stdout, so drop the
@@ -126,7 +138,11 @@ jobs:
           # Fallback: use agent-usable primitives to try login manually
           # start launches Chrome with CDP, status reports step, step performs one action
           echo "Agent fallback: attempting login via primitives..."
+          stop_token="$(openssl rand -hex 32)"
+          : "${stop_token:?stop-commands fence token generation failed}"
+          printf '::stop-commands::%s\n' "$stop_token"
           uv run scripts/chatgpt-login.py start || true
           uv run scripts/chatgpt-login.py status || true
           uv run scripts/chatgpt-login.py step || true
+          printf '::%s::\n' "$stop_token"
           printf 'Agent primitives fallback attempted\n'
