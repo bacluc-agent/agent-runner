@@ -89,6 +89,17 @@ jobs:
           printf '::add-mask::%s\n' "$OPENCODE_GO_2_API_KEY"
           printf '::add-mask::%s\n' "$OPENCODE_AUTH_CONTENT"
 
+          if ! quota="$(gh api rate_limit --jq '.resources.core | "\(.remaining) \(.reset)"' 2>/dev/null)"; then
+            printf '::warning::rate_limit probe failed; continuing and letting real errors surface\n' >&2
+          else
+            remaining="${quota%% *}"
+            reset="${quota#* }"
+            if [[ "$remaining" == "0" ]]; then
+              printf '::error::GitHub API core quota exhausted; resets at %s. Standing down this run.\n' "$reset"
+              exit 0
+            fi
+          fi
+
           if ! gh label create agent-running -R "$ISSUE_REPOSITORY" \
             --color 0E8A16 --description 'Selected by the hourly issue runner' --force; then
             printf '::warning::could not ensure the agent-running label exists; the claim may not apply\n'
@@ -288,7 +299,10 @@ jobs:
           fi
           if (( selection_status != 0 )); then
             printf 'Selection failed (opencode=%s); not dispatching.\n' "$selection_status" >&2
-            ((selection_status == 124)) && printf '::error::issue selection exceeded the %sm limit (opencode exit %s)\n' "$SELECTION_TIMEOUT_MINUTES" "$selection_status"
+            if (( selection_status == 124 )); then
+              printf '::error::issue selection exceeded the %sm limit (opencode exit %s); standing down this run.\n' "$SELECTION_TIMEOUT_MINUTES" "$selection_status"
+              exit 0
+            fi
             exit 1
           fi
           if ! grep -q '[^[:space:]]' "$selection"; then
