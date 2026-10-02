@@ -6,6 +6,7 @@ on:
     paths:
       - "scripts/gh_cli_wrapper.py"
       - "scripts/test_gh_cli_wrapper.py"
+      - ".github/workflows/test-gh-cli-wrapper.yml"
 
 permissions:
   contents: read
