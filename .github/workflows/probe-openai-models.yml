@@ -1,0 +1,50 @@
+name: Probe openai models
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Off the top of the hour so it does not compete with the :07 refiner and
+    # the :24 selector.
+    - cron: "13 */6 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GITHUB_TOKEN: ${{ secrets.BACLUC_AGENT_GITHUB_TOKEN }}
+      OPENCODE_AUTH_CONTENT: ${{ secrets.OPENCODE_AUTH_JSON }}
+      # One model only: several openai/* entries fail on entitlement, not on
+      # quota, so a set-wide probe would report a healthy quota as broken.
+      OPENAI_PROBE_MODEL: openai/gpt-5.6-luna
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          token: ${{ secrets.BACLUC_AGENT_GITHUB_TOKEN }}
+
+      - uses: ./.github/actions/setup-opencode
+
+      - name: Probe openai model for quota headroom
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          set +e
+          opencode --pure run --model "$OPENAI_PROBE_MODEL" "Respond with exactly OK." > "$RUNNER_TEMP/probe.log" 2>&1
+          status=$?
+          set -e
+          if (( status != 0 )); then
+            cat "$RUNNER_TEMP/probe.log"
+            line="$OPENAI_PROBE_MODEL unusable: ChatGPT quota exhausted, or the credential is gone/expired"
+            printf '::error::%s\n' "$line"
+            printf '%s\n' "$line" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          cat "$RUNNER_TEMP/probe.log"
+          line="$OPENAI_PROBE_MODEL usable (ChatGPT quota has headroom)"
+          printf 'openai probe: %s\n' "$line"
+          printf '%s\n' "$line" >> "$GITHUB_STEP_SUMMARY"
