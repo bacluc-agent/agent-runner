@@ -95,7 +95,7 @@ jobs:
             remaining="${quota%% *}"
             reset="${quota#* }"
             if [[ "$remaining" == "0" ]]; then
-              printf '::error::GitHub API core quota exhausted; resets at %s. Standing down this run.\n' "$reset"
+              printf '::error::GitHub API core quota exhausted; resets at %s (%s). Standing down this run.\n' "$reset" "$(date -u -d "@$reset" '+%Y-%m-%d %H:%M:%S UTC' 2>/dev/null || date -u -r "$reset" '+%Y-%m-%d %H:%M:%S UTC' 2>/dev/null || echo 'unknown')"
               exit 0
             fi
           fi
@@ -116,8 +116,8 @@ jobs:
           # ponytail: REST list vs Search can diverge if >100 stale claimed issues crowd the page — upgrade path: keep per_page ahead of growth.
           if ! gh api "repos/${ISSUE_REPOSITORY}/issues?state=open&labels=ready-for-implementation&sort=created&direction=asc&per_page=100" \
             --jq 'map(select(.pull_request == null)) | map(select(.labels | map(.name) | index("agent-running") == null)) | .[0:50]' > "$search_json"; then
-            printf '::warning::could not list candidate issues; skipping this run.\n' >&2
-            exit 0
+            printf '::error::could not list candidate issues; failing this run.\n' >&2
+            exit 1
           fi
 
           candidates="$RUNNER_TEMP/candidate-numbers.txt"
