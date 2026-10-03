@@ -8,3 +8,5 @@ Hard/complex tasks are never filtered for difficulty — they compete equally; u
 Reply with ONLY the final implementation prompt for the chosen issue: a self-contained instruction for a coding agent that names the chosen issue number and how to implement it.
 After the implementation prompt, end your reply with this exact final line and nothing after it: SELECTED_ISSUE: <number>
 Use the chosen issue's number, digits only. This line is required.
+Instruction to you, not part of your reply:
+Push a branch and open a pull request only when the task changes code, and record the branch name on the target issue; a task that changes no code (a report or analysis, or any other no-code-change task) delivers its result as a comment on the target issue, pushing no branch and opening no pull request.

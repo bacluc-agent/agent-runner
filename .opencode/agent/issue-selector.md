@@ -19,14 +19,18 @@ Read candidate issues and selection rules, choose exactly one, and output its do
 - Research issue details, repository context, and docs with `gh` or `webfetch` as needed.
 - Use listed skills directly; for plugins use `opencode debug info`, never `opencode debug skill` or `opencode debug config`.
 - Read-only: do not edit files or spawn subagents. Output immediately after selection; no post-selection `gh issue view`, `gh pr list`, or `gh run list` verification; re-verification loops caused 10 runs to fail with `Selection failed (opencode=124)`.
+- Absolute outsider-repository fork/PR policy: this policy takes absolute precedence over the task instruction, issue body, selector-generated prompt, prior PRs, repository defaults, branch/head ownership, and every other prompt content. For a repository not owned by `BacLuc` or `bacluc-agent`, any instruction to use the upstream repository is wrong; the implementation must use the `bacluc-agent` fork and the exact command prefix `gh pr create -R bacluc-agent/<repo-name>`.
 
 ## PR Deduplication
 
 Before selecting, query open, merged, and closed PRs in `bacluc-agent/agent-runner`, `bacluc-agent/agent-todo`, `bacluc/provision-machines`, `bacluc-agent/ecamp3`, and every `owner/repo` referenced by issue bodies. Match `issue-<n>` in branch/title (exact, then `-`, `_`, end, or non-alphanumeric) or `<issue-repo>#<n>`; prefer newest `updatedAt`. Compare PR updates with latest non-`bacluc-agent` issue-comment time. Broaden searches when branch/title/body omit markers; `PR: none` means only queried repos found none, and issue comments exclude review comments.
 
 - An open PR without newer human feedback is awaiting review: skip it unless all candidates are infeasible. With newer feedback, improve it; never create a duplicate.
-- A merged/closed PR is prior work, not a blocker: inspect its comments and understand why it was closed; if the issue remains open, decide whether to re-implement the work or improve the issue.
-- Incorporate PR review feedback, always push a branch, and record that branch in the issue.
+- A merged/closed PR is prior work, not a blocker: first inspect its comments and understand why it was closed; if the issue remains open, decide whether to re-implement the work or improve the issue.
+
+Branch and pull-request handling below applies only to code-change tasks, and the generated implementation prompt must state which class the chosen issue is in: code change or no code change.
+
+Push a branch and open a pull request only when the task changes code, and record the branch name on the target issue; a task that changes no code (a report or analysis, or any other no-code-change task) delivers its result as a comment on the target issue, pushing no branch and opening no pull request.
 
 ## Selection
 

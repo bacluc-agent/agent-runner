@@ -13,13 +13,14 @@ from urllib.parse import urlsplit
 from datetime import datetime, timezone
 
 AVAILABLE_TTL_HOURS = 24
-FAILED_TTL_HOURS = 2
+# Trade-off: 1h re-probes failures twice as often, halving recovery latency for wrongly-marked models.
+FAILED_TTL_HOURS = 1
 FREE_PATTERNS = [r"(?:-|:)free$", r"big-pickle"]
 PROVIDER_WHITELISTS: dict[str, list[str]] = {
     "openrouter": [r"(?:-|:)free$", r"big-pickle"],
     "opencode": [r"(?:-|:)free$", r"big-pickle", r"glm", r"gpt-5\.6-luna", r"qwen", r"kimi"],
-    # gpt-5.6-sol/terra, gpt-6 excluded: too expensive; widen past gpt- if openai ships non-gpt names
-    "openai": [r"^gpt-(?!(5\.6-(sol|terra)|6)).*$"],
+    # gpt-5.6-sol/terra and gpt-6 (except gpt-6-luna) excluded: too expensive; widen past gpt- if openai ships non-gpt names
+    "openai": [r"^gpt-(?!(5\.6-(sol|terra)|6(?!-luna))).*$"],
 }
 PROVIDERS = (
     ("opencode-go-openai", "OPENCODE_GO_API_KEY"),
@@ -91,7 +92,10 @@ def write_cache(cache_issue: str, cache: dict) -> None:
     try:
         run_gh("issue", "edit", str(cache_issue), *repo_flag(), "--body", body)
     except Exception as e:
-        print(f"warning: failed to write cache issue {cache_issue}: {e}", file=sys.stderr)
+        print(
+            f"warning: failed to write cache issue {cache_issue}: {e}: {getattr(e, 'stderr', '') or ''}",
+            file=sys.stderr,
+        )
 
 
 def is_whitelisted(model_id: str, patterns: list[str]) -> bool:

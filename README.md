@@ -2,7 +2,9 @@
 
 This repository runs an automated software agent that turns ideas into merged
 pull requests. You write an idea as a GitHub issue, and the agent implements
-it, opens a pull request, and reacts to review comments — all on its own.
+it and reacts to review comments — all on its own. A branch and pull request
+follow when the work changes code; a no-code-change task delivers its result
+on the issue instead.
 
 ## How it works: two repositories
 
@@ -37,12 +39,13 @@ anything.
    when the run ends.
 4. **The issue is implemented** (right after selection). The _coordinator_
    agent checks which AI models are currently available (using a cache so it
-   stays fast), picks a model, implements the issue, and pushes the work to a
-   branch named `agent-run/<issue-number>-<run-id>`. It comments on the issue
-   with the run link and the branch.
-5. **A pull request is opened.** The coordinator agent opens the pull request
-   itself. Its description links the GitHub Actions runs that prove the
-   change works.
+   stays fast), picks a model, and implements the issue. It keeps a single
+   structured progress comment on the issue. When the work changes code, the
+   coordinator pushes the work to its own branch; the workflow pushes
+   `agent-run/<issue-number>-<run-id>` only as a fallback for uncommitted work.
+5. **A pull request is opened, when code changed.** The coordinator agent opens
+   the pull request itself. Its description links the GitHub Actions runs that
+   prove the change works.
 6. **Review comments are applied** (every 4 hours, at minute 32). The
    _review-fixes_ workflow finds open pull requests with review comments and
    sends the agent back to apply them.
@@ -54,7 +57,7 @@ idea (issue in agent-todo)
   → refine (hourly :07)
   → select (hourly :24)
   → implement (coordinator agent)
-  → pull request (opened by the agent)
+  → pull request (opened by the agent, when code changed)
   → review comments → fixes (every 4 h)
   → merge (human)
 ```
@@ -63,15 +66,15 @@ idea (issue in agent-todo)
 
 ### Workflows (the schedule)
 
-| Workflow                       | When it runs                                | What it does                                                                                                                         |
-| ------------------------------ | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `ci.yml`                       | every push to `main` and every pull request | Quality gate: runs the completion check (formatting, workflow lint, tests). Nothing merges if this fails.                            |
-| `refine-issues.yml`            | hourly at minute 7                          | Rewrites vague issues into `## Goal` + `## How to implement` and labels them `ready-for-implementation`.                             |
-| `hourly-issue.yml`             | hourly at minute 24                         | Picks one ready issue, claims it with `agent-running` for the run, and starts the implementation.                                    |
-| `opencode.yml`                 | called by the other workflows               | The core runner: checks model availability, selects a model, runs the coordinator agent, pushes the work, and comments on the issue. |
-| `review-fixes.yml`             | every 4 hours at minute 32                  | Finds open pull requests with review comments and re-dispatches the agent to apply them.                                             |
-| `refresh-chatgpt-auth.yml`     | 1st and 15th of each month                  | Keeps the OpenAI login working by refreshing the OAuth token (browser login as fallback).                                            |
-| `renew-interaction-limits.yml` | 1st of each month                           | Renews the repository interaction limit so collaborators can keep working.                                                           |
+| Workflow                       | When it runs                                | What it does                                                                                                                                                                                            |
+| ------------------------------ | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ci.yml`                       | every push to `main` and every pull request | Quality gate: runs the completion check (formatting, workflow lint, tests). Nothing merges if this fails.                                                                                               |
+| `refine-issues.yml`            | hourly at minute 7                          | Rewrites vague issues into `## Goal` + `## How to implement` and labels them `ready-for-implementation`.                                                                                                |
+| `hourly-issue.yml`             | hourly at minute 24                         | Picks one ready issue, claims it with `agent-running` for the run, and starts the implementation.                                                                                                       |
+| `opencode.yml`                 | called by the other workflows               | The core runner: checks model availability, selects a model, runs the coordinator agent, pushes the work, keeps one structured progress comment on the issue, and only short replies to human comments. |
+| `review-fixes.yml`             | every 4 hours at minute 32                  | Finds open pull requests with review comments and re-dispatches the agent to apply them.                                                                                                                |
+| `refresh-chatgpt-auth.yml`     | 1st and 15th of each month                  | Keeps the OpenAI login working by refreshing the OAuth token (browser login as fallback).                                                                                                               |
+| `renew-interaction-limits.yml` | 1st of each month                           | Renews the repository interaction limit so collaborators can keep working.                                                                                                                              |
 
 ### Actions (reusable building blocks)
 
@@ -82,12 +85,18 @@ idea (issue in agent-todo)
   result in a cache issue in the todo repository. Probing every model on
   every run would be slow and expensive; the cache makes it cheap.
 
+Selectors apply the shared `scripts/model-deny-list.txt` and stop instead of
+dispatching when no allowed model is available.
+
 ### Agents (the AI personas)
 
 - `issue-selector` — reads the candidate issues and picks one, avoiding
   duplicates and repeating recent picks.
 - `issue-refiner` — a technical writer that rewrites issue bodies into
-  `## Goal` and `## How to implement`.
+  `## Goal` and `## How to implement`, keeping at most 4000 visible
+  characters before any `<details>` fold and moving the rest into one
+  `<details><summary>Extra context</summary>` fold inside the
+  implementation section.
 - `coordinator` and `model-discovery` — the main implementer and the model
   picker. They live in `bacluc/provision-machines` and are installed by the
   `setup-opencode` action.
@@ -96,13 +105,49 @@ idea (issue in agent-todo)
 
 - `completion-check` — runs all quality checks (see below).
 - `validate_refined_issue.py` — checks that a refined issue body has exactly
-  the two required sections.
+  the two required sections and at most 4000 visible characters before any
+  `<details>` fold (reason `too_long`); extra detail goes into a
+  `<details>` fold inside the implementation section.
 - `dump_subagent_transcripts.py` — dumps agent session transcripts for
   debugging.
 - `refresh-token.py` / `chatgpt-login.py` — refresh the OpenAI login without
   a browser, or fall back to a browser login.
 - `issue-selection-tail.txt` — the default selection instructions appended to
   the issue-selector prompt.
+
+## GitHub CLI wrapper
+
+`setup-opencode` installs a Python-stdlib `gh` wrapper in
+`$RUNNER_TEMP/gh-cli-wrapper` before starting OpenCode. `GITHUB_PATH` makes it
+apply to subsequent steps and child shells, including work in other checkouts.
+The installer saves the real CLI's absolute path before changing PATH.
+
+- `gh pr create` and `gh pr new` require exactly one explicit `-R`/`--repo`
+  targeting `BacLuc` or `bacluc-agent` (case-insensitive) on github.com.
+  For outsider repositories, create the fork and a branch representing upstream
+  main, then open the PR with `-R bacluc-agent/<repo>` against that branch.
+- `gh pr revert` requires exactly one PR number or github.com PR URL and an
+  explicit `-R`/`--repo` (or a URL selector) targeting `BacLuc` or
+  `bacluc-agent`; implicit destinations fail closed. The REST revert endpoint
+  `repos/OWNER/REPO/pulls/N/reverts` is checked the same way.
+- REST PR creation is checked too, including implicit POST via fields or
+  `--input`. Ambiguous options, noncanonical paths and routing overrides fail
+  closed. Ordinary REST reads, issue comments, PATCH, forks and dispatches remain
+  available; accepted calls preserve arguments, stdin, output and exit status.
+- Direct `gh api graphql`, configured alias execution, alias management and
+  extension commands are denied. Use builtin CLI commands or canonical REST
+  endpoints instead. Unknown builtin commands/options on guarded routes require
+  review before adding support; this is not a complete CLI parser.
+
+This is an accidental-misrouting guardrail, **not a sandbox or universal PR
+prevention**. An absolute executable path, direct HTTP, changing PATH or changing
+the wrapper can bypass it. CLI builtin commands may internally use GraphQL;
+only direct `gh api graphql` is denied.
+
+Regression tests use a fake backend and never create forbidden PRs. Run
+`python3 -m unittest discover -s scripts -p test_gh_cli_wrapper.py` locally. The
+dispatchable CI workflow also runs the actual setup composite with a fake backend
+and verifies forwarding and historical denial in a later step outside the checkout.
 
 ## Repository variables
 
@@ -327,8 +372,11 @@ Tracked in bacluc-agent/agent-todo#152.
   You are free to fork this repository and point it to another issue repo.
   Open an issue in `bacluc-agent/agent-todo`. The refiner will turn it into a
   precise task.
-- **How do I know what the agent is doing?** The agent comments on the issue:
-  run started, run result, branch, and pull request link.
+- **How do I know what the agent is doing?** The agent keeps a single
+  structured comment on the issue and updates it in place: management
+  summary, design decisions, open pull request, verification evidence, and
+  a table of action runs. It posts a new comment only as a short reply to
+  a comment you wrote.
 - **Who merges the pull request?** Mostly a human. In this repo, the agent
-  already merged things by himself. The agent implements and opens the PR;
-  a person reviews and merges.
+  already merged things by himself. The agent implements the change and opens
+  the PR when the work changes code; a person reviews and merges.
