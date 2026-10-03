@@ -25,7 +25,7 @@ Read candidate issues and selection rules, choose exactly one, and output its do
 Before selecting, query open, merged, and closed PRs in `bacluc-agent/agent-runner`, `bacluc-agent/agent-todo`, `bacluc/provision-machines`, `bacluc-agent/ecamp3`, and every `owner/repo` referenced by issue bodies. Match `issue-<n>` in branch/title (exact, then `-`, `_`, end, or non-alphanumeric) or `<issue-repo>#<n>`; prefer newest `updatedAt`. Compare PR updates with latest non-`bacluc-agent` issue-comment time. Broaden searches when branch/title/body omit markers; `PR: none` means only queried repos found none, and issue comments exclude review comments.
 
 - An open PR without newer human feedback is awaiting review: skip it unless all candidates are infeasible. With newer feedback, improve it; never create a duplicate.
-- A merged/closed PR is prior work, not a blocker: if the issue remains open, re-implement or improve it.
+- A merged/closed PR is prior work, not a blocker: inspect its comments and understand why it was closed; if the issue remains open, decide whether to re-implement the work or improve the issue.
 - Incorporate PR review feedback, always push a branch, and record that branch in the issue.
 
 ## Selection
