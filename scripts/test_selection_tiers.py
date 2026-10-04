@@ -28,6 +28,25 @@ def test_branch_history_and_recent_repeat():
     assert tier(candidate(76, title="Standing research", attempts=14, recent_attempts=1, is_standing=True)) == 3
 
 
+def test_durable_attempt_label_counts_as_history_without_branch():
+    import json
+    from pathlib import Path
+    from tempfile import TemporaryDirectory
+    from subprocess import run
+
+    with TemporaryDirectory() as directory:
+        candidates = Path(directory) / "candidates.json"
+        branches = Path(directory) / "branches.txt"
+        tail = Path(directory) / "tail.txt"
+        candidates.write_text(json.dumps([{"number": 42, "labels": [{"name": "agent-attempted"}]}]))
+        branches.write_text("")
+        tail.write_text("Choose\n")
+        result = run(["python3", "scripts/selection_tiers.py", "--candidates", str(candidates), "--branches", str(branches), "--tail-file", str(tail)], check=True, capture_output=True, text=True)
+    assert "attempts for 42: 1" in result.stderr
+    assert "Candidate tiers: 0=0 1=0 2=1 3=0" in result.stderr
+    assert "[attempts: 1] [tier: 2]" in result.stdout
+
+
 def test_tiers_cover_feedback_history_and_finished_work():
     assert tier(candidate(pr_state="open", pr_updated_at="2026-01-01T00:00:00Z", last_human_comment_at="2026-01-02T00:00:00Z")) == 0
     assert tier(candidate(pr_state="open")) == 3
