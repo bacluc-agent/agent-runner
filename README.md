@@ -108,13 +108,18 @@ Selection previously relied on advisory rules given to a small model, not
 working memory or enforced ranking. The previous PR-branch anti-repeat filter
 looked for `issue-<n>`, while the coordinator names current run branches
 `agent-run/<issue>-<run>` ([`opencode.yml:531`](.github/workflows/opencode.yml#L531));
-therefore it missed current attempts. PR-less runs were invisible too. The
-2026-10-03 branch snapshot recorded 128 `agent-run/*` branches across 25 issues,
+therefore it missed current attempts. The stale filter had frozen to the
+literal `356,316,345,347,298,16,336,320,311,99`, unchanged in the 2026-10-03
+runs checked. PR-less runs were invisible too. The 2026-10-03 branch snapshot
+recorded 128 `agent-run/*` branches across 25 issues,
 including issue 330 (33), 348 (16), and 76 (14); 330, 348, and 76 had no PR
 branch. The workflow removes `agent-running` after dispatch
 ([`hourly-issue.yml:372-373`](.github/workflows/hourly-issue.yml#L372)), so that
-label is a temporary claim, not history. Rotation and difficulty rules were
-unenforced model instructions. Mechanical tiers now use branch attempt history,
+label is a temporary claim, not history. Selection used to choose from a
+small-model list including qwen3.8-flash and `opencode/big-pickle`
+([`hourly-issue.yml:131-136`](.github/workflows/hourly-issue.yml#L131-L136)).
+Rotation (including the one-in-four standing-task cap) and difficulty rules
+were unenforced model instructions. Mechanical tiers now use branch attempt history,
 PR state, and issue-comment feedback; the selector only ranks candidates within
 the chosen tier. The issue-feedback lookup excludes the agent's own comments
 ([`hourly-issue.yml:233-237`](.github/workflows/hourly-issue.yml#L233-L237)),
