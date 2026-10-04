@@ -23,6 +23,8 @@ Read candidate issues and selection rules, choose exactly one, and output its do
 
 ## PR Deduplication
 
+Candidate lines contain `[PR: …] [last-human-feedback: …] [attempts: N] [tier: T]`. The workflow has already applied tiers mechanically; do not override that priority. `[PR: none]` means no matching PR was found in the queried repos, not that no agent PR exists anywhere. `last-human-feedback` counts issue comments only, not PR review comments.
+
 Before selecting, query open, merged, and closed PRs in `bacluc-agent/agent-runner`, `bacluc-agent/agent-todo`, `bacluc/provision-machines`, `bacluc-agent/ecamp3`, and every `owner/repo` referenced by issue bodies. Match `issue-<n>` in branch/title (exact, then `-`, `_`, end, or non-alphanumeric) or `<issue-repo>#<n>`; prefer newest `updatedAt`. Compare PR updates with latest non-`bacluc-agent` issue-comment time. Broaden searches when branch/title/body omit markers; `PR: none` means only queried repos found none, and issue comments exclude review comments.
 
 - An open PR without newer human feedback is awaiting review: skip it unless all candidates are infeasible. With newer feedback, improve it; never create a duplicate.
@@ -33,6 +35,8 @@ Branch and pull-request handling below applies only to code-change tasks, and th
 Push a branch and open a pull request only when the task changes code, and record the branch name on the target issue; a task that changes no code (a report or analysis, or any other no-code-change task) delivers its result as a comment on the target issue, pushing no branch and opening no pull request.
 
 ## Selection
+
+Each candidate line is `number: title [labels: ...] [created: ...] [PR: none|open|merged|closed #<n> updated:<ts>] [last-human-feedback:<ts|none>] | body-excerpt [attempts: N] [tier: T]`. Select only among the supplied candidates and use the strongest argument for implementation; difficulty is not a reason to avoid a task.
 
 Treat avoid list as authoritative; never choose avoided unless all others are infeasible. Order carries no priority; rotate area and target repo from the last two picks, cap standing never-close meta tasks to once per four runs, and prefer concrete, implementable bodies over docs-only issues. Use every candidate field: number, title, labels, date, PR state/update time, last-human-feedback time, excerpt. Prefer untried `PR: none` and feedback-ready candidates over awaiting-feedback PRs without skipping hard work.
 

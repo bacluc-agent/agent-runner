@@ -93,6 +93,10 @@ jobs:
             --color 0E8A16 --description 'Selected by the hourly issue runner' --force; then
             printf '::warning::could not ensure the agent-running label exists; the claim may not apply\n'
           fi
+          if ! gh label create agent-attempted -R "$ISSUE_REPOSITORY" \
+            --color 1D76DB --description 'Already attempted by the hourly issue runner' --force; then
+            printf '::warning::could not ensure the agent-attempted label exists; attempt history may not apply\n'
+          fi
 
           printf '\n\n\n\n\n\n'
           printf 'Fetching github issues...\n'
@@ -169,8 +173,10 @@ jobs:
           default_tail="$(cat scripts/issue-selection-tail.txt)"
           tail_instruction="${SELECTION_PROMPT:-$default_tail}"
 
-          enriched="$RUNNER_TEMP/candidates.enriched.txt"
-          : > "$enriched"
+          enriched="$RUNNER_TEMP/candidates.enriched.json"
+          cp "$search_json" "$enriched"
+          gh api "repos/${GITHUB_REPOSITORY}/branches?per_page=100" --paginate --jq '.[].name' > "$RUNNER_TEMP/branches.txt"
+          : > "$RUNNER_TEMP/enrichment.jsonl"
 
           # Repos to check for open agent PRs: the known agent repos plus any repos
           # referenced in candidate issue bodies (e.g. upstream ecamp/ecamp3).
@@ -230,29 +236,16 @@ jobs:
             if [[ -z "$human_ts" || "$human_ts" == "null" ]]; then
               human_ts="none"
             fi
-            printf '%s|%s|%s\n' "$num" "$pr_info" "$human_ts" >> "$enriched"
+            jq -nc --arg num "$num" --arg pr "$pr_info" --arg human "$human_ts" '{number:($num|tonumber),pr_info:$pr,last_human_comment_at:(if $human == "none" then null else $human end)}' >> "$RUNNER_TEMP/enrichment.jsonl"
           done < <(shuf "$candidates")
-          printf 'Candidate enrichment (PR + feedback):\n'
-          cat "$enriched"
-          printf '\n'
-
-          candidate_lines="$RUNNER_TEMP/candidate-lines.txt"
-          : > "$candidate_lines"
-          while IFS='|' read -r num pr_info human_ts; do
-            line="$(jq -r --arg num "$num" --arg pr_info "$pr_info" --arg human_ts "$human_ts" '.[] | select((.number | tostring) == $num) | "\(.number): \(.title) [labels: \([.labels[].name] | join(","))] [created: \(.created_at)] [PR: \($pr_info)] [last-human-feedback:\($human_ts)] | \((.body // "" | gsub("[\\r\\n\\t]+"; " ") | .[0:300]))"' "$search_json")"
-            printf '%s\n' "$line" >> "$candidate_lines"
-          done < "$enriched"
-
-          recent_issues="$(gh pr list -R "$GITHUB_REPOSITORY" --state all --limit 30 --json headRefName --jq '.[].headRefName' | grep -oE 'issue-[0-9]+' | grep -oE '[0-9]+' | awk '!seen[$0]++' | head -n 10 | paste -sd, - || true)"
-          recent_issues="${recent_issues:-none}"
+          jq --slurpfile issues "$enriched" --slurpfile enrichment "$RUNNER_TEMP/enrichment.jsonl" '$issues[0] | map(. as $issue | ($enrichment | map(select(.number == $issue.number)) | .[0]) as $e | if $e then . + {last_human_comment_at:$e.last_human_comment_at, pr_state:($e.pr_info|split(" ")[0]), pr_number:($e.pr_info|capture("#(?<n>[0-9]+)")?.n // null|tonumber?), pr_updated_at:($e.pr_info|capture("updated:(?<t>[^ ]+)")?.t // null)} else . end)' > "$RUNNER_TEMP/candidates.final.json"
+          cp "$RUNNER_TEMP/candidates.final.json" "$enriched"
 
           prompt="$RUNNER_TEMP/selection-prompt.txt"
-          {
-            printf '%s\n' 'Open issue candidates in this repository (number: title [labels] [created] [PR: none|open|merged|closed #<n> updated:<ts>] [last-human-feedback:<ts|none>] | body-excerpt), RANDOM ORDER — position carries no priority:'
-            cat "$candidate_lines" | shuf
-            printf '%s\n' "Recently selected — avoid: ${recent_issues}"
-            printf '%s\n' "$tail_instruction"
-          } > "$prompt"
+          printf '%s\n' "$tail_instruction" > "$RUNNER_TEMP/tail.txt"
+          python3 scripts/selection_tiers.py --candidates "$enriched" --branches "$RUNNER_TEMP/branches.txt" --tail-file "$RUNNER_TEMP/tail.txt" > "$prompt"
+          printf 'Selected-tier candidates:\n'
+          cat "$prompt"
 
           selection="$RUNNER_TEMP/selection.out"
           set +e
@@ -291,7 +284,7 @@ jobs:
             printf '::warning::could not determine selected issue; dispatching without a claim\n'
           else
             printf 'issue_number=%s\n' "$issue_number" >> "$GITHUB_OUTPUT"
-            if ! gh issue edit "$issue_number" -R "$ISSUE_REPOSITORY" --add-label agent-running; then
+            if ! gh issue edit "$issue_number" -R "$ISSUE_REPOSITORY" --add-label agent-running,agent-attempted; then
               printf '::warning::could not claim issue %s; dispatching unclaimed\n' "$issue_number"
             fi
           fi
