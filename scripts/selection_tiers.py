@@ -108,6 +108,7 @@ def main() -> None:
         number = int(issue["number"])
         issue_runs = [run for candidate, run in runs if candidate == number]
         labels = [label["name"] for label in issue.get("labels", [])]
+        attempts = max(len(issue_runs), int(any(label.casefold() == "agent-attempted" for label in labels)))
         candidate = Candidate(
             number=number,
             title=issue.get("title", ""),
@@ -117,7 +118,7 @@ def main() -> None:
             pr_number=issue.get("pr_number"),
             pr_updated_at=issue.get("pr_updated_at"),
             last_human_comment_at=issue.get("last_human_comment_at"),
-            attempts=len(issue_runs),
+            attempts=attempts,
             recent_attempts=sum(number == recent for recent in newest_three),
             is_standing=is_standing(issue.get("title", ""), labels),
             body=issue.get("body") or "",

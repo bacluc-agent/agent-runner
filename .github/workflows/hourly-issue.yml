@@ -281,12 +281,13 @@ jobs:
           # pipeline, and the assignment would abort the step before the dispatch happens.
           issue_number="$(grep -E '^SELECTED_ISSUE:[[:space:]]*[0-9]+[[:space:]]*$' "$selection" | tail -1 | grep -oE '[0-9]+' || true)"
           if [[ -z "$issue_number" ]] || ! grep -qxF "$issue_number" "$candidates"; then
-            printf '::warning::could not determine selected issue; dispatching without a claim\n'
-          else
-            printf 'issue_number=%s\n' "$issue_number" >> "$GITHUB_OUTPUT"
-            if ! gh issue edit "$issue_number" -R "$ISSUE_REPOSITORY" --add-label agent-running,agent-attempted; then
-              printf '::warning::could not claim issue %s; dispatching unclaimed\n' "$issue_number"
-            fi
+            printf '::error::missing or invalid SELECTED_ISSUE; not dispatching\n'
+            exit 1
+          fi
+          printf 'issue_number=%s\n' "$issue_number" >> "$GITHUB_OUTPUT"
+          if ! gh issue edit "$issue_number" -R "$ISSUE_REPOSITORY" --add-label agent-running,agent-attempted; then
+            printf '::error::could not claim issue %s; not dispatching\n' "$issue_number"
+            exit 1
           fi
           {
             printf 'prompt<<%s\n' "$eof"
