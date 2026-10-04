@@ -238,7 +238,7 @@ jobs:
             fi
             jq -nc --arg num "$num" --arg pr "$pr_info" --arg human "$human_ts" '{number:($num|tonumber),pr_info:$pr,last_human_comment_at:(if $human == "none" then null else $human end)}' >> "$RUNNER_TEMP/enrichment.jsonl"
           done < <(shuf "$candidates")
-          jq --slurpfile issues "$enriched" --slurpfile enrichment "$RUNNER_TEMP/enrichment.jsonl" '$issues[0] | map(. as $issue | ($enrichment | map(select(.number == $issue.number)) | .[0]) as $e | if $e then . + {last_human_comment_at:$e.last_human_comment_at, pr_state:($e.pr_info|split(" ")[0]), pr_number:($e.pr_info|capture("#(?<n>[0-9]+)")?.n // null|tonumber?), pr_updated_at:($e.pr_info|capture("updated:(?<t>[^ ]+)")?.t // null)} else . end)' > "$RUNNER_TEMP/candidates.final.json"
+          jq --slurpfile issues "$enriched" --slurpfile enrichment "$RUNNER_TEMP/enrichment.jsonl" '$issues[0] | map(. as $issue | ($enrichment | map(select(.number == $issue.number)) | .[0]) as $e | if $e then . + {last_human_comment_at:$e.last_human_comment_at, pr_state:($e.pr_info|split(" ")[0]), pr_number:(if $e.pr_info == "none" then null else ($e.pr_info|split("#")[1]|split(" ")[0]|tonumber) end), pr_updated_at:(if $e.pr_info == "none" then null else ($e.pr_info|split("updated:")[1]) end)} else . end)' > "$RUNNER_TEMP/candidates.final.json"
           cp "$RUNNER_TEMP/candidates.final.json" "$enriched"
 
           prompt="$RUNNER_TEMP/selection-prompt.txt"
