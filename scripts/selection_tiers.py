@@ -26,7 +26,6 @@ class Candidate:
     attempts: int
     recent_attempts: int
     is_standing: bool
-    tier: int = 0
     body: str = ""
 
 
@@ -55,24 +54,28 @@ def _newer(left: str | None, right: str | None) -> bool:
 
 def tier(candidate: Candidate) -> int:
     if candidate.pr_state == "open" and _newer(candidate.last_human_comment_at, candidate.pr_updated_at):
-        return 0
-    if candidate.pr_state in {"merged", "closed"}:
-        return 2
-    if candidate.pr_state == "open":
+        value = 0
+    elif candidate.pr_state in {"merged", "closed"}:
+        value = 2
+    elif candidate.pr_state == "open":
+        value = 3
+    elif candidate.attempts == 0 and not candidate.is_standing:
+        value = 1
+    else:
+        value = 2
+    if candidate.recent_attempts and not (value == 0 and not candidate.is_standing):
         return 3
-    if candidate.attempts == 0 and not candidate.is_standing:
-        return 1
-    return 2
+    return value
 
 
 def select_tier(candidates: list[Candidate]) -> int:
     if not candidates:
         raise ValueError("no candidates")
-    return min(candidate.tier for candidate in candidates)
+    return min(tier(candidate) for candidate in candidates)
 
 
 def render_prompt(candidates: list[Candidate], tier_value: int, tail_text: str) -> str:
-    selected = [candidate for candidate in candidates if candidate.tier == tier_value]
+    selected = [candidate for candidate in candidates if tier(candidate) == tier_value]
     random.shuffle(selected)
     lines = [
         f"Candidates in selected tier {tier_value} only (RANDOM ORDER — position carries no priority):"
@@ -85,7 +88,7 @@ def render_prompt(candidates: list[Candidate], tier_value: int, tail_text: str) 
             f"[created: {candidate.created_at}] [PR: {candidate.pr_state} "
             f"#{candidate.pr_number or 'none'} updated:{candidate.pr_updated_at or 'none'}] "
             f"[last-human-feedback:{candidate.last_human_comment_at or 'none'}] | {body} "
-            f"[attempts: {candidate.attempts}] [tier: {candidate.tier}]"
+            f"[attempts: {candidate.attempts}] [tier: {tier(candidate)}]"
         )
     lines.append(tail_text.strip())
     return "\n".join(lines) + "\n"
@@ -99,7 +102,7 @@ def main() -> None:
     args = parser.parse_args()
     issues = json.loads(Path(args.candidates).read_text())
     runs = parse_branches(Path(args.branches).read_text().splitlines())
-    newest_three = {number for number, _ in runs[:3]}
+    newest_three = [number for number, _ in runs[:3]]
     candidates = []
     for issue in issues:
         number = int(issue["number"])
@@ -115,19 +118,15 @@ def main() -> None:
             pr_updated_at=issue.get("pr_updated_at"),
             last_human_comment_at=issue.get("last_human_comment_at"),
             attempts=len(issue_runs),
-            recent_attempts=int(number in newest_three),
+            recent_attempts=sum(number == recent for recent in newest_three),
             is_standing=is_standing(issue.get("title", ""), labels),
             body=issue.get("body") or "",
-        )
-        base_tier = tier(candidate)
-        candidate.tier = (
-            3 if number in newest_three and not (base_tier == 0 and not candidate.is_standing) else base_tier
         )
         candidates.append(candidate)
     chosen_tier = select_tier(candidates)
     for candidate in candidates:
         print(f"attempts for {candidate.number}: {candidate.attempts}", file=sys.stderr)
-    counts = [sum(candidate.tier == value for candidate in candidates) for value in range(4)]
+    counts = [sum(tier(candidate) == value for candidate in candidates) for value in range(4)]
     print("Candidate tiers: " + " ".join(f"{value}={count}" for value, count in enumerate(counts)) + f" (selected tier {chosen_tier})", file=sys.stderr)
     print(render_prompt(candidates, chosen_tier, Path(args.tail_file).read_text()), end="")
 
