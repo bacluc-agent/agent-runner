@@ -111,9 +111,7 @@ looked for `issue-<n>`, while the coordinator names current run branches
 therefore it missed current attempts. The stale filter had frozen to the
 literal `356,316,345,347,298,16,336,320,311,99`, unchanged in the 2026-10-03
 runs checked. PR-less runs were invisible too. The 2026-10-03 branch snapshot
-recorded 128 `agent-run/*` branches across 25 issues,
-including issue 330 (33), 348 (16), and 76 (14); 330, 348, and 76 had no PR
-branch. The workflow removes `agent-running` after dispatch
+recorded 128 `agent-run/*` branches across 25 issues, including [issue 330](https://github.com/bacluc-agent/agent-todo/issues/330) (33 branches), [issue 348](https://github.com/bacluc-agent/agent-todo/issues/348) (16), and [issue 76](https://github.com/bacluc-agent/agent-todo/issues/76) (14); none had a PR branch. The workflow removes `agent-running` after dispatch
 ([`hourly-issue.yml:372-373`](.github/workflows/hourly-issue.yml#L372)), so that
 label is a temporary claim, not history. Selection used to choose from a
 small-model list including qwen3.8-flash and `opencode/big-pickle`
@@ -124,14 +122,12 @@ PR state, and issue-comment feedback; the selector only ranks candidates within
 the chosen tier. The issue-feedback lookup excludes the agent's own comments
 ([`hourly-issue.yml:233-237`](.github/workflows/hourly-issue.yml#L233-L237)),
 so PR review comments are not represented. The supplied selection-history
-analysis records issue 330 in 7 of the 14 most recent code runs and issue 76,
-a standing research task, with 14 branches. In run 37135909176 every candidate
+analysis records [issue 330](https://github.com/bacluc-agent/agent-todo/issues/330)
+in 7 of the 14 most recent code runs and [issue 76](https://github.com/bacluc-agent/agent-todo/issues/76), a standing research task, with 14 branches. In [run 37135909176](https://github.com/bacluc-agent/agent-runner/actions/runs/37135909176) every candidate
 already had a PR, leaving the advisory rules "prefer untried" and "skip
 awaiting feedback" with no feasible choice; the model defaulted to its own
 preferences. That favors concise, concrete issue bodies and can strand harder
-work behind an untouched open PR. Repeated work includes issue 298 (PRs #124
-and #141), issue 316 (#129 and #149), and issue 347 (#145 and #146). These
-selection behaviors are tracked in [agent-todo#161](https://github.com/bacluc-agent/agent-todo/issues/161).
+work behind an untouched open PR. Repeated work includes [issue 298](https://github.com/bacluc-agent/agent-todo/issues/298) ([PR #124](https://github.com/bacluc-agent/agent-runner/pull/124), [PR #141](https://github.com/bacluc-agent/agent-runner/pull/141)), [issue 316](https://github.com/bacluc-agent/agent-todo/issues/316) ([PR #129](https://github.com/bacluc-agent/agent-runner/pull/129), [PR #149](https://github.com/bacluc-agent/agent-runner/pull/149)), and [issue 347](https://github.com/bacluc-agent/agent-todo/issues/347) ([PR #145](https://github.com/bacluc-agent/agent-runner/pull/145), [PR #146](https://github.com/bacluc-agent/agent-runner/pull/146)). These selection behaviors are tracked in [agent-todo#161](https://github.com/bacluc-agent/agent-todo/issues/161).
 
 ### Scripts
 
