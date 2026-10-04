@@ -90,8 +90,9 @@ dispatching when no allowed model is available.
 
 ### Agents (the AI personas)
 
-- `issue-selector` — reads the candidate issues and picks one, avoiding
-  duplicates and repeating recent picks.
+- `issue-selector` — reads the candidate issues and picks one from the best
+  available mechanically ranked tier.
+
 - `issue-refiner` — a technical writer that rewrites issue bodies into
   `## Goal` and `## How to implement`, keeping at most 4000 visible
   characters before any `<details>` fold and moving the rest into one
@@ -100,6 +101,32 @@ dispatching when no allowed model is available.
 - `coordinator` and `model-discovery` — the main implementer and the model
   picker. They live in `bacluc/provision-machines` and are installed by the
   `setup-opencode` action.
+
+### Why selection behaves as it does
+
+Selection previously relied on advisory rules given to a small model, not
+working memory or enforced ranking. The previous PR-branch anti-repeat filter
+looked for `issue-<n>`, while the coordinator names current run branches
+`agent-run/<issue>-<run>` ([`opencode.yml:531`](.github/workflows/opencode.yml#L531));
+therefore it missed current attempts. PR-less runs were invisible too. The
+2026-10-03 branch snapshot recorded 128 `agent-run/*` branches across 25 issues,
+including issue 330 (33), 348 (16), and 76 (14); 330, 348, and 76 had no PR
+branch. The workflow removes `agent-running` after dispatch
+([`hourly-issue.yml:372-373`](.github/workflows/hourly-issue.yml#L372)), so that
+label is a temporary claim, not history. Rotation and difficulty rules were
+unenforced model instructions. Mechanical tiers now use branch attempt history,
+PR state, and issue-comment feedback; the selector only ranks candidates within
+the chosen tier. The issue-feedback lookup excludes the agent's own comments
+([`hourly-issue.yml:233-237`](.github/workflows/hourly-issue.yml#L233-L237)),
+so PR review comments are not represented. The supplied selection-history
+analysis records issue 330 in 7 of the 14 most recent code runs and issue 76,
+a standing research task, with 14 branches. In run 37135909176 every candidate
+already had a PR, leaving the advisory rules "prefer untried" and "skip
+awaiting feedback" with no feasible choice; the model defaulted to its own
+preferences. That favors concise, concrete issue bodies and can strand harder
+work behind an untouched open PR. Repeated work includes issue 298 (PRs #124
+and #141), issue 316 (#129 and #149), and issue 347 (#145 and #146). These
+selection behaviors are tracked in [agent-todo#161](https://github.com/bacluc-agent/agent-todo/issues/161).
 
 ### Scripts
 
