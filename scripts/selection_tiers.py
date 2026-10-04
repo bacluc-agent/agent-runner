@@ -7,6 +7,7 @@ import argparse
 import json
 import random
 import re
+import sys
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -125,9 +126,9 @@ def main() -> None:
         candidates.append(candidate)
     chosen_tier = select_tier(candidates)
     for candidate in candidates:
-        print(f"attempts for {candidate.number}: {candidate.attempts}")
+        print(f"attempts for {candidate.number}: {candidate.attempts}", file=sys.stderr)
     counts = [sum(candidate.tier == value for candidate in candidates) for value in range(4)]
-    print("Candidate tiers: " + " ".join(f"{value}={count}" for value, count in enumerate(counts)) + f" (selected tier {chosen_tier})")
+    print("Candidate tiers: " + " ".join(f"{value}={count}" for value, count in enumerate(counts)) + f" (selected tier {chosen_tier})", file=sys.stderr)
     print(render_prompt(candidates, chosen_tier, Path(args.tail_file).read_text()), end="")
 
 
