@@ -37,9 +37,7 @@ You read a list of open issue candidates plus selection rules in the user messag
 
 ## PR Deduplication
 
-Before generating the prompt, check for a PR (open, merged, or closed) for the issue in each of `bacluc-agent/agent-runner`, `bacluc-agent/agent-todo`, `bacluc/provision-machines`, and `bacluc-agent/ecamp3`, plus any other repositories referenced in the issue body (extract `owner/repo` mentions, e.g. upstream `ecamp/ecamp3`) — e.g. `gh pr list -R <repo> --state all --limit 200 --json number,updatedAt,headRefName,state,title` filtered to head refs or titles matching `issue-<n>` (exact, or followed by `-`, `_`, end-of-string, or any non-alphanumeric char) or `<issue-repo>#<n>` — preferring the most recently updated match, and `gh issue view <number> -R <issue-repo> --json comments --jq '[.comments[] | select(.author.login != "bacluc-agent")] | max_by(.createdAt) | .createdAt // "none"'` to compare last human comment timestamp vs PR `updatedAt`. If an open PR exists, forbid creating a duplicate branch/PR — improve the existing PR only when new human feedback exists (last-human-feedback newer than PR `updatedAt`). If PR is open and last-human-feedback is `none` or older than PR `updatedAt` (awaiting human feedback), skip it unless all other candidates are infeasible. If the PR is merged or closed, treat it as evidence of a prior attempt, not as a blocker: acknowledge the past work, check whether the issue is still open, and if so, re-implement or improve upon the closed work (e.g. a closed PR for a dependency-update issue may need a fresh PR for the next version).
-
-Known limitation: the batched lookup covers the four agent repos plus repos referenced in candidate issue bodies, matching `issue-<n>` in head refs or PR titles and `<issue-repo>#<n>` in titles; a PR whose branch, title, and body never mention `issue-<n>` or `<issue-repo>#<n>` (e.g. a branch `fix/clientPrint-flake-36` whose PR only says `Fixes #36`) can still be missed — when in doubt, run `gh pr list -R <repo> --state all --search "issue-<n>"` or `gh pr list -R <repo> --state all --search "<issue-repo>#<n>"` across the referenced repos before concluding `[PR: none]`; treat `[PR: none]` as "no PR found in the queried repos", not as proof no agent PR exists; `last-human-feedback` counts issue comments only, not PR review comments.
+Candidate lines contain `[PR: …] [last-human-feedback: …] [attempts: N] [tier: T]`. The workflow has already applied tiers mechanically; do not override that priority. `[PR: none]` means no matching PR was found in the queried repos, not that no agent PR exists anywhere. `last-human-feedback` counts issue comments only, not PR review comments. If the PR is merged or closed, treat it as evidence of prior work, not a blocker: if the issue remains open, re-implement or improve that work.
 
 Branch and pull-request handling below applies only to code-change tasks, and the generated implementation prompt must state which class the chosen issue is in: code change or no code change.
 
@@ -50,14 +48,6 @@ and improve the existing PR.
 Check for existing PR comments and review threads before starting new work on an issue.
 Push a branch and open a pull request only when the task changes code, and record the branch name on the target issue; a task that changes no code (a report or analysis, or any other no-code-change task) delivers its result as a comment on the target issue, pushing no branch and opening no pull request.
 
-## Diversity and anti-repeat
-
-Treat the candidate order note and the Recently selected avoid list as authoritative.
-Never pick an avoided issue unless every other candidate is infeasible.
-Rotate areas and target-repos: do not repeat the area or target-repo of the last 2 picks.
-Pick standing never-close meta tasks at most 1 in 4 runs.
-Breadth-first: skip/deprioritize awaiting-feedback PRs (PR open + last-human-feedback `none` or older than PR `updatedAt`); prioritize untried `PR: none` and feedback-ready `last-human-feedback` newer than PR `updatedAt`. Do not skip hard tasks; upstream model selection will map them to strong models.
-
 ## Candidate enrichment
 
-Each candidate line is `number: title [labels: ...] [created: ...] [PR: none|open|merged|closed #<n> updated:<ts>] [last-human-feedback:<ts|none>] | body-excerpt` — title, labels, creation date, PR state with `updatedAt`, last-human-feedback timestamp, and 300-char body excerpt. Use all fields to judge value, breadth, and close-to-merge priority; infer target-repo and area and balance picks across them instead of repeating the dominant area. Prefer concrete, implementable bodies over docs-only issues.
+Each candidate line is `number: title [labels: ...] [created: ...] [PR: none|open|merged|closed #<n> updated:<ts>] [last-human-feedback:<ts|none>] | body-excerpt [attempts: N] [tier: T]`. Select only among the supplied candidates and use the strongest argument for implementation; difficulty is not a reason to avoid a task.
