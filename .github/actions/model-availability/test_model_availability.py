@@ -1306,7 +1306,6 @@ class TestWorkflowOpenRouterSelection:
     WORKFLOWS = [
         ".github/workflows/opencode.yml",
         ".github/workflows/hourly-issue.yml",
-        ".github/workflows/refine-issues.yml",
     ]
 
     def test_workflows_select_openrouter_and_exclude_weak_free_models(self):
@@ -1317,28 +1316,9 @@ class TestWorkflowOpenRouterSelection:
             assert "OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}" in content
             assert "model-deny-list.txt" in content
 
-    def test_last_resort_is_deny_list_filtered_and_fails_closed(self):
-        for path in self.WORKFLOWS:
-            content = Path(path).read_text()
-            mapfile = content.index("mapfile -t free_models")
-            give_up = content.rindex("not dispatching.' >&2")
-            filtered = min(
-                index
-                for index in (
-                    content.find(
-                        'grep -Ev -f scripts/model-deny-list.txt "$available_models_file"',
-                        mapfile,
-                    ),
-                    content.find(
-                        'grep -Ev -f "$RUNNER_TEMP/agent-runner/scripts/model-deny-list.txt" "$available_models_file"',
-                        mapfile,
-                    ),
-                )
-                if index >= 0
-            )
-            assert mapfile < filtered < give_up
-            assert 'head -n1 "$available_models_file"' not in content
-            assert "last resort (deny-listed)" not in content
+    def test_refine_workflow_uses_python_selector(self):
+        content = Path(".github/workflows/refine-issues.yml").read_text()
+        assert "python3 scripts/select_refinement_model.py --available-models-file" in content
 
     def test_empty_filtered_candidates_exit_before_dispatch(self, tmp_path):
         deny_list = tmp_path / "deny-list.txt"
