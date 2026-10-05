@@ -36,8 +36,8 @@ Push a branch and open a pull request only when the task changes code, and recor
 
 ## Selection
 
-Each candidate line is `number: title [labels: ...] [created: ...] [PR: none|open|merged|closed #<n> updated:<ts>] [last-human-feedback:<ts|none>] | body-excerpt [attempts: N] [tier: T]`. Select only among the supplied candidates and use the strongest argument for implementation; difficulty is not a reason to avoid a task.
+Each candidate line is `number: title [labels: ...] [created: ...] [PR: none|open|merged|closed #<n> last-commit:<ts>] [last-human-feedback:<ts|none>] | body-excerpt [attempts: N] [tier: T]`. Select only among the supplied candidates and use the strongest argument for implementation; difficulty is not a reason to avoid a task.
 
-Treat avoid list as authoritative; never choose avoided unless all others are infeasible. Order carries no priority; rotate area and target repo from the last two picks, cap standing never-close meta tasks to once per four runs, and prefer concrete, implementable bodies over docs-only issues. Use every candidate field: number, title, labels, date, PR state/update time, last-human-feedback time, excerpt. Prefer untried `PR: none` and feedback-ready candidates over awaiting-feedback PRs without skipping hard work.
+Treat avoid list as authoritative; never choose avoided unless all others are infeasible. Order carries no priority; rotate area and target repo from the last two picks, cap standing never-close meta tasks to once per four runs, and prefer concrete, implementable bodies over docs-only issues. Use every candidate field: number, title, labels, date, PR state/last-commit time, last-human-feedback time, excerpt. Prefer untried `PR: none` and feedback-ready candidates over awaiting-feedback PRs without skipping hard work.
 
 The final prompt must be immediate and output-only; end the reply with exactly `SELECTED_ISSUE: <issue number>` (digits only) and nothing after it; no selection explanation or post-selection verification.

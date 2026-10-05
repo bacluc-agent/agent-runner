@@ -21,7 +21,7 @@ class Candidate:
     created_at: str
     pr_state: str
     pr_number: int | None
-    pr_updated_at: str | None
+    pr_last_commit_at: str | None
     last_human_comment_at: str | None
     attempts: int
     recent_attempts: int
@@ -53,7 +53,7 @@ def _newer(left: str | None, right: str | None) -> bool:
 
 
 def tier(candidate: Candidate) -> int:
-    if candidate.pr_state == "open" and _newer(candidate.last_human_comment_at, candidate.pr_updated_at):
+    if candidate.pr_state == "open" and _newer(candidate.last_human_comment_at, candidate.pr_last_commit_at):
         value = 0
     elif candidate.pr_state in {"merged", "closed"}:
         value = 2
@@ -86,7 +86,7 @@ def render_prompt(candidates: list[Candidate], tier_value: int, tail_text: str) 
         lines.append(
             f"{candidate.number}: {title} [labels: {','.join(candidate.labels)}] "
             f"[created: {candidate.created_at}] [PR: {candidate.pr_state} "
-            f"#{candidate.pr_number or 'none'} updated:{candidate.pr_updated_at or 'none'}] "
+            f"#{candidate.pr_number or 'none'} last-commit:{candidate.pr_last_commit_at or 'none'}] "
             f"[last-human-feedback:{candidate.last_human_comment_at or 'none'}] | {body} "
             f"[attempts: {candidate.attempts}] [tier: {tier(candidate)}]"
         )
@@ -116,7 +116,7 @@ def main() -> None:
             created_at=issue.get("created_at", ""),
             pr_state=issue.get("pr_state", "none").lower(),
             pr_number=issue.get("pr_number"),
-            pr_updated_at=issue.get("pr_updated_at"),
+            pr_last_commit_at=issue.get("pr_last_commit_at"),
             last_human_comment_at=issue.get("last_human_comment_at"),
             attempts=attempts,
             recent_attempts=sum(number == recent for recent in newest_three),
