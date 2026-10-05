@@ -209,9 +209,9 @@ jobs:
           mkdir -p "$pr_lookup_dir"
           for repo in "${repo_list[@]}"; do
             key="$(echo "$repo" | tr '/' '_')"
-            gh pr list -R "$repo" --state all --limit 200 --json number,createdAt,headRefName,state,title \
-              --jq '.[] | "\(.headRefName)|#\(.number)|\(.createdAt)|\(.state)|\(.title)"' 2>/dev/null \
-              | sort -t'|' -k3 -r > "$pr_lookup_dir/$key.lookup" || true
+            gh pr list -R "$repo" --state all --limit 200 --json number,createdAt,updatedAt,headRefName,state,title \
+              --jq '.[] | "\(.headRefName)|#\(.number)|\(.createdAt)|\(.updatedAt)|\(.state)|\(.title)"' 2>/dev/null \
+              | sort -t'|' -k4 -r > "$pr_lookup_dir/$key.lookup" || true
           done
 
           # Shuffle candidates so enrichment order (and the debug dump) is random.
@@ -226,7 +226,7 @@ jobs:
                 pr_repo="$repo"
                 pr_number="$(echo "$match" | cut -d'|' -f2 | tr -d '#')"
                 pr_created="$(echo "$match" | cut -d'|' -f3)"
-                pr_state="$(echo "$match" | cut -d'|' -f4)"
+                pr_state="$(echo "$match" | cut -d'|' -f5)"
                 pr_last_commit="$(gh api --paginate --slurp "repos/$pr_repo/pulls/$pr_number/commits" | jq -er --arg fallback "$pr_created" '([.[][] | .commit.committer.date] | max) // $fallback')"
                 case "$pr_state" in
                   MERGED) pr_info="merged #${pr_number} last-commit:${pr_last_commit}" ;;
