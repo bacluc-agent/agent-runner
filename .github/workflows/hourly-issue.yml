@@ -286,8 +286,7 @@ jobs:
           fi
           printf 'issue_number=%s\n' "$issue_number" >> "$GITHUB_OUTPUT"
           if ! gh issue edit "$issue_number" -R "$ISSUE_REPOSITORY" --add-label agent-running,agent-attempted; then
-            printf '::error::could not claim issue %s; not dispatching\n' "$issue_number"
-            exit 1
+            printf '::warning::could not claim issue %s; dispatching unclaimed\n' "$issue_number"
           fi
           {
             printf 'prompt<<%s\n' "$eof"
