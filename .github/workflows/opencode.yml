@@ -83,6 +83,11 @@ on:
         required: false
         type: string
         default: ""
+      issue_repository:
+        description: Repository (owner/repo) of the issue or PR the run works on (empty = vars.ISSUE_REPOSITORY or this repository)
+        required: false
+        type: string
+        default: ""
       model:
         description: "Exact model override (provider/model, for example opencode-go-openai/glm-5.2). Wins over the dropdown; leave empty for automatic discovery."
         required: false
@@ -110,7 +115,7 @@ jobs:
       BRAVE_API_KEY: ${{ secrets.BRAVE_API_KEY }}
       OPENCODE_AUTH_CONTENT: ${{ secrets.OPENCODE_AUTH_JSON }}
       BACLUC_AGENT_GITHUB_TOKEN: ${{ secrets.BACLUC_AGENT_GITHUB_TOKEN }}
-      ISSUE_REPOSITORY: ${{ vars.ISSUE_REPOSITORY || github.repository }}
+      ISSUE_REPOSITORY: ${{ inputs.issue_repository || vars.ISSUE_REPOSITORY || github.repository }}
       MODEL_AVAILABILITY_CACHE_ISSUE: ${{ vars.MODEL_AVAILABILITY_CACHE_ISSUE }}
       GITHUB_FORK_INVITE_USER: ${{ vars.FORK_INVITE_USER || secrets.FORK_INVITE_USER }}
       DIAGNOSTICS_CHECKOUT: .agent-runner-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
@@ -399,7 +404,13 @@ jobs:
               echo "issue_number=${issue_num}" >> "$GITHUB_OUTPUT"
               printf 'Target issue: #%s\n' "$issue_num"
             else
-              printf 'Target issue #%s does not exist in %s; skipping progress-tracking steps.\n' "$issue_num" "$ISSUE_REPOSITORY"
+              if gh pr view "$issue_num" -R "$ISSUE_REPOSITORY" >/dev/null 2>&1; then
+                echo "issue_number=${issue_num}" >> "$GITHUB_OUTPUT"
+                echo "is_pr=true" >> "$GITHUB_OUTPUT"
+                printf 'Target PR: #%s\n' "$issue_num"
+              else
+                printf 'Target issue #%s does not exist in %s; skipping progress-tracking steps.\n' "$issue_num" "$ISSUE_REPOSITORY"
+              fi
             fi
           else
             printf 'No target issue found in prompt; skipping progress-tracking steps.\n'
@@ -519,7 +530,7 @@ jobs:
           python3 "$RUNNER_TEMP/agent-runner/scripts/dump_subagent_transcripts.py" || true
 
       - name: Ensure work is pushed
-        if: always() && steps.target-issue.outputs.issue_number != ''
+        if: always() && steps.target-issue.outputs.issue_number != '' && steps.target-issue.outputs.is_pr != 'true'
         id: push-work
         shell: bash
         env:

@@ -166,5 +166,7 @@ jobs:
     uses: ./.github/workflows/opencode.yml
     with:
       prompt: ${{ fromJson(needs.find-prs.outputs.pr_metadata)[matrix.pr].prompt }}
+      issue_number: ${{ fromJson(needs.find-prs.outputs.pr_metadata)[matrix.pr].number }}
+      issue_repository: ${{ fromJson(needs.find-prs.outputs.pr_metadata)[matrix.pr].repository }}
       model: ${{ inputs.model }}
     secrets: inherit
