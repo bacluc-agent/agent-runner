@@ -1,9 +1,15 @@
 #!/usr/bin/env python3
+import json
 import os
 from pathlib import Path
 import re
 import subprocess
 import sys
+import time
+
+
+PRIMARY_MARKS = (b"api rate limit exceeded", b"http 429")
+SECONDARY_MARKS = (b"secondary rate limit", b"was submitted too quickly", b"abuse detection")
 
 
 def deny(reason):
@@ -148,6 +154,66 @@ def validate_api(args):
             owned_repo("/".join(parts[1:3]))
 
 
+def max_attempts():
+    # ponytail: attempts are the only knob; a step that trips both the primary and the
+    # secondary limit waits the sum of both — upgrade path: raise the job timeout.
+    try:
+        return max(1, int(os.environ["GH_CLI_WRAPPER_MAX_ATTEMPTS"]))
+    except (KeyError, ValueError):
+        return 4
+
+
+def core_quota(backend):
+    """(remaining, reset epoch seconds) from the free `<backend> api rate_limit`, or None."""
+    probe = subprocess.run([backend, "api", "rate_limit"], capture_output=True)
+    try:
+        core = json.loads(probe.stdout)["resources"]["core"]
+        return core["remaining"], core["reset"]
+    except (ValueError, KeyError, TypeError):
+        return None
+
+
+def retry_delay(stderr, backend, attempt):
+    """Seconds to sleep before the next attempt, or None when this is not a rate limit.
+
+    ONE free `<backend> api rate_limit` probe supplies the reset; for a bare
+    HTTP 403 that same probe is what confirms the quota is the cause.
+    """
+    marks = stderr.lower()
+    if any(mark in marks for mark in SECONDARY_MARKS):
+        return min(60, 5 * 2 ** (attempt - 1))
+    proven = any(mark in marks for mark in PRIMARY_MARKS)
+    if not proven and b"http 403" not in marks:
+        return None
+    quota = core_quota(backend)
+    if quota is None or (not proven and quota[0] != 0):
+        return None
+    return max(0, int(quota[1] or 0) - int(time.time())) + 2
+
+
+def run(backend, args):
+    """Run the real CLI, retrying rate limits; stdout and stderr are emitted once, at the end."""
+    stdin = {} if sys.stdin is None or sys.stdin.isatty() else {"input": sys.stdin.buffer.read()}
+    limit = max_attempts()
+    for attempt in range(1, limit + 1):
+        proc = subprocess.run([backend, *args], capture_output=True, **stdin)
+        if proc.returncode == 0:
+            break
+        wait = retry_delay(proc.stderr, backend, attempt)
+        if wait is None:
+            break
+        if attempt == limit:
+            print(f"::warning::gh cli wrapper: {' '.join(args[:2])} rate limited after "
+                  f"{attempt}/{limit} attempts", file=sys.stderr)
+            break
+        time.sleep(wait)
+    # ponytail: only the final attempt's bytes reach the caller, so a jq consumer
+    # never sees duplicated or partial output; upgrade path: tee when progress matters.
+    sys.stdout.buffer.write(proc.stdout)
+    sys.stderr.buffer.write(proc.stderr)
+    return proc.returncode
+
+
 def main():
     backend = Path(__file__).resolve().with_name("real-gh").read_text().strip()
     if not os.path.isabs(backend) or not os.access(backend, os.X_OK) or Path(backend).resolve() == Path(__file__).resolve():
@@ -170,7 +236,8 @@ def main():
         validate_pr(args[1:])
     elif args[0] == "api":
         validate_api(args[1:])
-    os.execv(backend, [backend, *args])
+    rc = run(backend, args)
+    sys.exit(128 - rc if rc < 0 else rc)
 
 
 if __name__ == "__main__":
