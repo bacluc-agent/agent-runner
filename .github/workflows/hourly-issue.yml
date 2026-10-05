@@ -217,10 +217,13 @@ jobs:
           # Shuffle candidates so enrichment order (and the debug dump) is random.
           while IFS= read -r num; do
             pr_info="none"
+            pr_repo=""
+            pr_number=""
             for repo in "${repo_list[@]}"; do
               key="$(echo "$repo" | tr '/' '_')"
               match="$(grep -m1 -E "issue-${num}([-_]|[^0-9A-Za-z_-]|$)|${ISSUE_REPOSITORY}#${num}([^0-9]|$)" "$pr_lookup_dir/$key.lookup" 2>/dev/null || true)"
               if [[ -n "$match" ]]; then
+                pr_repo="$repo"
                 pr_number="$(echo "$match" | cut -d'|' -f2 | tr -d '#')"
                 pr_updated="$(echo "$match" | cut -d'|' -f3)"
                 pr_state="$(echo "$match" | cut -d'|' -f4)"
@@ -232,11 +235,14 @@ jobs:
                 break
               fi
             done
-            human_ts="$(gh issue view "$num" -R "$ISSUE_REPOSITORY" --json comments --jq '[.comments[] | select(.author.login != "bacluc-agent")] | max_by(.createdAt) | .createdAt // "none"' 2>/dev/null || echo "none")"
-            if [[ -z "$human_ts" || "$human_ts" == "null" ]]; then
-              human_ts="none"
+            # Newest non-bot feedback on the issue or on the matched PR. Formal reviews carry
+            # submitted_at and also mirror inline review comments, so one call covers both.
+            pr_human_ts="none"
+            if [[ -n "$pr_number" ]]; then
+              pr_human_ts="$(gh pr view "$pr_number" -R "$pr_repo" --json comments,reviews --jq '[[.comments[] | select(.author.login != "bacluc-agent") | .createdAt], [.reviews[] | select(.author.login != "bacluc-agent") | .submittedAt]] | add | max // "none"' 2>/dev/null || echo "none")"
             fi
-            jq -nc --arg num "$num" --arg pr "$pr_info" --arg human "$human_ts" '{number:($num|tonumber),pr_info:$pr,last_human_comment_at:(if $human == "none" then null else $human end)}' >> "$RUNNER_TEMP/enrichment.jsonl"
+            issue_human_ts="$(gh issue view "$num" -R "$ISSUE_REPOSITORY" --json comments --jq '[.comments[] | select(.author.login != "bacluc-agent")] | max_by(.createdAt) | .createdAt // "none"' 2>/dev/null || echo "none")"
+            jq -nc --arg num "$num" --arg pr "$pr_info" --arg a "$issue_human_ts" --arg b "$pr_human_ts" '{number:($num|tonumber),pr_info:$pr,last_human_comment_at:([$a,$b]|map(select(test("^[0-9]")))|max // null)}' >> "$RUNNER_TEMP/enrichment.jsonl"
           done < <(shuf "$candidates")
           jq -n --slurpfile issues "$enriched" --slurpfile enrichment "$RUNNER_TEMP/enrichment.jsonl" '$issues[0] | map(. as $issue | ($enrichment | map(select(.number == $issue.number)) | .[0]) as $e | if $e then . + {last_human_comment_at:$e.last_human_comment_at, pr_state:($e.pr_info|split(" ")[0]), pr_number:(if $e.pr_info == "none" then null else ($e.pr_info|split("#")[1]|split(" ")[0]|tonumber) end), pr_updated_at:(if $e.pr_info == "none" then null else ($e.pr_info|split("updated:")[1]) end)} else . end)' > "$RUNNER_TEMP/candidates.final.json"
           cp "$RUNNER_TEMP/candidates.final.json" "$enriched"

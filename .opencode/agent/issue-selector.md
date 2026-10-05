@@ -23,7 +23,7 @@ Read candidate issues and selection rules, choose exactly one, and output its do
 
 ## PR Deduplication
 
-Candidate lines contain `[PR: …] [last-human-feedback: …] [attempts: N] [tier: T]`. The workflow has already applied tiers mechanically; do not override that priority. `[PR: none]` means no matching PR was found in the queried repos, not that no agent PR exists anywhere. `last-human-feedback` counts issue comments only, not PR review comments.
+Candidate lines contain `[PR: …] [last-human-feedback: …] [attempts: N] [tier: T]`. The workflow has already applied tiers mechanically; do not override that priority. `[PR: none]` means no matching PR was found in the queried repos, not that no agent PR exists anywhere.
 
 Before selecting, query open, merged, and closed PRs in `bacluc-agent/agent-runner`, `bacluc-agent/agent-todo`, `bacluc/provision-machines`, `bacluc-agent/ecamp3`, and every `owner/repo` referenced by issue bodies. Match `issue-<n>` in branch/title (exact, then `-`, `_`, end, or non-alphanumeric) or `<issue-repo>#<n>`; prefer newest `updatedAt`. Compare PR updates with latest non-`bacluc-agent` issue-comment time. Broaden searches when branch/title/body omit markers; `PR: none` means only queried repos found none, and issue comments exclude review comments.
 

@@ -1,4 +1,10 @@
+from pathlib import Path
+from subprocess import run
+from tempfile import TemporaryDirectory
+
 from selection_tiers import Candidate, is_standing, parse_branches, render_prompt, select_tier, tier
+
+WORKFLOW = Path(__file__).parents[1] / ".github/workflows/hourly-issue.yml"
 
 
 def candidate(number=1, **values):
@@ -71,3 +77,43 @@ def test_select_best_available_and_render_only_that_tier():
     assert "[attempts: 0] [tier: 1]" in prompt
     assert "avoid" not in prompt.lower()
     assert prompt.rstrip().endswith("SELECTED_ISSUE: <number>")
+
+
+def _enrichment_line():
+    return next(
+        line.strip()
+        for line in WORKFLOW.read_text().splitlines()
+        if line.strip().startswith("jq -nc --arg num") and "enrichment.jsonl" in line
+    )
+
+
+def _enrich(issue_ts, pr_ts):
+    import json
+
+    with TemporaryDirectory() as directory:
+        script = (
+            f"num=364; pr_info=none; issue_human_ts={issue_ts!r}; pr_human_ts={pr_ts!r}\n"
+            f"RUNNER_TEMP={directory!r}\n"
+            f"{_enrichment_line()}\n"
+        )
+        result = run(["bash", "-Eeuo", "pipefail", "-c", script], capture_output=True, text=True)
+        assert result.returncode == 0, result.stderr
+        return json.loads((Path(directory) / "enrichment.jsonl").read_text())["last_human_comment_at"]
+
+
+def test_enrichment_counts_pr_review_feedback_and_never_yields_a_broken_timestamp():
+    stamp = "2026-01-09T00:00:00Z"
+    # PR review feedback counts even when the issue itself has none.
+    assert _enrich("none", stamp) == stamp
+    # Newer issue feedback still wins over older PR feedback.
+    assert _enrich("2026-02-01T00:00:00Z", stamp) == "2026-02-01T00:00:00Z"
+    # gh's empty-result sentinels and failed lookups degrade to JSON null, never a
+    # non-timestamp string that would crash _newer()'s datetime.fromisoformat.
+    for issue_ts, pr_ts in [("none", "none"), ("null", "none"), ("", ""), ("null", stamp)]:
+        assert _enrich(issue_ts, pr_ts) == ("2026-01-09T00:00:00Z" if pr_ts == stamp else None)
+
+
+def test_pr_lookup_variables_are_initialised_before_the_pr_feedback_lookup():
+    content = WORKFLOW.read_text()
+    assert content.index('pr_number=""') < content.index('gh pr view "$pr_number"')
+    assert content.index('pr_repo=""') < content.index('gh pr view "$pr_number"')
