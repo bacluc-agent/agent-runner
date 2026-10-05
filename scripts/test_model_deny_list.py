@@ -24,6 +24,7 @@ def test_no_blank_lines():
 
 
 def test_every_line_compiles_as_regex():
+    # ponytail: re.compile is necessary but not sufficient for grep -E (Python-only constructs like (?i) compile here but fail in grep); shell out to grep -E per line if the deny list ever gains complex patterns.
     for line in read_lines():
         re.compile(line)
 
