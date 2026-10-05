@@ -216,6 +216,7 @@ jobs:
               if [[ -n "$provider_env" ]]; then
                 opencode_env+=("$provider_env=$provider_value")
               fi
+              rm -f "$HOME/.local/share/opencode/auth.json"
               timeout 8m "${opencode_env[@]}" opencode run --agent issue-refiner --model "$selection_model" --title "issue-refiner" \
                 "$(< "$prompt")" | tee "$out"
               statuses=("${PIPESTATUS[@]}")

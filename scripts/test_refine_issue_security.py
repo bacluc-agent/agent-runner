@@ -1,3 +1,5 @@
+import os
+import subprocess
 from pathlib import Path
 
 
@@ -21,3 +23,19 @@ def test_refiner_scopes_secrets_and_scrubs_agent_environment():
     assert '"OPENCODE_AUTH_CONTENT=' not in workflow[workflow.index("opencode_env=(env -i") :]
     assert "gh issue edit" in workflow
     assert "validate_refined_issue.py" in workflow
+
+
+def test_refiner_removes_setup_auth_before_starting_child(tmp_path):
+    workflow = WORKFLOW.read_text()
+    setup = (ROOT / ".github/actions/setup-opencode/action.yml").read_text()
+    cleanup = 'rm -f "$HOME/.local/share/opencode/auth.json"'
+    invocation = 'timeout 8m "${opencode_env[@]}" opencode run'
+
+    assert "~/.local/share/opencode/auth.json" in setup
+    assert workflow.index(cleanup) < workflow.index(invocation)
+
+    auth_file = tmp_path / ".local/share/opencode/auth.json"
+    auth_file.parent.mkdir(parents=True)
+    auth_file.write_text("oauth", encoding="utf-8")
+    subprocess.run(["bash", "-c", cleanup], check=True, env={**os.environ, "HOME": str(tmp_path)})
+    assert not auth_file.exists()
