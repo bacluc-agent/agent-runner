@@ -15,7 +15,7 @@ def candidate(number=1, **values):
         created_at="2026-01-01T00:00:00Z",
         pr_state="none",
         pr_number=None,
-        pr_updated_at=None,
+        pr_last_commit_at=None,
         last_human_comment_at=None,
         attempts=0,
         recent_attempts=0,
@@ -54,9 +54,10 @@ def test_durable_attempt_label_counts_as_history_without_branch():
 
 
 def test_tiers_cover_feedback_history_and_finished_work():
-    assert tier(candidate(pr_state="open", pr_updated_at="2026-01-01T00:00:00Z", last_human_comment_at="2026-01-02T00:00:00Z")) == 0
+    assert tier(candidate(pr_state="open", pr_last_commit_at="2026-01-01T00:00:00Z", last_human_comment_at="2026-01-02T00:00:00Z")) == 0
     assert tier(candidate(pr_state="open")) == 3
-    assert tier(candidate(pr_state="open", pr_updated_at="2026-01-02T00:00:00Z", last_human_comment_at="2026-01-01T00:00:00Z")) == 3
+    assert tier(candidate(pr_state="open", pr_last_commit_at="2026-01-02T00:00:00Z", last_human_comment_at="2026-01-01T00:00:00Z")) == 3
+    assert tier(candidate(pr_state="open", pr_last_commit_at="2026-01-02T00:00:00Z", last_human_comment_at="2026-01-02T00:00:00Z")) == 3
     assert tier(candidate(pr_state="merged")) == 2
     assert tier(candidate(pr_state="closed")) == 2
     assert tier(candidate()) == 1
@@ -117,3 +118,11 @@ def test_pr_lookup_variables_are_initialised_before_the_pr_feedback_lookup():
     content = WORKFLOW.read_text()
     assert content.index('pr_number=""') < content.index('gh pr view "$pr_number"')
     assert content.index('pr_repo=""') < content.index('gh pr view "$pr_number"')
+
+
+def test_workflow_uses_latest_commit_and_created_at_when_pr_has_no_commits():
+    content = WORKFLOW.read_text()
+    assert 'gh api --paginate --slurp "repos/$pr_repo/pulls/$pr_number/commits" | jq -er --arg fallback "$pr_created"' in content
+    assert '([.[][] | .commit.committer.date] | max) // $fallback' in content
+    assert 'pr_last_commit_at:(' in content
+    assert 'map(select(test("^[0-9]")))|max // null' in content

@@ -1,5 +1,5 @@
 Choose ONE issue for one automated agent run.
-Each candidate line is "number: title [labels] [created] [PR: none|open|merged|closed #<n> updated:<ts>] [last-human-feedback:<ts|none>] | body-excerpt [attempts: N] [tier: T]"; use its details to assess the chosen task.
+Each candidate line is "number: title [labels] [created] [PR: none|open|merged|closed #<n> last-commit:<ts>] [last-human-feedback:<ts|none>] | body-excerpt [attempts: N] [tier: T]"; use its details to assess the chosen task.
 Candidate order is random and carries no priority.
 The supplied list is already filtered to one tier; do not rerank, extend, or de-prioritize it. Choose the strongest argument regardless of difficulty. A task needing no code change is delivered as a comment on the target issue with no branch and no PR.
 Reply with ONLY the final implementation prompt for the chosen issue.

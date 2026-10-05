@@ -209,8 +209,8 @@ jobs:
           mkdir -p "$pr_lookup_dir"
           for repo in "${repo_list[@]}"; do
             key="$(echo "$repo" | tr '/' '_')"
-            gh pr list -R "$repo" --state all --limit 200 --json number,updatedAt,headRefName,state,title \
-              --jq '.[] | "\(.headRefName)|#\(.number)|\(.updatedAt)|\(.state)|\(.title)"' 2>/dev/null \
+            gh pr list -R "$repo" --state all --limit 200 --json number,createdAt,headRefName,state,title \
+              --jq '.[] | "\(.headRefName)|#\(.number)|\(.createdAt)|\(.state)|\(.title)"' 2>/dev/null \
               | sort -t'|' -k3 -r > "$pr_lookup_dir/$key.lookup" || true
           done
 
@@ -225,12 +225,13 @@ jobs:
               if [[ -n "$match" ]]; then
                 pr_repo="$repo"
                 pr_number="$(echo "$match" | cut -d'|' -f2 | tr -d '#')"
-                pr_updated="$(echo "$match" | cut -d'|' -f3)"
+                pr_created="$(echo "$match" | cut -d'|' -f3)"
                 pr_state="$(echo "$match" | cut -d'|' -f4)"
+                pr_last_commit="$(gh api --paginate --slurp "repos/$pr_repo/pulls/$pr_number/commits" | jq -er --arg fallback "$pr_created" '([.[][] | .commit.committer.date] | max) // $fallback')"
                 case "$pr_state" in
-                  MERGED) pr_info="merged #${pr_number} updated:${pr_updated}" ;;
-                  CLOSED) pr_info="closed #${pr_number} updated:${pr_updated}" ;;
-                  *) pr_info="open #${pr_number} updated:${pr_updated}" ;;
+                  MERGED) pr_info="merged #${pr_number} last-commit:${pr_last_commit}" ;;
+                  CLOSED) pr_info="closed #${pr_number} last-commit:${pr_last_commit}" ;;
+                  *) pr_info="open #${pr_number} last-commit:${pr_last_commit}" ;;
                 esac
                 break
               fi
@@ -244,7 +245,7 @@ jobs:
             issue_human_ts="$(gh issue view "$num" -R "$ISSUE_REPOSITORY" --json comments --jq '[.comments[] | select(.author.login != "bacluc-agent")] | max_by(.createdAt) | .createdAt // "none"' 2>/dev/null || echo "none")"
             jq -nc --arg num "$num" --arg pr "$pr_info" --arg a "$issue_human_ts" --arg b "$pr_human_ts" '{number:($num|tonumber),pr_info:$pr,last_human_comment_at:([$a,$b]|map(select(test("^[0-9]")))|max // null)}' >> "$RUNNER_TEMP/enrichment.jsonl"
           done < <(shuf "$candidates")
-          jq -n --slurpfile issues "$enriched" --slurpfile enrichment "$RUNNER_TEMP/enrichment.jsonl" '$issues[0] | map(. as $issue | ($enrichment | map(select(.number == $issue.number)) | .[0]) as $e | if $e then . + {last_human_comment_at:$e.last_human_comment_at, pr_state:($e.pr_info|split(" ")[0]), pr_number:(if $e.pr_info == "none" then null else ($e.pr_info|split("#")[1]|split(" ")[0]|tonumber) end), pr_updated_at:(if $e.pr_info == "none" then null else ($e.pr_info|split("updated:")[1]) end)} else . end)' > "$RUNNER_TEMP/candidates.final.json"
+          jq -n --slurpfile issues "$enriched" --slurpfile enrichment "$RUNNER_TEMP/enrichment.jsonl" '$issues[0] | map(. as $issue | ($enrichment | map(select(.number == $issue.number)) | .[0]) as $e | if $e then . + {last_human_comment_at:$e.last_human_comment_at, pr_state:($e.pr_info|split(" ")[0]), pr_number:(if $e.pr_info == "none" then null else ($e.pr_info|split("#")[1]|split(" ")[0]|tonumber) end), pr_last_commit_at:(if $e.pr_info == "none" then null else ($e.pr_info|split("last-commit:")[1]) end)} else . end)' > "$RUNNER_TEMP/candidates.final.json"
           cp "$RUNNER_TEMP/candidates.final.json" "$enriched"
 
           prompt="$RUNNER_TEMP/selection-prompt.txt"
