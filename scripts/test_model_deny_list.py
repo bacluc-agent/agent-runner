@@ -7,7 +7,7 @@ itself fail at runtime, and a pipe in a comment would create alternation
 that could deny a valid model.
 """
 
-import re
+import subprocess
 from pathlib import Path
 
 DENY_LIST = Path(__file__).parent / "model-deny-list.txt"
@@ -25,7 +25,18 @@ def test_no_blank_lines():
 
 def test_every_line_compiles_as_regex():
     for line in read_lines():
-        re.compile(line)
+        pattern = line.strip()
+        if pattern and not pattern.startswith("#"):
+            result = subprocess.run(
+                ["grep", "-Eq", pattern],
+                input="",
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            assert result.returncode in (0, 1), (
+                f"Invalid grep -E pattern {pattern!r}: {result.stderr}"
+            )
 
 
 def test_comment_lines_contain_no_pipe():
