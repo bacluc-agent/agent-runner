@@ -16,6 +16,7 @@ The system is split across two public repositories:
   the "workshop". This repository contains the GitHub Actions workflows that
   run the agent.
 
+There are some example issues in [issues](../../issues) that show how the issues could look like. \
 The runner reads issues from the todo repository through the
 `ISSUE_REPOSITORY` repository variable (set to `bacluc-agent/agent-todo`).
 
