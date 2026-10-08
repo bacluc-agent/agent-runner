@@ -50,4 +50,12 @@ else
   check 'pytest (scripts tests)' bash -c 'python3 -m pip install --quiet pytest && python3 -m pytest -q'
 fi
 
+if [ "$status" != "0" ]; then
+  echo ""
+  echo ""
+  echo "CHECK FAILED"
+  echo ""
+  echo ""
+fi
+
 exit "$status"
