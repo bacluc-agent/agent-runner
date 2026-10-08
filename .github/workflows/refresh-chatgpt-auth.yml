@@ -1,6 +1,10 @@
 name: Refresh ChatGPT auth
 
 on:
+  push:
+    paths:
+      - ".github/workflows/refresh-chatgpt-auth.yml"
+      - "scripts/refresh-token.py"
   workflow_dispatch:
   schedule:
     # Twice a month (~half of the refresh token lifetime). The refresh step
