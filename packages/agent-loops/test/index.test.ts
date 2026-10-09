@@ -4,6 +4,8 @@ import {
   parseSelectedIssue,
   phaseOrder,
   refine,
+  runCycle,
+  type LoopOptions,
 } from "../src/index.ts";
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -14,6 +16,45 @@ test("phases always run in refine, hourly, review order", () => {
 
 test("phase parsing rejects unknown-only input", () => {
   assert.throws(() => parsePhases("unknown"), /--phases/);
+});
+
+test("each phase resolves availability independently", async () => {
+  const previousModels = process.env.AVAILABLE_MODELS;
+  const previousLog = console.log;
+  process.env.AVAILABLE_MODELS = "opencode/first";
+  const logs: string[] = [];
+  let searches = 0;
+  const options = {
+    repository: "owner/repo",
+    issueRepository: "owner/issues",
+    phases: ["refine", "hourly"],
+    cycles: 1,
+    pollSeconds: 0,
+    dryRun: true,
+    launcher: "launcher",
+    agentCommand: "command",
+  } satisfies LoopOptions;
+  const github = {
+    searchIssues: async () => {
+      if (++searches === 1) process.env.AVAILABLE_MODELS = "opencode/second";
+      return [];
+    },
+    ensureLabel: async () => undefined,
+  } as never;
+  try {
+    console.log = (message?: unknown) => logs.push(String(message));
+    await runCycle(options, github);
+    assert.equal(
+      logs
+        .filter((message) => message.startsWith("selected model="))
+        .join("\n"),
+      "selected model=opencode/first\nselected model=opencode/second",
+    );
+  } finally {
+    console.log = previousLog;
+    if (previousModels === undefined) delete process.env.AVAILABLE_MODELS;
+    else process.env.AVAILABLE_MODELS = previousModels;
+  }
 });
 
 test("selected issue must be one of the candidates", () => {

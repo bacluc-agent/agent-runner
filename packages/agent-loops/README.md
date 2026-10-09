@@ -18,3 +18,6 @@ Each phase selects its model independently. `--model` takes precedence, then
 `MODEL`, then the availability list using the workflow order and deny list. A
 dry run performs only GitHub reads, skips provider probing and label changes,
 and emits lifecycle lines without prompts or agent output.
+
+Automatic model selection reads `scripts/model-deny-list.txt`, or the path in
+`MODEL_DENY_LIST_FILE`, using the same patterns as the workflows.

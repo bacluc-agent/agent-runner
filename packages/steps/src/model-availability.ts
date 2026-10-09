@@ -1,5 +1,7 @@
 import type { StepContext } from "./types.ts";
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 
 const preferred = [
   "opencode-go-openai/qwen3.8-flash",
@@ -19,19 +21,26 @@ export function chooseModel(
   ].find(
     (model) =>
       available.includes(model) &&
-      !denied.some((entry) => model.includes(entry)),
+      !denied.some((entry) => new RegExp(entry).test(model)),
   );
+}
+
+function denyList(): string[] {
+  const path = resolve(
+    process.env.MODEL_DENY_LIST_FILE ?? "scripts/model-deny-list.txt",
+  );
+  return readFileSync(path, "utf8").split(/\r?\n/).filter(Boolean);
 }
 
 export async function runModelAvailability(
   ctx: StepContext,
 ): Promise<string | undefined> {
-  if (ctx.model) {
+  if (ctx.requestedModel) {
+    ctx.model = ctx.requestedModel;
     ctx.log?.(`selected model=${ctx.model}`);
     return ctx.model;
   }
-  if (process.env.MODEL) {
-    ctx.model = process.env.MODEL;
+  if (ctx.model) {
     ctx.log?.(`selected model=${ctx.model}`);
     return ctx.model;
   }
@@ -54,9 +63,7 @@ export async function runModelAvailability(
         .map((model) => model.trim())
         .filter(Boolean) ?? [];
   }
-  const denied = (process.env.MODEL_DENY_LIST ?? "")
-    .split(/\s+/)
-    .filter(Boolean);
+  const denied = denyList();
   const model =
     chooseModel(available, denied) ??
     (ctx.dryRun ? chooseModel(preferred, denied) : undefined);

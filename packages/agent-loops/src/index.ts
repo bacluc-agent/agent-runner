@@ -56,6 +56,8 @@ export function parsePhases(value = "refine,hourly,review"): Phase[] {
 function context(options: LoopOptions, github: GitHubClient): StepContext {
   const ctx = {
     ...options,
+    model: undefined,
+    requestedModel: options.model ?? process.env.MODEL,
     github,
     log: (message) => console.log(message),
   } as StepContext;
@@ -168,6 +170,7 @@ export async function runCycle(
 ): Promise<void> {
   const ctx = context(options, github);
   for (const phase of phaseOrder(options.phases)) {
+    ctx.model = undefined;
     console.log(`phase start=${phase}`);
     try {
       if (phase === "refine") await runRefine(ctx);

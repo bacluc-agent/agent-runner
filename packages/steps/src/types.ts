@@ -8,6 +8,7 @@ export type StepContext = {
   agentCommand: string;
   dryRun: boolean;
   model?: string;
+  requestedModel?: string;
   github: GitHubClient;
   runAgent: (prompt: string, agent: string) => Promise<string>;
   log?: (message: string) => void;

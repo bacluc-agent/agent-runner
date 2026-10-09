@@ -38,6 +38,19 @@ test("model availability preserves an explicit model without probing", async () 
   assert.equal(ctx.model, "provider/explicit");
 });
 
+test("model availability applies the repository deny list", async () => {
+  const previousModels = process.env.AVAILABLE_MODELS;
+  process.env.AVAILABLE_MODELS =
+    "opencode/nemotron-3-ultra-free opencode/big-pickle";
+  try {
+    const ctx = { dryRun: true } as never;
+    assert.equal(await runModelAvailability(ctx), "opencode/big-pickle");
+  } finally {
+    if (previousModels === undefined) delete process.env.AVAILABLE_MODELS;
+    else process.env.AVAILABLE_MODELS = previousModels;
+  }
+});
+
 test("refine dry-run is read-only while selecting a model", async () => {
   const previousModels = process.env.AVAILABLE_MODELS;
   process.env.AVAILABLE_MODELS = "opencode/big-pickle";
