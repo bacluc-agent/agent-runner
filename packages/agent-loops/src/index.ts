@@ -54,11 +54,14 @@ export function parsePhases(value = "refine,hourly,review"): Phase[] {
 }
 
 function context(options: LoopOptions, github: GitHubClient): StepContext {
-  return {
+  const ctx = {
     ...options,
     github,
-    runAgent: (prompt, agent) => runAgent(options, prompt, agent),
-  };
+    log: (message) => console.log(message),
+  } as StepContext;
+  ctx.runAgent = (prompt, agent) =>
+    runAgent({ ...options, model: ctx.model }, prompt, agent);
+  return ctx;
 }
 
 function command(
@@ -70,7 +73,7 @@ function command(
     const child = spawn("sh", ["-c", commandLine], {
       cwd,
       env,
-      stdio: ["ignore", "pipe", "inherit"],
+      stdio: ["ignore", "pipe", "ignore"],
     });
     let output = "";
     const forwardSignal = (signal: NodeJS.Signals) => child.kill(signal);
@@ -93,6 +96,9 @@ export async function runAgent(
   prompt: string,
   agent: string,
 ): Promise<string> {
+  console.log(
+    `agent start=${agent} model=${options.model ?? process.env.MODEL ?? "availability"}`,
+  );
   const root = await mkdtemp(join(tmpdir(), "agent-loops-"));
   const workspace = join(root, "workspace");
   await mkdir(workspace);
@@ -134,11 +140,13 @@ export async function runAgent(
       workspace,
       env,
     );
-    return await command(
+    const output = await command(
       `devcontainer exec --workspace-folder "$PWD" sh -lc '${commandLine.replaceAll("'", "'\\''")}'`,
       workspace,
       env,
     );
+    console.log(`agent completed=${agent}`);
+    return output;
   } finally {
     await command(
       `${options.launcher} --workspace-dir "$PWD" --down --no-open`,
@@ -160,9 +168,18 @@ export async function runCycle(
 ): Promise<void> {
   const ctx = context(options, github);
   for (const phase of phaseOrder(options.phases)) {
-    if (phase === "refine") await runRefine(ctx);
-    if (phase === "hourly") await runHourly(ctx);
-    if (phase === "review") await runReview(ctx);
+    console.log(`phase start=${phase}`);
+    try {
+      if (phase === "refine") await runRefine(ctx);
+      if (phase === "hourly") await runHourly(ctx);
+      if (phase === "review") await runReview(ctx);
+      console.log(`phase completed=${phase}`);
+    } catch (error) {
+      console.log(
+        `phase failed=${phase} failure=${error instanceof Error ? error.name : "unknown"}`,
+      );
+      throw error;
+    }
   }
 }
 
@@ -208,7 +225,9 @@ export async function run(options: LoopOptions): Promise<void> {
     options.cycles === 0 || cycle < options.cycles;
     cycle += 1
   ) {
+    console.log(`cycle start=${cycle + 1}`);
     await runCycle(options);
+    console.log(`cycle completed=${cycle + 1}`);
     if (
       options.pollSeconds > 0 &&
       (options.cycles === 0 || cycle + 1 < options.cycles)

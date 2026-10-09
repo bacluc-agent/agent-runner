@@ -15,6 +15,7 @@ export function chooseModel(
     ...available.filter((model) =>
       /^(opencode|openrouter)\/.*(?:-free|:free)$/.test(model),
     ),
+    ...available,
   ].find(
     (model) =>
       available.includes(model) &&
@@ -25,6 +26,15 @@ export function chooseModel(
 export async function runModelAvailability(
   ctx: StepContext,
 ): Promise<string | undefined> {
+  if (ctx.model) {
+    ctx.log?.(`selected model=${ctx.model}`);
+    return ctx.model;
+  }
+  if (process.env.MODEL) {
+    ctx.model = process.env.MODEL;
+    ctx.log?.(`selected model=${ctx.model}`);
+    return ctx.model;
+  }
   let available = (process.env.AVAILABLE_MODELS ?? "")
     .split(/\s+/)
     .filter(Boolean);
@@ -47,8 +57,11 @@ export async function runModelAvailability(
   const denied = (process.env.MODEL_DENY_LIST ?? "")
     .split(/\s+/)
     .filter(Boolean);
-  const model = chooseModel(available, denied);
+  const model =
+    chooseModel(available, denied) ??
+    (ctx.dryRun ? chooseModel(preferred, denied) : undefined);
   if (!model && !ctx.dryRun) throw new Error("no available agent model");
   ctx.model = model;
+  ctx.log?.(`selected model=${model ?? "unavailable"}`);
   return model;
 }

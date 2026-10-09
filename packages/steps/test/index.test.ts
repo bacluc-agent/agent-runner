@@ -1,5 +1,8 @@
 import { runHourly } from "../src/hourly.ts";
-import { chooseModel } from "../src/model-availability.ts";
+import {
+  chooseModel,
+  runModelAvailability,
+} from "../src/model-availability.ts";
 import { validateRefinement } from "../src/refine.ts";
 import { runRefine } from "../src/refine.ts";
 import { runReview } from "../src/review.ts";
@@ -20,9 +23,47 @@ test("model selection honors preferred available models and deny list", () => {
     "opencode/big-pickle",
   );
   assert.equal(chooseModel(["opencode/big-pickle"], ["big-pickle"]), undefined);
+  assert.equal(
+    chooseModel(["opencode/other-model"], []),
+    "opencode/other-model",
+  );
+});
+
+test("model availability preserves an explicit model without probing", async () => {
+  const ctx = {
+    model: "provider/explicit",
+    dryRun: true,
+  } as never;
+  assert.equal(await runModelAvailability(ctx), "provider/explicit");
+  assert.equal(ctx.model, "provider/explicit");
+});
+
+test("refine dry-run is read-only while selecting a model", async () => {
+  const previousModels = process.env.AVAILABLE_MODELS;
+  process.env.AVAILABLE_MODELS = "opencode/big-pickle";
+  let ensured = false;
+  try {
+    await runRefine({
+      issueRepository: "owner/issues",
+      dryRun: true,
+      github: {
+        ensureLabel: async () => {
+          ensured = true;
+          throw new Error("must not mutate");
+        },
+        searchIssues: async () => [],
+      },
+    } as never);
+    assert.equal(ensured, false);
+  } finally {
+    if (previousModels === undefined) delete process.env.AVAILABLE_MODELS;
+    else process.env.AVAILABLE_MODELS = previousModels;
+  }
 });
 
 test("refine retries invalid output and preserves labels", async () => {
+  const previousModels = process.env.AVAILABLE_MODELS;
+  process.env.AVAILABLE_MODELS = "opencode/big-pickle";
   let attempts = 0;
   const edits: unknown[] = [];
   const ctx = {
@@ -48,13 +89,18 @@ test("refine retries invalid output and preserves labels", async () => {
     runAgent: async () =>
       ++attempts === 1 ? "bad" : "## Goal\nDone\n\n## How to implement\nDo it",
   } as never;
-  await runRefine(ctx);
-  assert.equal(attempts, 2);
-  assert.deepEqual((edits[0] as unknown[])[2], {
-    expectedBody: "body",
-    body: "## Goal\nDone\n\n## How to implement\nDo it",
-    addLabels: ["agent-refined"],
-  });
+  try {
+    await runRefine(ctx);
+    assert.equal(attempts, 2);
+    assert.deepEqual((edits[0] as unknown[])[2], {
+      expectedBody: "body",
+      body: "## Goal\nDone\n\n## How to implement\nDo it",
+      addLabels: ["agent-refined"],
+    });
+  } finally {
+    if (previousModels === undefined) delete process.env.AVAILABLE_MODELS;
+    else process.env.AVAILABLE_MODELS = previousModels;
+  }
 });
 
 test("hourly releases the claim when the coordinator fails", async () => {
@@ -94,6 +140,8 @@ test("hourly releases the claim when the coordinator fails", async () => {
 });
 
 test("review rereads the PR and includes its current branch", async () => {
+  const previousModels = process.env.AVAILABLE_MODELS;
+  process.env.AVAILABLE_MODELS = "opencode/big-pickle";
   const prompts: string[] = [];
   let searches = 0;
   const ctx = {
@@ -134,7 +182,12 @@ test("review rereads the PR and includes its current branch", async () => {
       return "";
     },
   } as never;
-  await runReview(ctx);
-  assert.match(prompts[0], /Branch: feature/);
-  assert.equal(searches, 4);
+  try {
+    await runReview(ctx);
+    assert.match(prompts[0], /Branch: feature/);
+    assert.equal(searches, 4);
+  } finally {
+    if (previousModels === undefined) delete process.env.AVAILABLE_MODELS;
+    else process.env.AVAILABLE_MODELS = previousModels;
+  }
 });

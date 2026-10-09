@@ -10,4 +10,5 @@ export type StepContext = {
   model?: string;
   github: GitHubClient;
   runAgent: (prompt: string, agent: string) => Promise<string>;
+  log?: (message: string) => void;
 };

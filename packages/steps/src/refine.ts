@@ -1,3 +1,4 @@
+import { runModelAvailability } from "./model-availability.ts";
 import type { StepContext } from "./types.ts";
 
 export function validateRefinement(output: string): string | undefined {
@@ -16,9 +17,11 @@ export function validateRefinement(output: string): string | undefined {
 }
 
 export async function runRefine(ctx: StepContext): Promise<void> {
-  await ctx.github
-    .ensureLabel(ctx.issueRepository, "agent-refined")
-    .catch(() => undefined);
+  await runModelAvailability(ctx);
+  if (!ctx.dryRun)
+    await ctx.github
+      .ensureLabel(ctx.issueRepository, "agent-refined")
+      .catch(() => undefined);
   const issues = await ctx.github.searchIssues(
     `repo:${ctx.issueRepository} is:open is:issue -label:agent-refined -label:ready-for-implementation -label:agent-ignore sort:created-asc`,
   );

@@ -1,6 +1,8 @@
+import { runModelAvailability } from "./model-availability.ts";
 import type { StepContext } from "./types.ts";
 
 export async function runReview(ctx: StepContext): Promise<void> {
+  await runModelAvailability(ctx);
   const reviewer = (await ctx.github.currentUser()).login;
   const processed = new Set<string>();
   for (;;) {
