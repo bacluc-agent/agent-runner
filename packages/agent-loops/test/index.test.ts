@@ -9,10 +9,10 @@ import {
   type LoopOptions,
 } from "../src/index.ts";
 import assert from "node:assert/strict";
-import test from "node:test";
 import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import test from "node:test";
 
 test("phases always run in refine, hourly, review order", () => {
   assert.deepEqual(phaseOrder(["review", "refine"]), ["refine", "review"]);

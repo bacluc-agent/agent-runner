@@ -1,5 +1,10 @@
 #!/usr/bin/env -S node --experimental-strip-types
-import { parsePhases, resolveLauncher, run, type LoopOptions } from "./index.ts";
+import {
+  parsePhases,
+  resolveLauncher,
+  run,
+  type LoopOptions,
+} from "./index.ts";
 
 function value(
   args: string[],
