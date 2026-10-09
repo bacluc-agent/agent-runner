@@ -51,6 +51,26 @@ test("model availability applies the repository deny list", async () => {
   }
 });
 
+test("model availability finds the default deny list outside the checkout", async () => {
+  const previousModels = process.env.AVAILABLE_MODELS;
+  const previousDenyList = process.env.MODEL_DENY_LIST_FILE;
+  const previousCwd = process.cwd();
+  process.env.AVAILABLE_MODELS =
+    "opencode/nemotron-3-ultra-free opencode/big-pickle";
+  delete process.env.MODEL_DENY_LIST_FILE;
+  process.chdir("/tmp");
+  try {
+    const ctx = { dryRun: true } as never;
+    assert.equal(await runModelAvailability(ctx), "opencode/big-pickle");
+  } finally {
+    process.chdir(previousCwd);
+    if (previousModels === undefined) delete process.env.AVAILABLE_MODELS;
+    else process.env.AVAILABLE_MODELS = previousModels;
+    if (previousDenyList === undefined) delete process.env.MODEL_DENY_LIST_FILE;
+    else process.env.MODEL_DENY_LIST_FILE = previousDenyList;
+  }
+});
+
 test("refine dry-run is read-only while selecting a model", async () => {
   const previousModels = process.env.AVAILABLE_MODELS;
   process.env.AVAILABLE_MODELS = "opencode/big-pickle";

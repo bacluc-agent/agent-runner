@@ -2,6 +2,7 @@ import type { StepContext } from "./types.ts";
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const preferred = [
   "opencode-go-openai/qwen3.8-flash",
@@ -26,9 +27,11 @@ export function chooseModel(
 }
 
 function denyList(): string[] {
-  const path = resolve(
-    process.env.MODEL_DENY_LIST_FILE ?? "scripts/model-deny-list.txt",
-  );
+  const path = process.env.MODEL_DENY_LIST_FILE
+    ? resolve(process.env.MODEL_DENY_LIST_FILE)
+    : fileURLToPath(
+        new URL("../../../scripts/model-deny-list.txt", import.meta.url),
+      );
   return readFileSync(path, "utf8").split(/\r?\n/).filter(Boolean);
 }
 
