@@ -1,0 +1,11 @@
+# Agent loops
+
+Run the local loop with Node 24+:
+
+```sh
+node --experimental-strip-types packages/agent-loops/src/cli.ts \
+  --repository bacluc-agent/agent-runner \
+  --issue-repository bacluc-agent/agent-todo
+```
+
+The default is one sequential refine, hourly, and review cycle. Use `--repeat`, `--cycles`, `--poll`, `--phases`, or `--dry-run` to control it. `BACLUC_AGENT_GITHUB_TOKEN` is read from the environment and is passed to the devcontainer only through its environment, never through a command argument. Each agent invocation gets a fresh `/tmp/agent-loops-*` workspace and is removed after the invocation.

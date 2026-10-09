@@ -1,0 +1,11 @@
+{
+  "name": "@bacluc-agent/agent-loops",
+  "version": "0.1.0",
+  "type": "module",
+  "bin": {
+    "agent-loops": "./src/cli.ts"
+  },
+  "scripts": {
+    "test": "node --experimental-strip-types --test test/*.test.ts"
+  }
+}
