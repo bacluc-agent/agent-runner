@@ -4,6 +4,8 @@ on:
   push:
     paths:
       - "packages/agent-loops/**"
+      - "packages/github/**"
+      - "packages/steps/**"
       - ".github/workflows/agent-loops.yml"
   workflow_dispatch:
 
@@ -17,4 +19,4 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - name: Test agent loops
-        run: node --experimental-strip-types --test packages/agent-loops/test/index.test.ts
+        run: npm test

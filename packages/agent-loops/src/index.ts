@@ -1,10 +1,19 @@
+import { GitHubClient } from "@bacluc-agent/github";
+import {
+  runHourly,
+  runRefine,
+  runReview,
+  type StepContext,
+} from "@bacluc-agent/steps";
 import { spawn } from "node:child_process";
 import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-export type Phase = "refine" | "hourly" | "review";
+export { GitHubClient } from "@bacluc-agent/github";
+export type { Issue, PullRequest } from "@bacluc-agent/github";
 
+export type Phase = "refine" | "hourly" | "review";
 export type LoopOptions = {
   repository: string;
   issueRepository: string;
@@ -18,100 +27,11 @@ export type LoopOptions = {
   agentCommand: string;
 };
 
-export type Issue = {
-  number: number;
-  title: string;
-  body: string;
-  labels: Array<{ name: string }>;
-};
-export type PullRequest = {
-  number: number;
-  title: string;
-  url: string;
-  repository: string;
-};
-
-export class GitHubClient {
-  private readonly token: string;
-  private readonly apiBase: string;
-
-  constructor(token: string, apiBase = "https://api.github.com") {
-    this.token = token;
-    this.apiBase = apiBase;
-  }
-
-  async request<T>(path: string, init: RequestInit = {}): Promise<T> {
-    const response = await fetch(`${this.apiBase}/${path.replace(/^\//, "")}`, {
-      ...init,
-      headers: {
-        Accept: "application/vnd.github+json",
-        Authorization: `Bearer ${this.token}`,
-        "X-GitHub-Api-Version": "2022-11-28",
-        ...(init.headers ?? {}),
-      },
-    });
-    const body = await response.text();
-    if (!response.ok) throw new Error(`GitHub ${response.status}: ${body}`);
-    return body ? (JSON.parse(body) as T) : (undefined as T);
-  }
-
-  async issues(query: string): Promise<Issue[]> {
-    const result = await this.request<{ items: Issue[] }>(
-      `search/issues?q=${encodeURIComponent(query)}&per_page=50`,
-    );
-    return result.items;
-  }
-
-  async issue(repository: string, number: number): Promise<Issue> {
-    return this.request<Issue>(`repos/${repository}/issues/${number}`);
-  }
-
-  async editIssue(
-    repository: string,
-    number: number,
-    expectedBody: string,
-    body: string,
-    label: string,
-  ): Promise<void> {
-    const current = await this.issue(repository, number);
-    if (current.body !== expectedBody)
-      throw new Error(`issue #${number} changed while it was being edited`);
-    const labels = [
-      ...new Set([...current.labels.map(({ name }) => name), label]),
-    ];
-    await this.request(`repos/${repository}/issues/${number}`, {
-      method: "PATCH",
-      body: JSON.stringify({ body, labels }),
-      headers: { "Content-Type": "application/json" },
-    });
-  }
-
-  async pullRequests(query: string): Promise<PullRequest[]> {
-    const result = await this.request<{
-      items: Array<{
-        number: number;
-        title: string;
-        html_url: string;
-        repository_url: string;
-      }>;
-    }>(`search/issues?q=${encodeURIComponent(query)}&per_page=50`);
-    return result.items.map((item) => ({
-      number: item.number,
-      title: item.title,
-      url: item.html_url,
-      repository: item.repository_url.replace(
-        "https://api.github.com/repos/",
-        "",
-      ),
-    }));
-  }
-}
-
 export function phaseOrder(phases: Phase[]): Phase[] {
-  const order: Phase[] = ["refine", "hourly", "review"];
-  return order.filter((phase) => phases.includes(phase));
+  return (["refine", "hourly", "review"] as Phase[]).filter((phase) =>
+    phases.includes(phase),
+  );
 }
-
 export function parseSelectedIssue(
   output: string,
   candidates: number[],
@@ -122,7 +42,6 @@ export function parseSelectedIssue(
     ? number
     : undefined;
 }
-
 export function parsePhases(value = "refine,hourly,review"): Phase[] {
   const phases = value
     .split(",")
@@ -134,13 +53,13 @@ export function parsePhases(value = "refine,hourly,review"): Phase[] {
   return phaseOrder(phases);
 }
 
-async function command(
-  command: string,
+function command(
+  commandLine: string,
   cwd: string,
   env: NodeJS.ProcessEnv,
 ): Promise<string> {
   return new Promise((resolve, reject) => {
-    const child = spawn("sh", ["-c", command], {
+    const child = spawn("sh", ["-c", commandLine], {
       cwd,
       env,
       stdio: ["ignore", "pipe", "inherit"],
@@ -150,11 +69,7 @@ async function command(
     process.once("SIGINT", forwardSignal);
     process.once("SIGTERM", forwardSignal);
     child.stdout.on("data", (chunk) => (output += chunk));
-    child.on("error", (error) => {
-      process.off("SIGINT", forwardSignal);
-      process.off("SIGTERM", forwardSignal);
-      reject(error);
-    });
+    child.on("error", reject);
     child.on("close", (status, signal) => {
       process.off("SIGINT", forwardSignal);
       process.off("SIGTERM", forwardSignal);
@@ -165,7 +80,7 @@ async function command(
   });
 }
 
-async function runAgent(
+export async function runAgent(
   options: LoopOptions,
   prompt: string,
   agent: string,
@@ -176,7 +91,7 @@ async function runAgent(
   const askpass = join(root, ".git-askpass");
   await writeFile(
     askpass,
-    `#!/bin/sh\nprintf '%s\\n' "$AGENT_LOOPS_GIT_TOKEN"\n`,
+    "#!/bin/sh\nprintf '%s\\n' \"$AGENT_LOOPS_GIT_TOKEN\"\n",
     "utf8",
   );
   await chmod(askpass, 0o700);
@@ -205,8 +120,7 @@ async function runAgent(
     );
     const promptFile = join(workspace, "prompt.txt");
     await writeFile(promptFile, prompt, "utf8");
-    const containerPromptFile = `/workspaces/${workspace.split("/").pop()}/prompt.txt`;
-    env.AGENT_LOOPS_PROMPT_FILE = containerPromptFile;
+    env.AGENT_LOOPS_PROMPT_FILE = `/workspaces/${workspace.split("/").pop()}/prompt.txt`;
     await command(
       `${options.launcher} --workspace-dir "$PWD" --no-open`,
       workspace,
@@ -229,94 +143,32 @@ async function runAgent(
 
 export async function runCycle(
   options: LoopOptions,
-  github: GitHubClient,
-): Promise<void> {
-  for (const phase of phaseOrder(options.phases)) {
-    if (phase === "refine") {
-      const issues = await github.issues(
-        `repo:${options.issueRepository} is:open is:issue -label:agent-refined -label:ready-for-implementation -label:agent-ignore sort:created-asc`,
-      );
-      for (const candidate of issues) {
-        if (options.dryRun) {
-          console.log(`dry-run refine #${candidate.number}`);
-          continue;
-        }
-        const issue = await github.issue(
-          options.issueRepository,
-          candidate.number,
-        );
-        const output = await runAgent(
-          options,
-          `Refine issue #${issue.number}\n\n${issue.title}\n\n${issue.body}`,
-          "issue-refiner",
-        );
-        await github.editIssue(
-          options.issueRepository,
-          issue.number,
-          issue.body,
-          output.trim(),
-          "agent-refined",
-        );
-      }
-    }
-    if (phase === "hourly") {
-      const issues = await github.issues(
-        `repo:${options.issueRepository} is:open is:issue label:ready-for-implementation -label:agent-running sort:created-asc`,
-      );
-      if (!issues.length) continue;
-      const candidates = issues.map((issue) => issue.number);
-      if (options.dryRun) {
-        console.log(`dry-run hourly #${candidates[0]}`);
-        continue;
-      }
-      const selected = parseSelectedIssue(
-        await runAgent(
-          options,
-          issues.map((issue) => `${issue.number}: ${issue.title}`).join("\n"),
-          "issue-selector",
-        ),
-        candidates,
-      );
-      if (selected === undefined)
-        throw new Error("issue-selector returned no valid SELECTED_ISSUE");
-      await runAgent(
-        options,
-        `Implement issue #${selected} in ${options.issueRepository}`,
-        "coordinator",
-      );
-    }
-    if (phase === "review") {
-      const prs = await github.pullRequests(
-        `is:pr is:open reviewed-by:BacLuc -label:agents-ignore`,
-      );
-      for (const pr of prs) {
-        if (options.dryRun) {
-          console.log(`dry-run review ${pr.url}`);
-          continue;
-        }
-        await runAgent(
-          options,
-          `Apply review comments for ${pr.url}\n${pr.title}`,
-          "review",
-        );
-      }
-    }
-  }
-}
-
-export async function run(options: LoopOptions): Promise<void> {
-  const github = new GitHubClient(
+  github = new GitHubClient(
     options.token ??
       process.env.BACLUC_AGENT_GITHUB_TOKEN ??
       process.env.GITHUB_TOKEN ??
       "",
-  );
+  ),
+): Promise<void> {
+  const ctx: StepContext = {
+    ...options,
+    github,
+    runAgent: (prompt, agent) => runAgent(options, prompt, agent),
+  };
+  for (const phase of phaseOrder(options.phases)) {
+    if (phase === "refine") await runRefine(ctx);
+    if (phase === "hourly") await runHourly(ctx);
+    if (phase === "review") await runReview(ctx);
+  }
+}
+
+export async function run(options: LoopOptions): Promise<void> {
   for (
     let cycle = 0;
     options.cycles === 0 || cycle < options.cycles;
     cycle += 1
   ) {
-    await runCycle(options, github);
+    await runCycle(options);
     if (
       options.pollSeconds > 0 &&
       (options.cycles === 0 || cycle + 1 < options.cycles)

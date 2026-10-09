@@ -8,4 +8,8 @@ node --experimental-strip-types packages/agent-loops/src/cli.ts \
   --issue-repository bacluc-agent/agent-todo
 ```
 
+The reusable packages are `@bacluc-agent/github` and `@bacluc-agent/steps`.
+The provisioned `agent-loops` launcher runs all three phases repeatedly and
+uses a fresh devcontainer workspace for every agent invocation.
+
 The default is one sequential refine, hourly, and review cycle. Use `--repeat`, `--cycles`, `--poll`, `--phases`, or `--dry-run` to control it. `BACLUC_AGENT_GITHUB_TOKEN` is read from the environment and is passed to the devcontainer only through its environment, never through a command argument. Each agent invocation gets a fresh `/tmp/agent-loops-*` workspace and is removed after the invocation.
