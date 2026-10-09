@@ -19,7 +19,7 @@ test("GitHub client sends authenticated typed requests", async () => {
     ]);
     assert.equal(
       requests[0].url,
-      "https://example.test/search/issues?q=repo%3Aowner%2Frepo&per_page=50",
+      "https://example.test/search/issues?q=repo%3Aowner%2Frepo&per_page=100&page=1",
     );
     assert.equal(
       (requests[0].init.headers as Record<string, string>).Authorization,

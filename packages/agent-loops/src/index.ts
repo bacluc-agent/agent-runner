@@ -53,6 +53,14 @@ export function parsePhases(value = "refine,hourly,review"): Phase[] {
   return phaseOrder(phases);
 }
 
+function context(options: LoopOptions, github: GitHubClient): StepContext {
+  return {
+    ...options,
+    github,
+    runAgent: (prompt, agent) => runAgent(options, prompt, agent),
+  };
+}
+
 function command(
   commandLine: string,
   cwd: string,
@@ -150,16 +158,48 @@ export async function runCycle(
       "",
   ),
 ): Promise<void> {
-  const ctx: StepContext = {
-    ...options,
-    github,
-    runAgent: (prompt, agent) => runAgent(options, prompt, agent),
-  };
+  const ctx = context(options, github);
   for (const phase of phaseOrder(options.phases)) {
     if (phase === "refine") await runRefine(ctx);
     if (phase === "hourly") await runHourly(ctx);
     if (phase === "review") await runReview(ctx);
   }
+}
+
+export async function refine(
+  options: LoopOptions,
+  github = new GitHubClient(
+    options.token ??
+      process.env.BACLUC_AGENT_GITHUB_TOKEN ??
+      process.env.GITHUB_TOKEN ??
+      "",
+  ),
+): Promise<void> {
+  await runRefine(context(options, github));
+}
+
+export async function issues(
+  options: LoopOptions,
+  github = new GitHubClient(
+    options.token ??
+      process.env.BACLUC_AGENT_GITHUB_TOKEN ??
+      process.env.GITHUB_TOKEN ??
+      "",
+  ),
+): Promise<void> {
+  await runHourly(context(options, github));
+}
+
+export async function review(
+  options: LoopOptions,
+  github = new GitHubClient(
+    options.token ??
+      process.env.BACLUC_AGENT_GITHUB_TOKEN ??
+      process.env.GITHUB_TOKEN ??
+      "",
+  ),
+): Promise<void> {
+  await runReview(context(options, github));
 }
 
 export async function run(options: LoopOptions): Promise<void> {

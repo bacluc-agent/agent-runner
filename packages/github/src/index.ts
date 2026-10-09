@@ -24,6 +24,8 @@ export type IssueComment = {
   created_at?: string;
 };
 
+type Page<T> = { data: T; next?: string };
+
 export class GitHubClient {
   private readonly token: string;
   private readonly apiBase: string;
@@ -34,7 +36,17 @@ export class GitHubClient {
   }
 
   async request<T>(path: string, init: RequestInit = {}): Promise<T> {
-    const response = await fetch(`${this.apiBase}/${path.replace(/^\//, "")}`, {
+    return (await this.requestPage<T>(path, init)).data;
+  }
+
+  private async requestPage<T>(
+    path: string,
+    init: RequestInit = {},
+  ): Promise<Page<T>> {
+    const url = path.startsWith("http")
+      ? path
+      : `${this.apiBase}/${path.replace(/^\//, "")}`;
+    const response = await fetch(url, {
       ...init,
       headers: {
         Accept: "application/vnd.github+json",
@@ -45,15 +57,32 @@ export class GitHubClient {
     });
     const body = await response.text();
     if (!response.ok) throw new Error(`GitHub ${response.status}: ${body}`);
-    return body ? (JSON.parse(body) as T) : (undefined as T);
+    const next = response.headers
+      .get("link")
+      ?.split(",")
+      .map((link) => link.match(/<([^>]+)>;\s*rel="next"/))
+      .find(Boolean)?.[1];
+    return { data: body ? (JSON.parse(body) as T) : (undefined as T), next };
   }
 
   async searchIssues(query: string): Promise<Issue[]> {
-    return (
-      await this.request<{ items: Issue[] }>(
-        `search/issues?q=${encodeURIComponent(query)}&per_page=50`,
-      )
-    ).items;
+    return this.searchPages<Issue>(query);
+  }
+
+  private async searchPages<T>(query: string): Promise<T[]> {
+    const items: T[] = [];
+    let path: string | undefined =
+      `search/issues?q=${encodeURIComponent(query)}&per_page=100&page=1`;
+    while (path) {
+      const page = await this.requestPage<{ items: T[] }>(path);
+      items.push(...page.data.items);
+      path = page.next;
+    }
+    return items;
+  }
+
+  currentUser(): Promise<{ login: string }> {
+    return this.request<{ login: string }>("user");
   }
 
   issues(query: string): Promise<Issue[]> {
@@ -122,11 +151,7 @@ export class GitHubClient {
   }
 
   async searchPullRequests(query: string): Promise<PullRequest[]> {
-    return (
-      await this.request<{ items: PullRequest[] }>(
-        `search/issues?q=${encodeURIComponent(query)}&per_page=50`,
-      )
-    ).items.map((item) => ({
+    return (await this.searchPages<PullRequest>(query)).map((item) => ({
       ...item,
       repository:
         item.repository ??

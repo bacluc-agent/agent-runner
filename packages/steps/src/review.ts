@@ -1,10 +1,21 @@
 import type { StepContext } from "./types.ts";
 
 export async function runReview(ctx: StepContext): Promise<void> {
+  const reviewer = (await ctx.github.currentUser()).login;
   const processed = new Set<string>();
   for (;;) {
-    const prs = await ctx.github.searchPullRequests(
-      `is:pr is:open reviewed-by:BacLuc -label:agents-ignore`,
+    const query = (author: string) =>
+      `is:pr is:open author:${author} reviewed-by:BacLuc -label:agents-ignore`;
+    const prs = [
+      ...(await ctx.github.searchPullRequests(query(reviewer))),
+      ...(await ctx.github.searchPullRequests(query("app/renovate"))),
+    ].filter(
+      (candidate, index, all) =>
+        all.findIndex(
+          (other) =>
+            other.number === candidate.number &&
+            other.repository === candidate.repository,
+        ) === index,
     );
     const pr = prs.find(
       (candidate) =>

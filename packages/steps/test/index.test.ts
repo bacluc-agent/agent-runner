@@ -126,6 +126,7 @@ test("review rereads the PR and includes its current branch", async () => {
         html_url: "url",
         head: { ref: "feature" },
       }),
+      currentUser: async () => ({ login: "BacLuc" }),
       listReviewComments: async () => [{ id: 1, body: "fix" }],
     },
     runAgent: async (prompt: string) => {
@@ -135,5 +136,5 @@ test("review rereads the PR and includes its current branch", async () => {
   } as never;
   await runReview(ctx);
   assert.match(prompts[0], /Branch: feature/);
-  assert.equal(searches, 2);
+  assert.equal(searches, 4);
 });
