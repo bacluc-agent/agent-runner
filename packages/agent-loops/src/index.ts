@@ -18,7 +18,12 @@ export type LoopOptions = {
   agentCommand: string;
 };
 
-export type Issue = { number: number; title: string; body: string };
+export type Issue = {
+  number: number;
+  title: string;
+  body: string;
+  labels: Array<{ name: string }>;
+};
 export type PullRequest = {
   number: number;
   title: string;
@@ -64,9 +69,16 @@ export class GitHubClient {
   async editIssue(
     repository: string,
     number: number,
+    expectedBody: string,
     body: string,
-    labels: string[],
+    label: string,
   ): Promise<void> {
+    const current = await this.issue(repository, number);
+    if (current.body !== expectedBody)
+      throw new Error(`issue #${number} changed while it was being edited`);
+    const labels = [
+      ...new Set([...current.labels.map(({ name }) => name), label]),
+    ];
     await this.request(`repos/${repository}/issues/${number}`, {
       method: "PATCH",
       body: JSON.stringify({ body, labels }),
@@ -134,13 +146,22 @@ async function command(
       stdio: ["ignore", "pipe", "inherit"],
     });
     let output = "";
+    const forwardSignal = (signal: NodeJS.Signals) => child.kill(signal);
+    process.once("SIGINT", forwardSignal);
+    process.once("SIGTERM", forwardSignal);
     child.stdout.on("data", (chunk) => (output += chunk));
-    child.on("error", reject);
-    child.on("close", (status) =>
+    child.on("error", (error) => {
+      process.off("SIGINT", forwardSignal);
+      process.off("SIGTERM", forwardSignal);
+      reject(error);
+    });
+    child.on("close", (status, signal) => {
+      process.off("SIGINT", forwardSignal);
+      process.off("SIGTERM", forwardSignal);
       status === 0
         ? resolve(output)
-        : reject(new Error(`agent exited with ${status}`)),
-    );
+        : reject(new Error(`agent exited with ${status ?? signal}`));
+    });
   });
 }
 
@@ -165,6 +186,8 @@ async function runAgent(
     AGENT_LOOPS_GIT_TOKEN: options.token ?? "",
     MODEL: options.model ?? process.env.MODEL ?? "opencode/big-pickle",
     GIT_ASKPASS: askpass,
+    GIT_ASKPASS_SOURCE: askpass,
+    GIT_ASKPASS_TARGET: "/tmp/agent-loops-git-askpass",
     GIT_TERMINAL_PROMPT: "0",
   };
   const commandLine = options.agentCommand
@@ -230,8 +253,9 @@ export async function runCycle(
         await github.editIssue(
           options.issueRepository,
           issue.number,
+          issue.body,
           output.trim(),
-          ["agent-refined"],
+          "agent-refined",
         );
       }
     }
