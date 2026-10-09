@@ -1,5 +1,5 @@
 #!/usr/bin/env -S node --experimental-strip-types
-import { parsePhases, run, type LoopOptions } from "./index.ts";
+import { parsePhases, resolveLauncher, run, type LoopOptions } from "./index.ts";
 
 function value(
   args: string[],
@@ -34,7 +34,12 @@ const options: LoopOptions = {
   cycles: repeat ? 0 : Number(value(args, "--cycles", "1")),
   pollSeconds: Number(value(args, "--poll", "0")),
   dryRun: args.includes("--dry-run"),
-  launcher: process.env.AGENT_LOOPS_LAUNCHER ?? "start-ai-agent-devcontainer",
+  launcher: args.includes("--dry-run")
+    ? (process.env.AGENT_LOOPS_LAUNCHER ?? "start-ai-agent-devcontainer")
+    : resolveLauncher(
+        process.env.AGENT_LOOPS_LAUNCHER ?? "start-ai-agent-devcontainer",
+        process.env.AGENT_LOOPS_LAUNCHER !== undefined,
+      ),
   agentCommand:
     process.env.AGENT_LOOPS_AGENT_COMMAND ??
     'opencode run --agent {agent} --model ${MODEL:-opencode/big-pickle} "$(cat {prompt})"',

@@ -21,3 +21,7 @@ and emits lifecycle lines without prompts or agent output.
 
 Automatic model selection reads `scripts/model-deny-list.txt`, or the path in
 `MODEL_DENY_LIST_FILE`, using the same patterns as the workflows.
+
+The launcher is resolved from an absolute `AGENT_LOOPS_LAUNCHER` path first,
+then from `PATH`, then from `$HOME/bin/start-ai-agent-devcontainer`. Missing
+launchers fail before a loop starts with the searched fallback path.

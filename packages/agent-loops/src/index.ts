@@ -6,9 +6,10 @@ import {
   type StepContext,
 } from "@bacluc-agent/steps";
 import { spawn } from "node:child_process";
+import { accessSync, constants } from "node:fs";
 import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, isAbsolute, join } from "node:path";
 
 export { GitHubClient } from "@bacluc-agent/github";
 export type { Issue, PullRequest } from "@bacluc-agent/github";
@@ -26,6 +27,44 @@ export type LoopOptions = {
   launcher: string;
   agentCommand: string;
 };
+
+function executable(path: string): boolean {
+  try {
+    accessSync(path, constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function resolveLauncher(
+  value = "start-ai-agent-devcontainer",
+  explicit = false,
+): string {
+  if (explicit && !isAbsolute(value))
+    throw new Error(
+      `AGENT_LOOPS_LAUNCHER must be an absolute executable path: ${value}`,
+    );
+  if (isAbsolute(value)) {
+    if (executable(value)) return value;
+    throw new Error(`AGENT_LOOPS_LAUNCHER is not executable: ${value}`);
+  }
+
+  for (const directory of (process.env.PATH ?? "").split(delimiter)) {
+    const candidate = join(directory || ".", value);
+    if (executable(candidate)) return candidate;
+  }
+
+  const fallback = join(process.env.HOME ?? "", "bin", value);
+  if (executable(fallback)) return fallback;
+  throw new Error(
+    `Unable to find ${value}; install it on PATH or at ${fallback}, or set AGENT_LOOPS_LAUNCHER to an absolute executable path`,
+  );
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", "'\\''")}'`;
+}
 
 export function phaseOrder(phases: Phase[]): Phase[] {
   return (["refine", "hourly", "review"] as Phase[]).filter((phase) =>
@@ -75,20 +114,26 @@ function command(
     const child = spawn("sh", ["-c", commandLine], {
       cwd,
       env,
-      stdio: ["ignore", "pipe", "ignore"],
+      stdio: ["ignore", "pipe", "pipe"],
     });
     let output = "";
+    let errorOutput = "";
     const forwardSignal = (signal: NodeJS.Signals) => child.kill(signal);
     process.once("SIGINT", forwardSignal);
     process.once("SIGTERM", forwardSignal);
     child.stdout.on("data", (chunk) => (output += chunk));
+    child.stderr.on("data", (chunk) => (errorOutput += chunk));
     child.on("error", reject);
     child.on("close", (status, signal) => {
       process.off("SIGINT", forwardSignal);
       process.off("SIGTERM", forwardSignal);
       status === 0
         ? resolve(output)
-        : reject(new Error(`agent exited with ${status ?? signal}`));
+        : reject(
+            new Error(
+              `agent exited with ${status ?? signal}: ${errorOutput.trim() || "no stderr output"}`,
+            ),
+          );
     });
   });
 }
@@ -138,12 +183,12 @@ export async function runAgent(
     await writeFile(promptFile, prompt, "utf8");
     env.AGENT_LOOPS_PROMPT_FILE = `/workspaces/${workspace.split("/").pop()}/prompt.txt`;
     await command(
-      `${options.launcher} --workspace-dir "$PWD" --no-open`,
+      `${shellQuote(options.launcher)} --workspace-dir "$PWD" --no-open`,
       workspace,
       env,
     );
     const output = await command(
-      `devcontainer exec --workspace-folder "$PWD" sh -lc '${commandLine.replaceAll("'", "'\\''")}'`,
+      `devcontainer exec --workspace-folder "$PWD" sh -lc ${shellQuote(commandLine)}`,
       workspace,
       env,
     );
@@ -151,7 +196,7 @@ export async function runAgent(
     return output;
   } finally {
     await command(
-      `${options.launcher} --workspace-dir "$PWD" --down --no-open`,
+      `${shellQuote(options.launcher)} --workspace-dir "$PWD" --down --no-open`,
       workspace,
       env,
     ).catch(() => undefined);

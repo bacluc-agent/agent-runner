@@ -4,11 +4,15 @@ import {
   parseSelectedIssue,
   phaseOrder,
   refine,
+  resolveLauncher,
   runCycle,
   type LoopOptions,
 } from "../src/index.ts";
 import assert from "node:assert/strict";
 import test from "node:test";
+import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 test("phases always run in refine, hourly, review order", () => {
   assert.deepEqual(phaseOrder(["review", "refine"]), ["refine", "review"]);
@@ -16,6 +20,49 @@ test("phases always run in refine, hourly, review order", () => {
 
 test("phase parsing rejects unknown-only input", () => {
   assert.throws(() => parsePhases("unknown"), /--phases/);
+});
+
+test("launcher resolution accepts an executable absolute override", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "agent-loops-test-"));
+  const launcher = join(directory, "launcher");
+  await writeFile(launcher, "#!/bin/sh\n");
+  await chmod(launcher, 0o755);
+  try {
+    assert.equal(resolveLauncher(launcher, true), launcher);
+    assert.throws(
+      () => resolveLauncher(join(directory, "missing"), true),
+      /not executable/,
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("launcher resolution searches PATH before HOME/bin", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "agent-loops-test-"));
+  const pathLauncher = join(directory, "start-ai-agent-devcontainer");
+  const home = join(directory, "home");
+  const homeLauncher = join(home, "bin", "start-ai-agent-devcontainer");
+  await writeFile(pathLauncher, "#!/bin/sh\n");
+  await chmod(pathLauncher, 0o755);
+  await mkdir(join(home, "bin"), { recursive: true });
+  await writeFile(homeLauncher, "#!/bin/sh\n");
+  await chmod(homeLauncher, 0o755);
+  const previousPath = process.env.PATH;
+  const previousHome = process.env.HOME;
+  process.env.PATH = directory;
+  process.env.HOME = home;
+  try {
+    assert.equal(resolveLauncher(), pathLauncher);
+    await rm(pathLauncher);
+    assert.equal(resolveLauncher(), homeLauncher);
+  } finally {
+    if (previousPath === undefined) delete process.env.PATH;
+    else process.env.PATH = previousPath;
+    if (previousHome === undefined) delete process.env.HOME;
+    else process.env.HOME = previousHome;
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test("each phase resolves availability independently", async () => {
