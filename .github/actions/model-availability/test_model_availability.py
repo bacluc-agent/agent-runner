@@ -1302,6 +1302,74 @@ class TestRefineIssuesNoCandidates:
         )
 
 
+class TestRefineIssuesComments:
+    WORKFLOW = Path(__file__).parents[3] / ".github/workflows/refine-issues.yml"
+
+    def test_refinement_marker_machinery_is_gone(self):
+        content = self.WORKFLOW.read_text()
+        assert "<!-- agent-refined:" not in content
+        assert "$refined_at" not in content
+        assert "sed '/<!-- agent-refined" not in content
+        assert "This is a prior refinement" not in content
+
+    def test_comment_filter_contract(self):
+        content = self.WORKFLOW.read_text()
+        assert 'select(.user.type != "Bot")' in content
+        assert 'select(.user.login != "bacluc-agent")' in content
+        assert 'contains("<!-- agent-progress -->") | not' in content
+
+    def test_relabel_after_validation_is_preserved(self):
+        content = self.WORKFLOW.read_text()
+        validation = content.index("if (( validation_status == 0 )); then")
+        relabel = content.index('gh issue edit "$number" --add-label "agent-refined"')
+        assert validation < relabel
+
+    def test_prompt_includes_filtered_human_comments(self, tmp_path):
+        content = self.WORKFLOW.read_text()
+        start = content.index("while IFS= read -r number; do")
+        end = content.index('} > "$prompt"', start) + len('} > "$prompt"')
+        block = content[start:end]
+        candidates = tmp_path / "candidate-numbers.txt"
+        candidates.write_text("11\n")
+        fake_gh = tmp_path / "gh"
+        fake_gh.write_text(
+            """#!/usr/bin/env python3
+import json, sys
+args = sys.argv[1:]
+if args[0] == "issue":
+    number = args[2]
+    field = args[args.index("--json") + 1]
+    print(f"Title of {number}" if field == "title" else f"Body of {number}")
+elif args[0] == "api":
+    print(json.dumps([[{"user": {"type": "User", "login": "human"}, "body": "please add tests", "created_at": "2026-02-02T00:00:00Z"}, {"user": {"type": "User", "login": "bacluc-agent"}, "body": "progress note", "created_at": "2026-02-03T00:00:00Z"}, {"user": {"type": "Bot", "login": "github-actions[bot]"}, "body": "bot comment", "created_at": "2026-02-04T00:00:00Z"}, {"user": {"type": "User", "login": "human"}, "body": "<!-- agent-progress -->\\nprogress", "created_at": "2026-02-05T00:00:00Z"}]]))
+"""
+        )
+        fake_gh.chmod(0o755)
+        script = (
+            f"ISSUE_REPOSITORY=example/issues\n"
+            f"RUNNER_TEMP={str(tmp_path)!r}\n"
+            f"PATH={str(tmp_path)!r}:$PATH\n"
+            f"candidates={str(candidates)!r}\n"
+            f"{block}\n"
+            'done < "$candidates"\n'
+            'cat "$prompt"\n'
+        )
+        result = subprocess.run(
+            ["bash", "-Eeuo", "pipefail", "-c", script],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, result.stderr
+        assert (
+            "Reviewer comments (feedback to fold into the Goal and steps; do not quote them wholesale):"
+            in result.stdout
+        )
+        assert "please add tests" in result.stdout
+        assert "progress note" not in result.stdout
+        assert "bot comment" not in result.stdout
+        assert "agent-progress" not in result.stdout
+
+
 class TestWorkflowOpenRouterSelection:
     WORKFLOWS = [
         ".github/workflows/opencode.yml",
