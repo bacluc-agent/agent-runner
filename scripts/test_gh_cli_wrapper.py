@@ -33,7 +33,7 @@ def prepare_backend(directory):
 def verify_installed():
     with tempfile.TemporaryDirectory() as directory:
         env = dict(os.environ, TEST_LOG=str(Path(directory) / "log"), TEST_STATUS="23")
-        argv = ["pr", "view", "123", "-R", "BaClUc-AgEnT/ecamp3"]
+        argv = ["pr", "create", "-R", "BaClUc-AgEnT/ecamp3", "--body-file", "-"]
         result = subprocess.run(["bash", "-c", 'exec gh "$@"', "test", *argv],
                                 cwd=directory, env=env, input="body from stdin",
                                 capture_output=True, text=True)
@@ -54,29 +54,7 @@ def verify_installed():
             assert result.returncode != 0, denied
             assert "gh cli wrapper:" in result.stderr, denied
             assert not log.exists(), denied
-
-        for method in ("GET", "OPTIONS"):
-            result = http_request(env, method, "outsider.example")
-            assert result.returncode == 0, result.stderr
-        for method in ("POST", "PUT", "PATCH", "DELETE"):
-            result = http_request(env, method, "outsider.example")
-            assert result.returncode != 0, method
-            assert "HTTP guard denied" in result.stderr, method
-        for method, path in (("GET", "/repos/bacluc-agent/agent-runner/pulls"),
-                             ("POST", "/repos/bacluc-agent/agent-runner/issues")):
-            result = http_request(env, method, "api.github.com", path)
-            assert result.returncode == 0, result.stderr
-        audit = [json.loads(row) for row in (Path(env["RUNNER_TEMP"]) / "http-guard.jsonl").read_text().splitlines()]
-        assert len(audit) == 1 and audit[0]["method"] == "POST", audit
     print("Installed composite wrapper: forwarding and historical denial passed")
-
-
-def http_request(env, method, host, path="/"):
-    code = ("import http.client; "
-            f"connection = http.client.HTTPConnection({host!r}); "
-            "connection._send_request = lambda *args, **kwargs: None; "
-            f"connection.request({method!r}, {path!r})")
-    return subprocess.run([sys.executable, "-c", code], env=env, capture_output=True, text=True)
 
 
 class CliWrapperTest(unittest.TestCase):
@@ -94,7 +72,6 @@ class CliWrapperTest(unittest.TestCase):
                                 env=self.env, capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.env["PATH"] = f"{(self.directory / 'path').read_text().strip()}:{self.env['PATH']}"
-        self.env["PYTHONPATH"] = (self.directory / "env").read_text().strip().partition("=")[2]
 
     def call(self, argv, allowed=True, **env):
         log = Path(self.env["TEST_LOG"])
@@ -220,17 +197,6 @@ class CliWrapperTest(unittest.TestCase):
         result = subprocess.run([sys.executable, str(Path(__file__).resolve()), "--verify-installed"],
                                 env=self.env, capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
-
-    def test_python_http_guard_installed(self):
-        code = ("import http.client; "
-                "connection = http.client.HTTPConnection('outsider.example'); "
-                "connection._send_request = lambda *args, **kwargs: None; "
-                "connection.request('POST', '/resource')")
-        result = subprocess.run([sys.executable, "-c", code], env=self.env, capture_output=True, text=True)
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("HTTP guard denied", result.stderr)
-        entry = json.loads((self.directory / "http-guard.jsonl").read_text())
-        self.assertEqual(entry["host"], "outsider.example")
 
     def test_installer_recursion_and_missing_backend(self):
         result = subprocess.run(["bash", str(ROOT / "scripts/install-gh-cli-wrapper.sh")],

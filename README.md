@@ -134,32 +134,22 @@ The installer saves the real CLI's absolute path before changing PATH.
   `repos/OWNER/REPO/pulls/N/reverts` is checked the same way.
 - REST PR creation is checked too, including implicit POST via fields or
   `--input`. Ambiguous options, noncanonical paths and routing overrides fail
-  closed. REST reads remain available; accepted calls preserve arguments, stdin,
-  output and exit status.
-- Mutating commands for issues, repositories, workflows, discussions, labels,
-  releases, secrets, variables, rulesets, and projects are checked against an
-  owned repository; issue mutations require explicit `-R`/`--repo`. API
-  mutations of outsider repository resources are denied. Reads remain available.
+  closed. Ordinary REST reads, issue comments, PATCH, forks and dispatches remain
+  available; accepted calls preserve arguments, stdin, output and exit status.
 - Direct `gh api graphql`, configured alias execution, alias management and
   extension commands are denied. Use builtin CLI commands or canonical REST
   endpoints instead. Unknown builtin commands/options on guarded routes require
   review before adding support; this is not a complete CLI parser.
 
-The `gh` wrapper is an accidental-misrouting guardrail, **not a sandbox or
-universal outbound network guard**. A stdlib Python `http.client` guard is also
-installed through `PYTHONPATH`: GET/OPTIONS are allowed, while mutations to
-outsider hosts/repositories are denied; denied outsider POSTs are recorded as
-JSON lines in `$RUNNER_TEMP/http-guard.jsonl`. This only covers Python code using
-`http.client`; OpenCode/provider requests, Node, native clients, direct sockets,
-and environment changes can bypass it. A runner-level egress proxy/firewall is
-required to enforce policy on arbitrary agent traffic. CLI builtin commands may
-internally use GraphQL; only direct `gh api graphql` is denied.
+This is an accidental-misrouting guardrail, **not a sandbox or universal PR
+prevention**. An absolute executable path, direct HTTP, changing PATH or changing
+the wrapper can bypass it. CLI builtin commands may internally use GraphQL;
+only direct `gh api graphql` is denied.
 
-Regression tests use fake backends and never create forbidden PRs. Run
-`python -m pytest scripts/test_gh_cli_wrapper.py scripts/test_http_guard.py -v`
-locally. The dispatchable wrapper test workflow exercises both test modules; the
-integration test also installs the actual wrapper and verifies forwarding and
-historical denial in a later step outside the checkout.
+Regression tests use a fake backend and never create forbidden PRs. Run
+`python3 -m unittest discover -s scripts -p test_gh_cli_wrapper.py` locally. The
+dispatchable CI workflow also runs the actual setup composite with a fake backend
+and verifies forwarding and historical denial in a later step outside the checkout.
 
 ## Repository variables
 
