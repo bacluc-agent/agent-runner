@@ -125,6 +125,8 @@ class CliWrapperTest(unittest.TestCase):
         self.call(["api", "repos/outsider/r/issues/1", "-XPATCH", "-f", "title=test"], False)
         self.call(["api", "repos/outsider/r/issues/1"])
         self.call(["api", "repos/BacLuc/r/issues/1", "-XPATCH", "-f", "title=test"])
+        self.call(["api", "repos/outsider/r/actions/workflows/ci.yml/dispatches", "-XPOST", "-f", "ref=main"], False)
+        self.call(["api", "repos/BacLuc/r/actions/workflows/ci.yml/dispatches", "-XPOST", "-f", "ref=main"])
         self.call(["api", "repos/BacLuc/r/contents/", "--jq", ".[].name"])
         self.call(["api", "graphql", "-XGET"], False)
         self.call(["api", "repos/BacLuc/r/pulls", "-f", "body=--hostname=evil.com", "--hostname=github.com"])
