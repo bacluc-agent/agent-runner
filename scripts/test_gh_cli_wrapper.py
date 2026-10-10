@@ -65,12 +65,14 @@ class CliWrapperTest(unittest.TestCase):
         self.backend = prepare_backend(self.directory)
         self.env = dict(os.environ, GITHUB_REPOSITORY="bacluc-agent/agent-runner", RUNNER_TEMP=str(self.directory),
                         GITHUB_PATH=str(self.directory / "path"),
+                        GITHUB_ENV=str(self.directory / "env"),
                         PATH=f"{self.backend.parent}:{os.environ['PATH']}",
                         TEST_LOG=str(self.directory / "log"), GH_HOST="github.com")
         result = subprocess.run(["bash", str(ROOT / "scripts/install-gh-cli-wrapper.sh")],
                                 env=self.env, capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.env["PATH"] = f"{(self.directory / 'path').read_text().strip()}:{self.env['PATH']}"
+        self.env["PYTHONPATH"] = (self.directory / "env").read_text().strip().partition("=")[2]
 
     def call(self, argv, allowed=True, **env):
         log = Path(self.env["TEST_LOG"])
@@ -192,6 +194,17 @@ class CliWrapperTest(unittest.TestCase):
         result = subprocess.run([sys.executable, str(Path(__file__).resolve()), "--verify-installed"],
                                 env=self.env, capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_python_http_guard_installed(self):
+        code = ("import http.client; "
+                "connection = http.client.HTTPConnection('outsider.example'); "
+                "connection._send_request = lambda *args, **kwargs: None; "
+                "connection.request('POST', '/resource')")
+        result = subprocess.run([sys.executable, "-c", code], env=self.env, capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("HTTP guard denied", result.stderr)
+        entry = json.loads((self.directory / "http-guard.jsonl").read_text())
+        self.assertEqual(entry["host"], "outsider.example")
 
     def test_installer_recursion_and_missing_backend(self):
         result = subprocess.run(["bash", str(ROOT / "scripts/install-gh-cli-wrapper.sh")],

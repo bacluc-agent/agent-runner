@@ -146,18 +146,20 @@ The installer saves the real CLI's absolute path before changing PATH.
   review before adding support; this is not a complete CLI parser.
 
 The `gh` wrapper is an accidental-misrouting guardrail, **not a sandbox or
-universal outbound network guard**. It checks GitHub mutations that pass through
-the wrapped `gh` executable. OpenCode's provider traffic and other HTTP clients
-are not intercepted; direct HTTP, an absolute executable path, changing PATH or
-changing the wrapper can bypass the checks. Enforcing a policy on arbitrary
-agent HTTP traffic requires a runner-level egress proxy/firewall; this setup
-does not provide one. CLI builtin commands may internally use GraphQL; only
-direct `gh api graphql` is denied.
+universal outbound network guard**. A stdlib Python `http.client` guard is also
+installed through `PYTHONPATH`: GET/OPTIONS are allowed, while mutations to
+outsider hosts/repositories are denied; denied outsider POSTs are recorded as
+JSON lines in `$RUNNER_TEMP/http-guard.jsonl`. This only covers Python code using
+`http.client`; OpenCode/provider requests, Node, native clients, direct sockets,
+and environment changes can bypass it. A runner-level egress proxy/firewall is
+required to enforce policy on arbitrary agent traffic. CLI builtin commands may
+internally use GraphQL; only direct `gh api graphql` is denied.
 
-Regression tests use a fake backend and never create forbidden PRs. Run
-`python3 -m unittest discover -s scripts -p test_gh_cli_wrapper.py` locally. The
-dispatchable CI workflow also runs the actual setup composite with a fake backend
-and verifies forwarding and historical denial in a later step outside the checkout.
+Regression tests use fake backends and never create forbidden PRs. Run
+`python -m pytest scripts/test_gh_cli_wrapper.py scripts/test_http_guard.py -v`
+locally. The dispatchable wrapper test workflow exercises both test modules; the
+integration test also installs the actual wrapper and verifies forwarding and
+historical denial in a later step outside the checkout.
 
 ## Repository variables
 

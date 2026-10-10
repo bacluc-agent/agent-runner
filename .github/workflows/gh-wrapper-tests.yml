@@ -19,4 +19,4 @@ jobs:
           python-version: "3.x"
 
       - name: Test GitHub CLI wrapper
-        run: python3 -m unittest discover -s scripts -p test_gh_cli_wrapper.py
+        run: python3 -m unittest scripts.test_gh_cli_wrapper scripts.test_http_guard -v
