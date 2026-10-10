@@ -66,7 +66,8 @@ def test_rejects_each_history_rule(rule):
             base = "base-ref"
         status, output = run(path, base)
         assert status == 1, rule
-        assert rule in output, (rule, output)
+        assert rule in output and ": " in output, (rule, output)
+        assert output.strip().splitlines()[0].split(": ", 1)[1], output
     finally:
         temporary.cleanup()
 

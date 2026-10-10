@@ -68,6 +68,15 @@ def check_no_followup(repo: str, base: str, head: str, shas: list[str]) -> list[
 
 
 RULES = (("linear", check_linear), ("fast-forward", check_fast_forward), ("duplicate-patch", check_duplicate_patch), ("already-upstream", check_already_upstream), ("empty", check_empty), ("subject-style", check_subject_style), ("no-followup", check_no_followup))
+DETAILS = {
+    "linear": "merge commits are not allowed; rebase the branch",
+    "fast-forward": "head must descend from base; rebase onto the current base",
+    "duplicate-patch": "patch duplicates an earlier branch commit; remove the duplicate",
+    "already-upstream": "patch is already in the base history; drop the redundant commit",
+    "empty": "commit changes no files; remove the empty commit",
+    "subject-style": "use a conventional type[: scope] subject, at most 72 characters",
+    "no-followup": "fold correction into the original commit instead of adding a follow-up",
+}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -87,7 +96,7 @@ def main(argv: list[str] | None = None) -> int:
         violations = [(rule, sha) for rule, fn in RULES for sha in fn(args.repo, base, args.head, shas)]
         for rule, sha in violations:
             subject = git(args.repo, "show", "-s", "--format=%s", sha)
-            print(f"{rule} {sha[:7]} {subject}")
+            print(f"{rule} {sha[:7]} {subject}: {DETAILS[rule]}")
         return int(bool(violations))
     except (RuntimeError, subprocess.CalledProcessError) as error:
         print(f"check-git-history: {error}", file=sys.stderr)
