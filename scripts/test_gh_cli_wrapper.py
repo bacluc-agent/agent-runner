@@ -54,7 +54,29 @@ def verify_installed():
             assert result.returncode != 0, denied
             assert "gh cli wrapper:" in result.stderr, denied
             assert not log.exists(), denied
+
+        for method in ("GET", "OPTIONS"):
+            result = http_request(env, method, "outsider.example")
+            assert result.returncode == 0, result.stderr
+        for method in ("POST", "PUT", "PATCH", "DELETE"):
+            result = http_request(env, method, "outsider.example")
+            assert result.returncode != 0, method
+            assert "HTTP guard denied" in result.stderr, method
+        for method, path in (("GET", "/repos/bacluc-agent/agent-runner/pulls"),
+                             ("POST", "/repos/bacluc-agent/agent-runner/issues")):
+            result = http_request(env, method, "api.github.com", path)
+            assert result.returncode == 0, result.stderr
+        audit = [json.loads(row) for row in (Path(env["RUNNER_TEMP"]) / "http-guard.jsonl").read_text().splitlines()]
+        assert len(audit) == 1 and audit[0]["method"] == "POST", audit
     print("Installed composite wrapper: forwarding and historical denial passed")
+
+
+def http_request(env, method, host, path="/"):
+    code = ("import http.client; "
+            f"connection = http.client.HTTPConnection({host!r}); "
+            "connection._send_request = lambda *args, **kwargs: None; "
+            f"connection.request({method!r}, {path!r})")
+    return subprocess.run([sys.executable, "-c", code], env=env, capture_output=True, text=True)
 
 
 class CliWrapperTest(unittest.TestCase):
