@@ -52,7 +52,7 @@ def test_clean_branch_and_explicit_range():
 def test_rejects_each_history_rule(rule):
     cases = {
         "linear": lambda path: (git(path, "checkout", "-q", "-b", "side"), commit(path, "feat: side", "side\n"), git(path, "checkout", "-q", "main"), subprocess.run(["git", "-C", str(path), "-c", "user.name=Test", "-c", "user.email=test@example.com", "merge", "--no-ff", "side", "-m", "merge"], check=True, capture_output=True)),
-        "fast-forward": lambda path: (git(path, "branch", "base-ref"), git(path, "checkout", "-q", "-b", "diverged"), commit(path, "feat: side", "side\n"), git(path, "checkout", "-q", "base-ref"), commit(path, "feat: other", "other\n"), git(path, "checkout", "-q", "diverged")), 
+        "fast-forward": lambda path: (git(path, "branch", "base-ref"), git(path, "checkout", "-q", "-b", "diverged"), commit(path, "feat: side", "side\n"), git(path, "checkout", "-q", "base-ref"), commit(path, "feat: other", "other\n"), git(path, "checkout", "-q", "diverged")),
         "duplicate-patch": lambda path: (commit(path, "feat: first", "change\n"), commit(path, "feat: second", "base\n"), commit(path, "fix: repeated", "change\n")),
         "already-upstream": lambda path: (commit(path, "feat: upstream", "upstream\n"), git(path, "branch", "base-ref"), git(path, "reset", "--hard", "HEAD~1"), commit(path, "feat: repeated", "upstream\n")),
         "empty": lambda path: commit(path, "feat: empty"),
