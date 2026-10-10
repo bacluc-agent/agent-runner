@@ -1,0 +1,35 @@
+name: Git history tests
+
+on:
+  push:
+    paths:
+      - .github/workflows/git-history-tests.yml
+      - .github/workflows/opencode.yml
+      - scripts/check_git_history.py
+      - scripts/test_check_git_history.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  git-history:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      - run: uv sync --frozen --group dev
+      - name: Test git-history gate and actionable diagnostics
+        run: uv run pytest -q scripts/test_check_git_history.py scripts/test_gh_cli_wrapper.py
+      - name: Verify coordinator prompt applies the gate
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          prompt = Path(".github/workflows/opencode.yml").read_text()
+          assert "MANDATORY PR HISTORY GATE" in prompt
+          assert "check_git_history.py" in prompt
+          assert "The gh wrapper also enforces this gate" in prompt
+          PY
+      - name: Check changed files with Prettier
+        run: docker run --rm -v "$PWD:/workspace" -w /workspace ghcr.io/bacluc/prettier-image/prettier-image:5.1.0 --check .github/workflows/opencode.yml .github/workflows/git-history-tests.yml AGENTS.md README.md
