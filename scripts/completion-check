@@ -42,6 +42,7 @@ if [[ ! -d .opencode/node_modules/@opencode-ai/plugin ]]; then
 fi
 check 'opencode plugin tests (node --test)' node --test ".opencode/plugin/*.test.mjs"
 check 'opencode tool tests (node --test)' node --test ".opencode/tool/*.test.mjs"
+check 'workspace package tests (npm test)' npm test
 if command -v uv > /dev/null 2>&1; then
   check 'pytest (scripts tests)' uv run --group dev pytest -q
 elif command -v pytest > /dev/null 2>&1; then
