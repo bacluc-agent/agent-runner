@@ -33,7 +33,7 @@ def prepare_backend(directory):
 def verify_installed():
     with tempfile.TemporaryDirectory() as directory:
         env = dict(os.environ, TEST_LOG=str(Path(directory) / "log"), TEST_STATUS="23")
-        argv = ["pr", "create", "-R", "BaClUc-AgEnT/ecamp3", "--body-file", "-"]
+        argv = ["pr", "view", "123", "-R", "BaClUc-AgEnT/ecamp3"]
         result = subprocess.run(["bash", "-c", 'exec gh "$@"', "test", *argv],
                                 cwd=directory, env=env, input="body from stdin",
                                 capture_output=True, text=True)
@@ -63,7 +63,7 @@ class CliWrapperTest(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.directory = Path(self.temp.name)
         self.backend = prepare_backend(self.directory)
-        self.env = dict(os.environ, RUNNER_TEMP=str(self.directory),
+        self.env = dict(os.environ, GITHUB_REPOSITORY="bacluc-agent/agent-runner", RUNNER_TEMP=str(self.directory),
                         GITHUB_PATH=str(self.directory / "path"),
                         PATH=f"{self.backend.parent}:{os.environ['PATH']}",
                         TEST_LOG=str(self.directory / "log"), GH_HOST="github.com")
@@ -122,6 +122,9 @@ class CliWrapperTest(unittest.TestCase):
                       ["--unknown"], ["repos/BacLuc/r/pulls"]):
             self.call(["api", "repos/ecamp/ecamp3/pulls", *flags], False)
         self.call(["api", "repos/BacLuc/r/pulls/", "-X", "POST", "-f", "title=test"])
+        self.call(["api", "repos/outsider/r/issues/1", "-XPATCH", "-f", "title=test"], False)
+        self.call(["api", "repos/outsider/r/issues/1"])
+        self.call(["api", "repos/BacLuc/r/issues/1", "-XPATCH", "-f", "title=test"])
         self.call(["api", "repos/BacLuc/r/contents/", "--jq", ".[].name"])
         self.call(["api", "graphql", "-XGET"], False)
         self.call(["api", "repos/BacLuc/r/pulls", "-f", "body=--hostname=evil.com", "--hostname=github.com"])
@@ -150,16 +153,31 @@ class CliWrapperTest(unittest.TestCase):
         ):
             self.call(argv)
 
+    def test_mutation_commands(self):
+        for command, mutation in (("issue", "create"), ("issue", "comment"), ("issue", "edit"),
+                                  ("repo", "fork"), ("workflow", "run")):
+            self.call([command, mutation, "-R", "outsider/r"], False)
+            self.call([command, mutation, "-R", "BacLuc/r"])
+        for argv in (("issue", "create"), ("issue", "comment", "12"),
+                     ("issue", "edit", "12")):
+            self.call(list(argv), False)
+        self.call(["issue", "list", "-R", "outsider/r"])
+        self.call(["repo", "view", "outsider/r"])
+        self.call(["repo", "edit", "outsider/r"], False)
+        self.call(["workflow", "list", "-R", "outsider/r"])
+        for command, mutation in (("discussion", "create"), ("label", "create"),
+                                  ("release", "create"), ("secret", "set"),
+                                  ("variable", "set"), ("ruleset", "create"),
+                                  ("project", "create")):
+            self.call([command, mutation, "-R", "outsider/r"], False)
+            self.call([command, mutation, "-R", "BacLuc/r"])
+
     def test_other_calls_and_aliases(self):
-        for argv in (["issue", "comment", "234", "-R", "outsider/r", "--body", "pr create"],
-                     ["pr", "view", "10800", "-R", "ecamp/ecamp3"], ["search", "issues", "test"],
-                     ["repo", "fork", "ecamp/ecamp3", "--org", "bacluc-agent"],
+        self.call(["issue", "comment", "234", "-R", "outsider/r", "--body", "pr create"], False)
+        self.call(["repo", "fork", "ecamp/ecamp3", "--org", "bacluc-agent"], False)
+        for argv in (["pr", "view", "10800", "-R", "ecamp/ecamp3"], ["search", "issues", "test"],
                      ["workflow", "run", "ci.yml", "--ref", "issue-234"],
-                     ["api", "repos/ecamp/ecamp3/issues/1/comments", "-fbody=test"],
-                     ["api", "repos/{owner}/{repo}/issues/comments/1", "-XPATCH", "-fbody=test"],
-                     ["api", "repos/ecamp/ecamp3/forks", "-XPOST"],
-                     ["api", "search/issues", "-XGET", "-fq=repo:ecamp/ecamp3"],
-                     ["api", "repos/ecamp/ecamp3/actions/workflows/ci.yml/dispatches", "-fref=main"]):
+                     ["api", "search/issues", "-XGET", "-fq=repo:ecamp/ecamp3"]):
             self.call(argv, TEST_STATUS="17")
         for argv in (["alias", "set", "p", "pr create"], ["extension", "exec", "p"], ["extensions", "exec", "p"],
                      ["custom"], ["--repo=BacLuc/r", "pr", "create"]):

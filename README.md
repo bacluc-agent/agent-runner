@@ -134,17 +134,30 @@ The installer saves the real CLI's absolute path before changing PATH.
   `repos/OWNER/REPO/pulls/N/reverts` is checked the same way.
 - REST PR creation is checked too, including implicit POST via fields or
   `--input`. Ambiguous options, noncanonical paths and routing overrides fail
-  closed. Ordinary REST reads, issue comments, PATCH, forks and dispatches remain
-  available; accepted calls preserve arguments, stdin, output and exit status.
+  closed. REST reads remain available; accepted calls preserve arguments, stdin,
+  output and exit status.
+- Mutating commands for issues, repositories, workflows, discussions, labels,
+  releases, secrets, variables, rulesets, and projects are checked against an
+  owned repository; issue mutations require explicit `-R`/`--repo`. API
+  mutations of outsider repository resources are denied. Reads remain available.
 - Direct `gh api graphql`, configured alias execution, alias management and
   extension commands are denied. Use builtin CLI commands or canonical REST
   endpoints instead. Unknown builtin commands/options on guarded routes require
   review before adding support; this is not a complete CLI parser.
 
-This is an accidental-misrouting guardrail, **not a sandbox or universal PR
-prevention**. An absolute executable path, direct HTTP, changing PATH or changing
-the wrapper can bypass it. CLI builtin commands may internally use GraphQL;
-only direct `gh api graphql` is denied.
+`scripts/http_guard.py` provides a stdlib request-policy gate for outbound HTTP
+clients that call `check_request(method, url)` before sending. It allows GET and
+OPTIONS to outsider hosts, denies other methods, and records denied POSTs as
+JSON Lines in `$RUNNER_TEMP/http-guard-denials.jsonl`. This is not a kernel
+firewall or transparent interception: applications that do not call the gate
+(or use direct sockets) can bypass it, and it does not inspect encrypted proxy
+traffic. The repository's existing setup does not provide transparent TLS
+mediation, so this guard must not be treated as a sandbox.
+
+The `gh` wrapper is likewise an accidental-misrouting guardrail, **not a
+sandbox or universal PR prevention**. An absolute executable path, direct HTTP,
+changing PATH or changing the wrapper can bypass it. CLI builtin commands may
+internally use GraphQL; only direct `gh api graphql` is denied.
 
 Regression tests use a fake backend and never create forbidden PRs. Run
 `python3 -m unittest discover -s scripts -p test_gh_cli_wrapper.py` locally. The

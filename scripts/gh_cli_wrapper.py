@@ -97,6 +97,63 @@ def validate_revert(prefix, args):
         deny("PR revert requires an explicit -R/--repo destination or a github.com PR URL")
 
 
+MUTATIONS = {
+    "issue": {"create", "comment", "edit", "close", "reopen", "lock", "unlock", "transfer"},
+    "repo": {"fork", "create", "edit", "delete", "archive", "unarchive", "rename", "sync"},
+    "workflow": {"run", "enable", "disable"},
+    "discussion": {"create", "comment", "edit", "close", "reopen", "lock", "unlock", "transfer"},
+    "label": {"create", "edit", "delete"},
+    "release": {"create", "edit", "delete", "upload", "delete-asset"},
+    "secret": {"set", "delete"},
+    "variable": {"set", "delete"},
+    "ruleset": {"create", "update", "delete"},
+    "project": {"create", "edit", "close", "delete", "item-add", "item-create", "item-delete",
+                "item-edit", "item-archive", "item-unarchive", "field-create", "field-delete", "link"},
+}
+
+
+def validate_mutation(command, args):
+    if not args or args[0] not in MUTATIONS.get(command, set()):
+        return
+    subcommand = args[0]
+    repositories = []
+    positionals = []
+    index = 1
+    while index < len(args):
+        arg = args[index]
+        if arg in {"-R", "--repo"}:
+            index += 1
+            if index == len(args):
+                deny("missing repository")
+            repositories.append(args[index])
+        elif arg.startswith("--repo="):
+            repositories.append(arg.partition("=")[2])
+        elif arg.startswith("-R") and len(arg) > 2:
+            repositories.append(arg[2:].removeprefix("="))
+        elif not arg.startswith("-"):
+            positionals.append(arg)
+        index += 1
+    if len(repositories) > 1:
+        deny("mutations require one unambiguous repository")
+    repo = repositories[0] if repositories else None
+    if command == "issue":
+        if repo is None:
+            deny("issue mutations require an explicit -R/--repo destination")
+    elif command == "repo" and repo is None:
+        if subcommand == "create":
+            owner = next((args[index + 1] for index, value in enumerate(args[:-1]) if value == "--org"),
+                         os.environ.get("GITHUB_REPOSITORY", "").split("/", 1)[0])
+            name = positionals[0] if positionals else ""
+            repo = f"{owner}/{name}" if owner and name else None
+        else:
+            repo = positionals[0] if positionals else os.environ.get("GITHUB_REPOSITORY")
+    elif repo is None:
+        repo = os.environ.get("GITHUB_REPOSITORY")
+    if not repo:
+        deny(f"{command} {subcommand} requires an explicit repository destination")
+    owned_repo(repo)
+
+
 def validate_api(args):
     values = {key: key for key in ("--cache", "-q", "--jq", "-p", "--preview", "-t", "--template")}
     for name, flags in {
@@ -138,6 +195,8 @@ def validate_api(args):
         if query:
             deny("put mutation parameters in fields, not the endpoint URL")
         parts = path.split("/")
+        if len(parts) >= 3 and parts[0].lower() == "repos":
+            owned_repo("/".join(parts[1:3]))
         if parts[-1].lower() == "pulls":
             if len(parts) != 4 or parts[0] != "repos" or parts[3] != "pulls":
                 deny("PR creation requires the canonical repos/OWNER/REPO/pulls endpoint")
@@ -155,7 +214,7 @@ def main():
     args = sys.argv[1:]
     if not args or args[0] not in {
         "api", "auth", "browse", "cache", "codespace", "completion", "config", "gist", "gpg-key",
-        "help", "issue", "label", "org", "pr", "project", "release", "repo", "ruleset", "run",
+        "discussion", "help", "issue", "label", "org", "pr", "project", "release", "repo", "ruleset", "run",
         "search", "secret", "ssh-key", "status", "variable", "workflow", "version", "--version", "--help",
     }:
         deny("only builtin commands are supported; aliases and extensions are disabled")
@@ -170,6 +229,8 @@ def main():
         validate_pr(args[1:])
     elif args[0] == "api":
         validate_api(args[1:])
+    else:
+        validate_mutation(args[0], args[1:])
     os.execv(backend, [backend, *args])
 
 
