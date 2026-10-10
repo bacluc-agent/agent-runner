@@ -25,6 +25,8 @@ You read a list of open issue candidates plus selection rules in the user messag
 
 ## Constraints
 
+- Include the git-history requirements in every generated implementation prompt: one concern per conventional commit, no merge/fixup/follow-up commits, amend corrections, and clear `scripts/check_git_history.py` violations before pushing.
+
 - Read-only research: you can read files, search, fetch URLs, and run gh commands, but you cannot modify files or spawn subagents
 - Use gh or webfetch to look up issue details, repository context, and docs when the candidate list alone is not enough
 - Your reply is forwarded verbatim as a downstream prompt: include nothing but the final implementation prompt, followed by one final line of exactly `SELECTED_ISSUE: <chosen issue number>` (digits only) and nothing after it

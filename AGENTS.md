@@ -15,6 +15,10 @@ For any repository not owned by `BacLuc` or `bacluc-agent`, this policy takes ab
 
 Push a branch and open a pull request only when the task changes code, and record the branch name on the target issue; a task that changes no code (a report or analysis, or any other no-code-change task) delivers its result as a comment on the target issue, pushing no branch and opening no pull request. This overrides the out-of-repo build-agent defaults "Commit and push every change" and "Open or update the PR". When the run has no target issue, report the result in the run's own output instead.
 
+## Git history
+
+Before every push in any repository, run `python3 scripts/check_git_history.py --base <base> --head <branch> --repo <repo>` where available, or follow the same rules when that checkout does not contain the gate. Runner-pushed branches are checked mechanically before a pull request opens. Keep history linear and rebased on the base; use one concern per commit with conventional-commit subjects of at most 72 characters; avoid empty, duplicate, already-upstream, merge, fixup, follow-up, and automated fallback commits. Land refactors green before behavior changes, amend the commit being corrected, and do not use catch-all staging commits.
+
 ## Testing
 
 ALL PULL REQUEST DESCRIPTIONS HAVE TO CONTAIN LINKS TO ACTION RUNS WITH THE PROBLEMS THEY FIX IF THEY FIX A BUG.

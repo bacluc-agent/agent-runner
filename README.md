@@ -44,6 +44,7 @@ anything.
    structured progress comment on the issue. When the work changes code, the
    coordinator pushes the work to its own branch; the workflow pushes
    `agent-run/<issue-number>-<run-id>` only as a fallback for uncommitted work.
+   Every pushed branch passes the git-history gate before a pull request opens.
 5. **A pull request is opened, when code changed.** The coordinator agent opens
    the pull request itself. Its description links the GitHub Actions runs that
    prove the change works.
@@ -106,6 +107,7 @@ dispatching when no allowed model is available.
 ### Scripts
 
 - `completion-check` — runs all quality checks (see below).
+- `check_git_history.py` — rejects pushed branches with non-linear, duplicate, empty, malformed, or follow-up commits.
 - `validate_refined_issue.py` — checks that a refined issue body has exactly
   the two required sections and at most 4000 visible characters before any
   `<details>` fold (reason `too_long`); extra detail goes into a

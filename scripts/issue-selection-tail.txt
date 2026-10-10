@@ -2,6 +2,7 @@ Choose ONE issue for one automated agent run.
 Each candidate line is "number: title [labels] [created] [PR: none|open|merged|closed #<n> last-commit:<ts>] [last-human-feedback:<ts|none>] | body-excerpt [attempts: N] [tier: T]"; use its details to assess the chosen task.
 Candidate order is random and carries no priority.
 The supplied list is already filtered to one tier; do not rerank, extend, or de-prioritize it. Choose the strongest argument regardless of difficulty. A task needing no code change is delivered as a comment on the target issue with no branch and no PR.
+Git history: use one concern per commit; land the refactor commit green before the behavior commit; amend a commit instead of adding a follow-up fix; do not create merge commits or a catch-all `git add -A` commit; clear every git-history gate violation before pushing.
 Reply with ONLY the final implementation prompt for the chosen issue.
 End with the exact final line: SELECTED_ISSUE: <number>
 Use digits only for the issue number. No text may follow that line.
