@@ -48,6 +48,14 @@ def test_clean_branch_and_explicit_range():
         temporary.cleanup()
 
 
+def test_clean_branch_with_no_commits_is_fast_forward():
+    temporary, path, base = repo()
+    try:
+        assert run(path, base) == (0, "")
+    finally:
+        temporary.cleanup()
+
+
 @pytest.mark.parametrize("rule", ["linear", "fast-forward", "duplicate-patch", "already-upstream", "empty", "subject-style", "no-followup"])
 def test_rejects_each_history_rule(rule):
     cases = {
