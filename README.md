@@ -135,7 +135,8 @@ The installer saves the real CLI's absolute path before changing PATH.
   `bacluc-agent`; implicit destinations fail closed. The REST revert endpoint
   `repos/OWNER/REPO/pulls/N/reverts` is checked the same way.
 - REST PR creation is checked too, including implicit POST via fields or
-  `--input`. Ambiguous options, noncanonical paths and routing overrides fail
+  `--input`. PR creation runs the local git-history gate before forwarding to
+  GitHub. Ambiguous options, noncanonical paths and routing overrides fail
   closed. Ordinary REST reads, issue comments, PATCH, forks and dispatches remain
   available; accepted calls preserve arguments, stdin, output and exit status.
 - Direct `gh api graphql`, configured alias execution, alias management and

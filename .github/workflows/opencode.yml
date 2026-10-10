@@ -450,7 +450,7 @@ jobs:
           rm -f "$RUNNER_TEMP/opencode-fatal.json"
 
           coordinator_session_title='coordinator-run'
-          PROMPT=$(printf 'model: %s \n%s\n\n%s' "$MODEL" "$PROMPT" "$(cat "$RUNNER_TEMP/agent-runner/scripts/progress-reporting.txt")")
+          PROMPT=$(printf 'model: %s \n%s\n\n%s\n\n%s' "$MODEL" "$PROMPT" "$(cat "$RUNNER_TEMP/agent-runner/scripts/progress-reporting.txt")" "MANDATORY PR HISTORY GATE: Before creating or updating any pull request, run python3 \"$RUNNER_TEMP/agent-runner/scripts/check_git_history.py\" --repo <local-repository> --head HEAD for every local checkout whose branch will be proposed. Fix all violations and rerun until clean before invoking gh pr create or any PR-creation API. The gh wrapper also enforces this gate. Never open the PR first and rely on a later check.")
           stop_token="$(openssl rand -hex 32)"
           : "${stop_token:?stop-commands fence token generation failed}"
           printf '::stop-commands::%s\n' "$stop_token"

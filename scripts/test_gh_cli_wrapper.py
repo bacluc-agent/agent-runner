@@ -104,6 +104,32 @@ class CliWrapperTest(unittest.TestCase):
         self.call(["pr", "-RBacLuc/r", "create", "--body=-Rbad/r"])
         self.call(["pr", "create", "-RBacLuc/r"], False, GH_HOST="evil.com")
 
+    def test_creation_requires_clean_history_when_gate_is_installed(self):
+        gate = self.directory / "agent-runner" / "scripts" / "check_git_history.py"
+        gate.parent.mkdir(parents=True)
+        gate.write_text("import sys\nprint('no-followup deadbee agent-run: automated commit')\nsys.exit(1)\n")
+        result = subprocess.run(
+            ["bash", "-c", "exec gh pr create -R bacluc-agent/repo --title test --body test"],
+            cwd="/tmp",
+            env=self.env,
+            capture_output=True,
+            text=True,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("no-followup deadbee", result.stderr)
+        self.assertIn("git-history gate failed", result.stderr)
+        self.assertFalse(Path(self.env["TEST_LOG"]).exists())
+        result = subprocess.run(
+            ["bash", "-c", "exec gh api repos/bacLuc-agent/repo/pulls -X POST -f title=test"],
+            cwd="/tmp",
+            env=self.env,
+            capture_output=True,
+            text=True,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("git-history gate failed", result.stderr)
+        self.assertFalse(Path(self.env["TEST_LOG"]).exists())
+
     def test_api(self):
         for endpoint in ("repos/ecamp/ecamp3/pulls", "/repos/ecamp/ecamp3/pulls", "https://api.github.com/repos/ecamp/ecamp3/pulls"):
             for flags in (["-X", "POST"], ["--method=POST"], ["-XPOST"], ["-f", "title=test"], ["-Ftitle=test"], ["--input", "-"]):

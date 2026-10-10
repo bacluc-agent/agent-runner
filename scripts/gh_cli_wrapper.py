@@ -97,6 +97,21 @@ def validate_revert(prefix, args):
         deny("PR revert requires an explicit -R/--repo destination or a github.com PR URL")
 
 
+def check_history_before_pr():
+    history_check = Path(__file__).resolve().parent.parent / "agent-runner" / "scripts" / "check_git_history.py"
+    if not history_check.is_file():
+        return
+    result = subprocess.run(
+        [sys.executable, str(history_check), "--repo", os.getcwd(), "--head", "HEAD"],
+        capture_output=True,
+        text=True,
+    )
+    if result.stdout:
+        print(result.stdout, end="", file=sys.stderr)
+    if result.returncode:
+        deny("git-history gate failed; resolve violations before opening a pull request")
+
+
 def validate_api(args):
     values = {key: key for key in ("--cache", "-q", "--jq", "-p", "--preview", "-t", "--template")}
     for name, flags in {
@@ -128,6 +143,7 @@ def validate_api(args):
         endpoint = endpoint.removeprefix("/")
     path, query, _ = endpoint.partition("?")
     path = path.rstrip("/")
+    creates_pr = False
     if path.lower() == "graphql":
         deny("direct GraphQL is disabled; use guarded gh pr create -R or REST instead")
     if not re.fullmatch(r"[A-Za-z0-9_{}.-]+(?:/[A-Za-z0-9_{}.-]+)*", path) or any(
@@ -142,10 +158,12 @@ def validate_api(args):
             if len(parts) != 4 or parts[0] != "repos" or parts[3] != "pulls":
                 deny("PR creation requires the canonical repos/OWNER/REPO/pulls endpoint")
             owned_repo("/".join(parts[1:3]))
+            creates_pr = True
         elif parts[-1].lower() == "reverts":
             if len(parts) != 6 or parts[0] != "repos" or parts[3].lower() != "pulls":
                 deny("PR revert requires the canonical repos/OWNER/REPO/pulls/N/reverts endpoint")
             owned_repo("/".join(parts[1:3]))
+    return creates_pr
 
 
 def main():
@@ -168,8 +186,11 @@ def main():
         deny("only github.com is supported")
     if args[0] == "pr":
         validate_pr(args[1:])
+        if len(args) > 1 and args[1] in {"create", "new"}:
+            check_history_before_pr()
     elif args[0] == "api":
-        validate_api(args[1:])
+        if validate_api(args[1:]):
+            check_history_before_pr()
     os.execv(backend, [backend, *args])
 
 
