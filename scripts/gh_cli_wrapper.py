@@ -195,8 +195,9 @@ def validate_api(args):
         if query:
             deny("put mutation parameters in fields, not the endpoint URL")
         parts = path.split("/")
-        if len(parts) >= 3 and parts[0].lower() == "repos":
-            owned_repo("/".join(parts[1:3]))
+        if len(parts) < 3 or parts[0].lower() != "repos":
+            deny("mutating API calls require a canonical repos/OWNER/REPO endpoint")
+        owned_repo("/".join(parts[1:3]))
         if parts[-1].lower() == "pulls":
             if len(parts) != 4 or parts[0] != "repos" or parts[3] != "pulls":
                 deny("PR creation requires the canonical repos/OWNER/REPO/pulls endpoint")
