@@ -603,6 +603,27 @@ jobs:
           fi
           printf '::%s::\n' "$stop_token"
 
+      - name: Check pushed git history
+        if: always() && steps.target-issue.outputs.issue_number != '' && steps.push-work.outputs.pushed_repos != ''
+        shell: bash
+        env:
+          PUSHED_REPOS: ${{ steps.push-work.outputs.pushed_repos }}
+          BRANCH: ${{ steps.push-work.outputs.branch_name }}
+        run: |
+          set -Eeuo pipefail
+          while IFS= read -r entry; do
+            repo_dir="${entry% (*}"
+            output_file="$(mktemp)"
+            if ! python3 "$RUNNER_TEMP/agent-runner/scripts/check_git_history.py" --repo "$repo_dir" --head "$BRANCH" >"$output_file"; then
+              while IFS= read -r violation; do
+                [[ -z "$violation" ]] || printf '::error::%s\n' "$violation"
+              done < "$output_file"
+              rm -f "$output_file"
+              exit 1
+            fi
+            rm -f "$output_file"
+          done <<< "$PUSHED_REPOS"
+
       - name: Emit loop-termination metrics
         if: always()
         id: loop-metrics
