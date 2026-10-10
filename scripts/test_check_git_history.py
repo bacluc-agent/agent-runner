@@ -2,6 +2,8 @@ import subprocess
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+import pytest
+
 from check_git_history import main
 
 
@@ -46,7 +48,8 @@ def test_clean_branch_and_explicit_range():
         temporary.cleanup()
 
 
-def test_rejects_each_history_rule():
+@pytest.mark.parametrize("rule", ["linear", "fast-forward", "duplicate-patch", "already-upstream", "empty", "subject-style", "no-followup"])
+def test_rejects_each_history_rule(rule):
     cases = {
         "linear": lambda path: (git(path, "checkout", "-q", "-b", "side"), commit(path, "feat: side", "side\n"), git(path, "checkout", "-q", "main"), subprocess.run(["git", "-C", str(path), "-c", "user.name=Test", "-c", "user.email=test@example.com", "merge", "--no-ff", "side", "-m", "merge"], check=True, capture_output=True)),
         "fast-forward": lambda path: (git(path, "branch", "base-ref"), git(path, "checkout", "-q", "-b", "diverged"), commit(path, "feat: side", "side\n"), git(path, "checkout", "-q", "base-ref"), commit(path, "feat: other", "other\n"), git(path, "checkout", "-q", "diverged")), 
@@ -56,17 +59,16 @@ def test_rejects_each_history_rule():
         "subject-style": lambda path: commit(path, "bad subject", "change\n"),
         "no-followup": lambda path: commit(path, "fix: address review", "change\n"),
     }
-    for rule, make_bad in cases.items():
-        temporary, path, base = repo()
-        try:
-            make_bad(path)
-            if rule in {"already-upstream", "fast-forward"}:
-                base = "base-ref"
-            status, output = run(path, base)
-            assert status == 1, rule
-            assert rule in output, (rule, output)
-        finally:
-            temporary.cleanup()
+    temporary, path, base = repo()
+    try:
+        cases[rule](path)
+        if rule in {"already-upstream", "fast-forward"}:
+            base = "base-ref"
+        status, output = run(path, base)
+        assert status == 1, rule
+        assert rule in output, (rule, output)
+    finally:
+        temporary.cleanup()
 
 
 def test_rejects_fallback_automated_commit_subject():
