@@ -1301,55 +1301,73 @@ class TestRefineIssuesNoCandidates:
             "(( refined > 0 )) || exit 1"
         )
 
-    def test_refinement_candidate_filtering_preserves_unrefined_first_and_skips_their_comments(self, tmp_path):
+
+class TestRefineIssuesComments:
+    WORKFLOW = Path(__file__).parents[3] / ".github/workflows/refine-issues.yml"
+
+    def test_refinement_marker_machinery_is_gone(self):
         content = self.WORKFLOW.read_text()
-        assert 'is:open+is:issue+label:agent-refined+-label:ready-for-implementation+-label:agent-ignore+sort:updated-desc&per_page=10' in content
-        start = content.index('          candidates="$RUNNER_TEMP/candidate-numbers.txt"')
-        end = content.index('          if [[ ! -s "$candidates" ]]; then', start)
+        assert "<!-- agent-refined:" not in content
+        assert "$refined_at" not in content
+        assert "sed '/<!-- agent-refined" not in content
+        assert "This is a prior refinement" not in content
+
+    def test_comment_filter_contract(self):
+        content = self.WORKFLOW.read_text()
+        assert 'select(.user.type != "Bot")' in content
+        assert 'select(.user.login != "bacluc-agent")' in content
+        assert 'contains("<!-- agent-progress -->") | not' in content
+
+    def test_relabel_after_validation_is_preserved(self):
+        content = self.WORKFLOW.read_text()
+        validation = content.index("if (( validation_status == 0 )); then")
+        relabel = content.index('gh issue edit "$number" --add-label "agent-refined"')
+        assert validation < relabel
+
+    def test_prompt_includes_filtered_human_comments(self, tmp_path):
+        content = self.WORKFLOW.read_text()
+        start = content.index("while IFS= read -r number; do")
+        end = content.index('} > "$prompt"', start) + len('} > "$prompt"')
         block = content[start:end]
-        assert block.count('while IFS= read -r number; do') == 1
+        candidates = tmp_path / "candidate-numbers.txt"
+        candidates.write_text("11\n")
         fake_gh = tmp_path / "gh"
-        fake_gh.write_text('''#!/usr/bin/env python3
+        fake_gh.write_text(
+            """#!/usr/bin/env python3
 import json, sys
 args = sys.argv[1:]
-if args[0] == "api" and any(arg.startswith("search/issues?") for arg in args):
-    query = next(arg for arg in args if arg.startswith("search/issues?"))
-    issues = [11] if "sort:created-asc" in query else [22, 33]
-    print(json.dumps([{"number": number} for number in issues]))
+if args[0] == "issue":
+    number = args[2]
+    field = args[args.index("--json") + 1]
+    print(f"Title of {number}" if field == "title" else f"Body of {number}")
 elif args[0] == "api":
-    endpoint = next(arg for arg in args if arg.startswith("repos/"))
-    number = int(endpoint.split("/")[4])
-    comments = {22: [{"user":{"type":"User"},"body":"new feedback","created_at":"2026-02-02T00:00:00Z"}], 33: [{"user":{"type":"Bot"},"body":"bot","created_at":"2026-02-03T00:00:00Z"},{"user":{"type":"User"},"body":"<!-- agent-progress -->","created_at":"2026-02-04T00:00:00Z"},{"user":{"type":"User"},"body":"old","created_at":"2026-02-01T00:00:00Z"}]}
-    print(json.dumps([comments.get(number, [])]))
-elif args[0] == "issue":
-    print("2026-02-01T00:00:00Z" if args[2] == "22" else "2026-02-05T00:00:00Z")
-''')
+    print(json.dumps([[{"user": {"type": "User", "login": "human"}, "body": "please add tests", "created_at": "2026-02-02T00:00:00Z"}, {"user": {"type": "User", "login": "bacluc-agent"}, "body": "progress note", "created_at": "2026-02-03T00:00:00Z"}, {"user": {"type": "Bot", "login": "github-actions[bot]"}, "body": "bot comment", "created_at": "2026-02-04T00:00:00Z"}, {"user": {"type": "User", "login": "human"}, "body": "<!-- agent-progress -->\\nprogress", "created_at": "2026-02-05T00:00:00Z"}]]))
+"""
+        )
         fake_gh.chmod(0o755)
+        script = (
+            f"ISSUE_REPOSITORY=example/issues\n"
+            f"RUNNER_TEMP={str(tmp_path)!r}\n"
+            f"PATH={str(tmp_path)!r}:$PATH\n"
+            f"candidates={str(candidates)!r}\n"
+            f"{block}\n"
+            'done < "$candidates"\n'
+            'cat "$prompt"\n'
+        )
         result = subprocess.run(
-            ["bash", "-Eeuo", "pipefail", "-c", f"ISSUE_REPOSITORY=example/issues\nRUNNER_TEMP={str(tmp_path)!r}\nPATH={str(tmp_path)!r}:$PATH\n{block}cat \"$candidates\""],
+            ["bash", "-Eeuo", "pipefail", "-c", script],
             capture_output=True,
             text=True,
         )
         assert result.returncode == 0, result.stderr
-        assert result.stdout.rstrip().splitlines() == ["11", "22"]
-        assert len(list(tmp_path.glob("all-comments-*.json"))) == 2
-
-    def test_refined_issue_filter_excludes_bots_progress_and_old_comments(self):
-        content = self.WORKFLOW.read_text()
-        assert content.count('gh api --paginate --slurp "repos/$ISSUE_REPOSITORY/issues/$number/comments?per_page=100"') == 1
-        assert 'select(.user.type != "Bot")' in content
-        assert 'contains("<!-- agent-progress -->") | not' in content
-        assert "select(.created_at > $refined_at)" in content
-
-    def test_refinement_marker_is_written_after_validation_and_removed_from_prompt(self):
-        content = self.WORKFLOW.read_text()
-        validation = content.index("if (( validation_status == 0 )); then")
-        marker_write = content.index("printf '\\n\\n<!-- agent-refined: %s -->\\n'")
-        issue_edit = content.index('gh issue edit "$number" --body-file "$out"')
-        prompt_body = content[content.index('body="$(gh issue view'):content.index('prompt="$RUNNER_TEMP/refine-prompt.txt"')]
-        assert validation < marker_write < issue_edit
-        assert "sed '/<!-- agent-refined: [^ ]* -->/d'" in prompt_body
-        assert "This is a prior refinement; the newest comments are new feedback" in content
+        assert (
+            "Reviewer comments (feedback to fold into the Goal and steps; do not quote them wholesale):"
+            in result.stdout
+        )
+        assert "please add tests" in result.stdout
+        assert "progress note" not in result.stdout
+        assert "bot comment" not in result.stdout
+        assert "agent-progress" not in result.stdout
 
 
 class TestWorkflowOpenRouterSelection:
