@@ -16,15 +16,18 @@ def test_first_time_candidate_search_preserves_the_five_issue_limit():
     assert "per_page=5" in candidate_search
 
 
-def test_refined_candidates_are_paginated_and_deduplicated_with_first_time_candidates():
+def test_refined_candidates_are_scanned_in_bounded_fair_windows():
     workflow = WORKFLOW.read_text()
-    refined_search = next(
-        line for line in workflow.splitlines() if "+label:agent-refined" in line
-    )
 
-    assert "--paginate --slurp" in refined_search
-    assert "+-label:agent-ignore" in refined_search
+    assert "repos/$ISSUE_REPOSITORY/issues?state=open&labels=agent-refined" in workflow
+    assert "--include \"$refined_query&page=1\"" in workflow
+    assert 'rel="last"' in workflow
+    assert "scan_window=20" in workflow
+    assert "GITHUB_RUN_NUMBER % scan_windows" in workflow
+    assert "page=$page" in workflow
     assert "unique_by(.number)" in workflow
+    assert "select(.pull_request == null)" in workflow
+    assert 'index(\\"agent-ignore\\") == null' in workflow
 
 
 def test_refined_candidates_require_new_filtered_human_comments():

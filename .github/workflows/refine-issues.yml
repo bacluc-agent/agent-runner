@@ -75,13 +75,20 @@ jobs:
           search_json="$RUNNER_TEMP/candidates.json"
           gh api "search/issues?q=repo:${ISSUE_REPOSITORY}+is:open+is:issue+-label:agent-refined+-label:agent-ignore+sort:created-asc&per_page=5" \
             --jq '.items' > "$search_json"
-          refined_search_json="$RUNNER_TEMP/refined-candidates.json"
-          gh api --paginate --slurp "search/issues?q=repo:${ISSUE_REPOSITORY}+is:open+is:issue+label:agent-refined+-label:agent-ignore+sort:created-asc&per_page=100" \
-            > "$refined_search_json"
+          refined_query="repos/$ISSUE_REPOSITORY/issues?state=open&labels=agent-refined&per_page=100&sort=updated&direction=asc"
+          first_page="$(gh api --include "$refined_query&page=1")"
+          page_count="$(printf '%s\n' "$first_page" | sed -nE 's/.*[?&]page=([0-9]+)>; rel="last".*/\1/p' | head -n1)"
+          page_count="${page_count:-1}"
+          scan_window=20
+          scan_windows=$(( page_count * 5 ))
+          scan_index=$(( GITHUB_RUN_NUMBER % scan_windows ))
+          page=$(( scan_index / 5 + 1 ))
+          page_offset=$(( scan_index % 5 * scan_window ))
+          gh api "$refined_query&page=$page" --jq ".[$page_offset:$((page_offset + scan_window))] | [.[] | select(.pull_request == null) | select([.labels[].name] | index(\"agent-ignore\") == null)]" > "$RUNNER_TEMP/refined-candidates.json"
 
           issues="$RUNNER_TEMP/open-issues.json"
-          jq -n --slurpfile first "$search_json" --slurpfile refined "$refined_search_json" \
-            '$first[0] + [$refined[0][].items[]] | unique_by(.number) | sort_by(.created_at)' > "$issues"
+          jq -n --slurpfile first "$search_json" --slurpfile refined "$RUNNER_TEMP/refined-candidates.json" \
+            '$first[0] + $refined[0] | unique_by(.number) | sort_by(.created_at)' > "$issues"
           candidates="$RUNNER_TEMP/candidate-numbers.txt"
           : > "$candidates"
           while IFS=$'\t' read -r number refined; do
