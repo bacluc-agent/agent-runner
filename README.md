@@ -128,6 +128,15 @@ The installer saves the real CLI's absolute path before changing PATH.
   targeting `BacLuc`, `bacluc-agent` or `bacluc-agent-org` (case-insensitive) on
   github.com. For outsider repositories, create the fork and a branch representing
   upstream main, then open the PR with `-R bacluc-agent/<repo>` against that branch.
+- Under the nono sandbox GraphQL is denied, so the wrapper translates
+  `gh pr create`/`gh pr new` to REST `POST /repos/OWNER/REPO/pulls`. Supported
+  options: `-R/--repo`, `-t/--title`, `-b/--body`, `-F/--body-file`,
+  `-B/--base`, `-H/--head`, `-d/--draft`; `--title`, `--head` and `--base` are
+  required because GraphQL inference is unavailable, and any unmapped option
+  fails closed.
+- Known gaps: `gh project` mutations with `--owner` are not owner-checked
+  (GraphQL-only; the token cannot reach outsider orgs), and a `gh cache delete`
+  key containing `/` is a fail-closed false positive.
 - `gh pr revert` requires exactly one PR number or github.com PR URL and an
   explicit `-R`/`--repo` (or a URL selector) targeting one of those owned owners;
   implicit destinations fail closed. The REST revert endpoint
@@ -149,8 +158,11 @@ The installer saves the real CLI's absolute path before changing PATH.
 
 This is an accidental-misrouting guardrail, **not a sandbox or universal PR
 prevention**. An absolute executable path, direct HTTP, changing PATH or changing
-the wrapper can bypass it. CLI builtin commands may internally use GraphQL;
-only direct `gh api graphql` is denied.
+the wrapper can bypass it. Under the nono sandbox GraphQL is denied, so the
+wrapper translates `gh pr create`/`gh pr new` to REST
+`POST /repos/OWNER/REPO/pulls`; other GraphQL-based builtins (`gh issue view`,
+`gh pr view`/`gh pr list`, `gh repo view`, `gh run list`, `gh search`) fail with
+HTTP 403 inside the sandbox — use `gh api` REST endpoints instead.
 
 ## OpenCode network sandbox
 
@@ -189,10 +201,12 @@ Agents start OpenCode through `scripts/run-agent-sandboxed.sh`, which requires
 opencode "$@"`.
 
 This kernel sandbox complements, but does not replace, the `gh` wrapper above.
-The wrapper remains in place for its CLI-specific safeguards. `scripts/http_guard.py`
-is an advisory, importable policy helper (`check_request`) for callers that want
-to pre-screen a request and log denials; nono is the enforcement boundary, so the
-helper is intentionally not wired into the wrapper installer.
+The wrapper directory is granted read+execute in the nono profile at setup time,
+so the wrapper is reachable inside the sandbox and translates PR creation.
+`scripts/http_guard.py` remains an advisory, importable policy helper
+(`check_request`) for callers that want to pre-screen a request and log denials;
+nono is the enforcement boundary, so the helper is intentionally not wired into
+the wrapper installer (defense-in-depth, not the boundary).
 
 Regression tests use a fake backend and never create forbidden PRs. Run
 `python3 -m unittest discover -s scripts -p test_gh_cli_wrapper.py` and
