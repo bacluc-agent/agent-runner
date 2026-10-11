@@ -11,6 +11,7 @@
     "allow": [
       "$HOME/.local/share/opencode",
       "$HOME/.local/state/opencode",
+      "$HOME/.npm",
       "$TMPDIR/opencode-db"
     ],
     "read": ["$HOME/.config/opencode"],
@@ -134,6 +135,7 @@
       "chatgpt.com",
       "auth.openai.com",
       "models.dev",
+      "models.opencode.ai",
       "api.search.brave.com"
     ]
   }
