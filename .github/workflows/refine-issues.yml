@@ -75,38 +75,14 @@ jobs:
           search_json="$RUNNER_TEMP/candidates.json"
           gh api "search/issues?q=repo:${ISSUE_REPOSITORY}+is:open+is:issue+-label:agent-refined+-label:agent-ignore+sort:created-asc&per_page=5" \
             --jq '.items' > "$search_json"
-          refined_query="repos/$ISSUE_REPOSITORY/issues?state=open&labels=agent-refined&per_page=100&sort=updated&direction=asc"
-          first_page="$(gh api --include "$refined_query&page=1")"
-          page_count="$(printf '%s\n' "$first_page" | sed -nE 's/.*[?&]page=([0-9]+)>; rel="last".*/\1/p' | head -n1)"
-          page_count="${page_count:-1}"
-          scan_window=20
-          scan_windows=$(( page_count * 5 ))
-          scan_index=$(( GITHUB_RUN_NUMBER % scan_windows ))
-          page=$(( scan_index / 5 + 1 ))
-          page_offset=$(( scan_index % 5 * scan_window ))
-          gh api "$refined_query&page=$page" --jq ".[$page_offset:$((page_offset + scan_window))] | [.[] | select(.pull_request == null) | select([.labels[].name] | index(\"agent-ignore\") == null)]" > "$RUNNER_TEMP/refined-candidates.json"
-
-          issues="$RUNNER_TEMP/open-issues.json"
-          jq -n --slurpfile first "$search_json" --slurpfile refined "$RUNNER_TEMP/refined-candidates.json" \
-            '$first[0] + $refined[0] | unique_by(.number) | sort_by(.created_at)' > "$issues"
           candidates="$RUNNER_TEMP/candidate-numbers.txt"
           : > "$candidates"
-          while IFS=$'\t' read -r number refined; do
-            body_file="$RUNNER_TEMP/body-${number}.txt"
+          while IFS= read -r number; do
             comments_file="$RUNNER_TEMP/comments-${number}.json"
-            gh issue view "$number" -R "$ISSUE_REPOSITORY" --json body --jq '.body' > "$body_file" || { echo "::warning::skip $number: view body failed" >&2; continue; }
             gh api --paginate --slurp "repos/$ISSUE_REPOSITORY/issues/$number/comments?per_page=100" > "$RUNNER_TEMP/all-comments-${number}.json" || { echo "::warning::skip $number: fetch comments failed" >&2; continue; }
             jq 'add | map(select(.user.type != "Bot") | select(.user.login != "bacluc-agent") | select((.body // "") | contains("<!-- agent-progress -->") | not))' "$RUNNER_TEMP/all-comments-${number}.json" > "$comments_file"
-            marker="$(sed -nE 's/.*<!-- agent-refined-through:([^ ]+) -->.*/\1/p' "$body_file" | tail -n1)"
-            if [[ "$refined" == true ]]; then
-              if [[ -n "$marker" ]]; then
-                jq --arg marker "$marker" '[.[] | select(.created_at > $marker)]' "$comments_file" > "$comments_file.new"
-                mv "$comments_file.new" "$comments_file"
-              fi
-              [[ "$(jq 'length' "$comments_file")" -gt 0 ]] || continue
-            fi
             printf '%s\n' "$number" >> "$candidates"
-          done < <(jq -r '.[] | [.number, ([.labels[].name] | index("agent-refined") != null)] | @tsv' "$issues")
+          done < <(jq -r '.[].number' "$search_json")
 
           if [[ ! -s "$candidates" ]]; then
             printf '%s\n' 'No unrefined open issues; nothing to do.'
@@ -178,7 +154,7 @@ jobs:
             printf '\n\n\n\n\n\n'
 
             title="$(gh issue view "$number" -R "$ISSUE_REPOSITORY" --json title --jq '.title')" || { echo "::warning::skip $number: view title failed" >&2; ((failed++)) || true; continue; }
-            body="$(sed -E '/<!-- agent-refined-through:[^ ]+ -->/d' "$RUNNER_TEMP/body-${number}.txt")"
+            body="$(jq -r --argjson number "$number" '.[] | select(.number == $number) | .body // ""' "$search_json")"
             comments="$RUNNER_TEMP/comments-${number}.json"
 
             prompt="$RUNNER_TEMP/refine-prompt.txt"
@@ -245,12 +221,8 @@ jobs:
                 break
               fi
               if (( validation_status == 0 )); then
-                latest_comment="$(jq -r 'max_by(.created_at).created_at // empty' "$comments")"
                 final_body="$RUNNER_TEMP/refined-body-${number}.txt"
                 cp "$out" "$final_body"
-                if [[ -n "$latest_comment" ]]; then
-                  printf '\n<!-- agent-refined-through:%s -->\n' "$latest_comment" >> "$final_body"
-                fi
                 gh issue edit "$number" --body-file "$final_body" -R "$ISSUE_REPOSITORY"
                 gh issue edit "$number" --add-label "agent-refined" -R "$ISSUE_REPOSITORY"
                 printf 'Issue #%s refined and labeled.\n' "$number"

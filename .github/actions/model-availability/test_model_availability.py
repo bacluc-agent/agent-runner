@@ -1305,11 +1305,10 @@ class TestRefineIssuesNoCandidates:
 class TestRefineIssuesComments:
     WORKFLOW = Path(__file__).parents[3] / ".github/workflows/refine-issues.yml"
 
-    def test_refinement_marker_machinery_is_gone(self):
+    def test_refinement_marker_machinery_is_absent(self):
         content = self.WORKFLOW.read_text()
-        assert "<!-- agent-refined-through:" in content
+        assert "<!-- agent-refined-through:" not in content
         assert "$refined_at" not in content
-        assert 'sed -E \'/<!-- agent-refined-through:' in content
         assert "This is a prior refinement" not in content
 
     def test_comment_filter_contract(self):
@@ -1331,7 +1330,6 @@ class TestRefineIssuesComments:
         block = content[start:end]
         candidates = tmp_path / "candidate-numbers.txt"
         candidates.write_text("11\n")
-        (tmp_path / "body-11.txt").write_text("Original issue body\n")
         (tmp_path / "comments-11.json").write_text(
             '[{"user":{"type":"User","login":"human"},"body":"please add tests","created_at":"2026-02-02T00:00:00Z"}]'
         )
@@ -1353,6 +1351,9 @@ elif args[0] == "api":
             f"ISSUE_REPOSITORY=example/issues\n"
             f"RUNNER_TEMP={str(tmp_path)!r}\n"
             f"PATH={str(tmp_path)!r}:$PATH\n"
+            f"search_json={str(tmp_path / 'search.json')!r}\n"
+            f"echo '[{{\"number\":11,\"body\":\"Original issue body\"}}]' > \"$search_json\"\n"
+            "AVAILABLE_MODELS=test-model\n"
             f"candidates={str(candidates)!r}\n"
             f"{block}\n"
             'done < "$candidates"\n'
