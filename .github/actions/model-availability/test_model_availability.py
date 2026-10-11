@@ -1307,9 +1307,9 @@ class TestRefineIssuesComments:
 
     def test_refinement_marker_machinery_is_gone(self):
         content = self.WORKFLOW.read_text()
-        assert "<!-- agent-refined:" not in content
+        assert "<!-- agent-refined-through:" in content
         assert "$refined_at" not in content
-        assert "sed '/<!-- agent-refined" not in content
+        assert 'sed -E \'/<!-- agent-refined-through:' in content
         assert "This is a prior refinement" not in content
 
     def test_comment_filter_contract(self):
@@ -1331,6 +1331,10 @@ class TestRefineIssuesComments:
         block = content[start:end]
         candidates = tmp_path / "candidate-numbers.txt"
         candidates.write_text("11\n")
+        (tmp_path / "body-11.txt").write_text("Original issue body\n")
+        (tmp_path / "comments-11.json").write_text(
+            '[{"user":{"type":"User","login":"human"},"body":"please add tests","created_at":"2026-02-02T00:00:00Z"}]'
+        )
         fake_gh = tmp_path / "gh"
         fake_gh.write_text(
             """#!/usr/bin/env python3

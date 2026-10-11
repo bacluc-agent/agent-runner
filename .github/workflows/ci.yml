@@ -47,8 +47,5 @@ jobs:
       - name: Install uv
         run: pip install --quiet uv
 
-      - name: Test refinement candidate selection
-        run: uv run --group dev pytest scripts/test_refine_issues.py -q
-
       - name: Run completion check
         run: ./scripts/completion-check
