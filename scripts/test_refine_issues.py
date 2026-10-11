@@ -4,15 +4,26 @@ from pathlib import Path
 WORKFLOW = Path(__file__).parents[1] / ".github/workflows/refine-issues.yml"
 
 
-def test_candidate_search_includes_refined_but_excludes_ignored_issues():
+def test_first_time_candidate_search_preserves_the_five_issue_limit():
     workflow = WORKFLOW.read_text()
     candidate_search = next(
         line for line in workflow.splitlines() if "search/issues?q=repo:" in line
     )
 
-    assert "+-label:agent-refined" not in candidate_search
+    assert "+-label:agent-refined" in candidate_search
     assert "+-label:agent-ignore" in candidate_search
     assert "+-label:ready-for-implementation" not in candidate_search
+    assert "per_page=5" in candidate_search
+
+
+def test_refined_candidates_are_paginated_and_deduplicated_with_first_time_candidates():
+    workflow = WORKFLOW.read_text()
+    refined_search = next(
+        line for line in workflow.splitlines() if "+label:agent-refined" in line
+    )
+
+    assert "--paginate --slurp" in refined_search
+    assert "+-label:agent-ignore" in refined_search
     assert "unique_by(.number)" in workflow
 
 

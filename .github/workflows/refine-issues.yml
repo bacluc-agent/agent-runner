@@ -73,11 +73,15 @@ jobs:
           printf '\n\n\n\n\n\n'
 
           search_json="$RUNNER_TEMP/candidates.json"
-          gh api --paginate --slurp "search/issues?q=repo:${ISSUE_REPOSITORY}+is:open+is:issue+-label:agent-ignore+sort:created-asc&per_page=100" \
-            > "$search_json"
+          gh api "search/issues?q=repo:${ISSUE_REPOSITORY}+is:open+is:issue+-label:agent-refined+-label:agent-ignore+sort:created-asc&per_page=5" \
+            --jq '.items' > "$search_json"
+          refined_search_json="$RUNNER_TEMP/refined-candidates.json"
+          gh api --paginate --slurp "search/issues?q=repo:${ISSUE_REPOSITORY}+is:open+is:issue+label:agent-refined+-label:agent-ignore+sort:created-asc&per_page=100" \
+            > "$refined_search_json"
 
           issues="$RUNNER_TEMP/open-issues.json"
-          jq '[.[].items[]] | unique_by(.number) | sort_by(.created_at)' "$search_json" > "$issues"
+          jq -n --slurpfile first "$search_json" --slurpfile refined "$refined_search_json" \
+            '$first[0] + [$refined[0][].items[]] | unique_by(.number) | sort_by(.created_at)' > "$issues"
           candidates="$RUNNER_TEMP/candidate-numbers.txt"
           : > "$candidates"
           while IFS=$'\t' read -r number refined; do
