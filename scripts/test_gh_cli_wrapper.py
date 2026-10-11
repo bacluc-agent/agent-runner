@@ -213,6 +213,9 @@ class CliWrapperTest(unittest.TestCase):
             ["repo", "create", "--description=x", "outsider/r"],
             ["repo", "create", "-c", "outsider/r"],
             ["repo", "create", "--public", "outsider/r"],
+            ["repo", "create", "https://github.com/outsider/r"],
+            ["repo", "create", "http://github.com/outsider/r"],
+            ["repo", "create", "github.com/outsider/r"],
         ):
             self.call(argv, False, GITHUB_REPOSITORY="BacLuc/r")
         for argv in (
@@ -226,6 +229,9 @@ class CliWrapperTest(unittest.TestCase):
             ["repo", "create", "--description=x", "BacLuc/r"],
             ["repo", "create", "-c", "BacLuc/r"],
             ["repo", "create", "--public", "BacLuc/r"],
+            ["repo", "create", "https://github.com/BacLuc/r"],
+            ["repo", "create", "http://github.com/BacLuc/r"],
+            ["repo", "create", "github.com/BacLuc/r"],
         ):
             self.call(argv, TEST_STATUS="17", GITHUB_REPOSITORY="BacLuc/r")
 

@@ -193,8 +193,9 @@ def repo_create_owners(args):
             if key in REPO_CREATE_VALUE_FLAGS and not separator:
                 index += 1  # skip the separate value
             continue
-        owner, separator, name = arg.partition("/")
-        if separator and owner and name and "/" not in name:
+        token = re.sub(r"^(https?://)?(github\.com/)?", "", arg, flags=re.IGNORECASE)
+        owner, separator, _ = token.partition("/")
+        if separator and owner:
             owners.append(owner)
     return owners
 
