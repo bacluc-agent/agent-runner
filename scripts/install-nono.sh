@@ -3,6 +3,7 @@ set -Eeuo pipefail
 
 # renovate: datasource=github-releases depName=nolabs-ai/nono
 NONO_VERSION=0.79.0
+# NONO_INSTALLER_SHA256 must be updated together with NONO_VERSION (Renovate only bumps NONO_VERSION): curl -fsSL https://nono.sh/install.sh | sha256sum
 NONO_INSTALLER_SHA256=09eef94110d34387ddc72a9fec57654de900a516e69321aa729923a96ce47c44
 NONO_INSTALL_DIR="$RUNNER_TEMP/nono/bin"
 NONO_INSTALLER="$RUNNER_TEMP/nono-install.sh"
@@ -44,6 +45,8 @@ for entry in config.stdout.split("\0"):
         and os.path.isfile(path)
     ):
         profile["filesystem"]["read_file"].append(path)
+
+profile["filesystem"]["read"].append(os.path.join(runner_temp, "gh-cli-wrapper"))
 
 with open(destination, "w", encoding="utf-8") as profile_file:
     json.dump(profile, profile_file)

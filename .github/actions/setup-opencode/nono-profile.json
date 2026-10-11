@@ -14,7 +14,7 @@
       "$HOME/.npm",
       "$TMPDIR/opencode-db"
     ],
-    "read": ["$HOME/.config/opencode"],
+    "read": ["$HOME/.config/opencode", "$HOME/.config/gh"],
     "read_file": ["$HOME/.local/share/opencode/auth.json"]
   },
   "meta": {
