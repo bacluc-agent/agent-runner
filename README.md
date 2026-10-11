@@ -146,6 +146,34 @@ prevention**. An absolute executable path, direct HTTP, changing PATH or changin
 the wrapper can bypass it. CLI builtin commands may internally use GraphQL;
 only direct `gh api graphql` is denied.
 
+## OpenCode network sandbox
+
+OpenCode runs in `nono` using the pinned profile in
+`.github/actions/setup-opencode/nono-profile.json`. Setup installs the pinned
+release through `https://nono.sh/install.sh`; the installer verifies the
+downloaded installer against a pinned SHA-256 digest, and the installer verifies
+the platform archive against the release's SHA-256 checksum before installing it.
+The profile extends nono's `node-dev` profile and uses the `developer` network
+allowlist plus explicit `api.github.com` and `github.com` endpoint rules:
+
+- GitHub reads (`GET`, `HEAD`, `OPTIONS`) are allowed.
+- GitHub API mutations are allowed only below `/repos/<owned-org>/<repo>/...`
+  for `BacLuc`, `bacluc-agent`, and `bacluc-agent-org`.
+- Git HTTPS upload-pack (fetch/clone) is allowed for any repository; receive-pack
+  (push) is allowed only for those owned organizations.
+- Other developer-profile hosts remain host-allowlisted, but their HTTPS
+  requests are not method/path-filtered. OpenCode needs methods such as `POST`
+  to call model APIs, and nono cannot inspect arbitrary HTTPS requests through
+  an ordinary CONNECT tunnel. The rules therefore do not claim universal
+  `GET`-only behavior on every host. No catch-all domain or universal wildcard
+  FQDN rule is configured.
+- A process that sends work to a Docker daemon through its socket makes the
+  daemon's outbound requests outside the sandbox. Do not expose the Docker
+  socket to the agent unless daemon egress is independently restricted.
+
+This kernel sandbox complements, but does not replace, the `gh` wrapper above.
+The wrapper remains in place for its CLI-specific safeguards.
+
 Regression tests use a fake backend and never create forbidden PRs. Run
 `python3 -m unittest discover -s scripts -p test_gh_cli_wrapper.py` locally. The
 dispatchable CI workflow also runs the actual setup composite with a fake backend

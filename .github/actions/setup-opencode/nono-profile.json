@@ -1,0 +1,127 @@
+{
+  "$schema": "https://nono.sh/schemas/nono-profile.schema.json",
+  "environment": {
+    "set_vars": {
+      "GIT_CONFIG_NOSYSTEM": "1"
+    }
+  },
+  "extends": "node-dev",
+  "filesystem": {
+    "read_file": []
+  },
+  "meta": {
+    "name": "agent-runner",
+    "version": "1.0.0",
+    "description": "OpenCode with GitHub mutation endpoints restricted to BacLuc-owned repositories."
+  },
+  "network": {
+    "network_profile": "developer",
+    "tls_intercept": {
+      "ca_env_vars": [
+        "CURL_CA_BUNDLE",
+        "GIT_SSL_CAINFO",
+        "NODE_EXTRA_CA_CERTS",
+        "REQUESTS_CA_BUNDLE",
+        "SSL_CERT_FILE"
+      ]
+    },
+    "allow_domain": [
+      {
+        "domain": "api.github.com",
+        "endpoints": [
+          { "method": "GET", "path": "/**" },
+          { "method": "HEAD", "path": "/**" },
+          { "method": "OPTIONS", "path": "/**" },
+          {
+            "method": "POST",
+            "path": "/repos/[bB][aA][cC][lL][uU][cC]/*/**"
+          },
+          {
+            "method": "PATCH",
+            "path": "/repos/[bB][aA][cC][lL][uU][cC]/*/**"
+          },
+          {
+            "method": "PUT",
+            "path": "/repos/[bB][aA][cC][lL][uU][cC]/*/**"
+          },
+          {
+            "method": "DELETE",
+            "path": "/repos/[bB][aA][cC][lL][uU][cC]/*/**"
+          },
+          {
+            "method": "POST",
+            "path": "/repos/[bB][aA][cC][lL][uU][cC]-[aA][gG][eE][nN][tT]/*/**"
+          },
+          {
+            "method": "PATCH",
+            "path": "/repos/[bB][aA][cC][lL][uU][cC]-[aA][gG][eE][nN][tT]/*/**"
+          },
+          {
+            "method": "PUT",
+            "path": "/repos/[bB][aA][cC][lL][uU][cC]-[aA][gG][eE][nN][tT]/*/**"
+          },
+          {
+            "method": "DELETE",
+            "path": "/repos/[bB][aA][cC][lL][uU][cC]-[aA][gG][eE][nN][tT]/*/**"
+          },
+          {
+            "method": "POST",
+            "path": "/repos/[bB][aA][cC][lL][uU][cC]-[aA][gG][eE][nN][tT]-[oO][rR][gG]/*/**"
+          },
+          {
+            "method": "PATCH",
+            "path": "/repos/[bB][aA][cC][lL][uU][cC]-[aA][gG][eE][nN][tT]-[oO][rR][gG]/*/**"
+          },
+          {
+            "method": "PUT",
+            "path": "/repos/[bB][aA][cC][lL][uU][cC]-[aA][gG][eE][nN][tT]-[oO][rR][gG]/*/**"
+          },
+          {
+            "method": "DELETE",
+            "path": "/repos/[bB][aA][cC][lL][uU][cC]-[aA][gG][eE][nN][tT]-[oO][rR][gG]/*/**"
+          }
+        ]
+      },
+      {
+        "domain": "github.com",
+        "endpoints": [
+          { "method": "GET", "path": "/**" },
+          { "method": "HEAD", "path": "/**" },
+          { "method": "OPTIONS", "path": "/**" },
+          {
+            "method": "POST",
+            "path": "/*/*.git/git-upload-pack"
+          },
+          {
+            "method": "POST",
+            "path": "/*/*/git-upload-pack"
+          },
+          {
+            "method": "POST",
+            "path": "/[bB][aA][cC][lL][uU][cC]/*.git/git-receive-pack"
+          },
+          {
+            "method": "POST",
+            "path": "/[bB][aA][cC][lL][uU][cC]/*/git-receive-pack"
+          },
+          {
+            "method": "POST",
+            "path": "/[bB][aA][cC][lL][uU][cC]-[aA][gG][eE][nN][tT]/*.git/git-receive-pack"
+          },
+          {
+            "method": "POST",
+            "path": "/[bB][aA][cC][lL][uU][cC]-[aA][gG][eE][nN][tT]/*/git-receive-pack"
+          },
+          {
+            "method": "POST",
+            "path": "/[bB][aA][cC][lL][uU][cC]-[aA][gG][eE][nN][tT]-[oO][rR][gG]/*.git/git-receive-pack"
+          },
+          {
+            "method": "POST",
+            "path": "/[bB][aA][cC][lL][uU][cC]-[aA][gG][eE][nN][tT]-[oO][rR][gG]/*/git-receive-pack"
+          }
+        ]
+      }
+    ]
+  }
+}
