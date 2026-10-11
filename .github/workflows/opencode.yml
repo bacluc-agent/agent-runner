@@ -72,6 +72,11 @@ on:
         required: false
         type: number
         default: 5
+      sandbox_evidence:
+        description: Run credential-free nono policy probes and an OpenCode PONG instead of the agent
+        required: false
+        type: boolean
+        default: false
   workflow_call:
     inputs:
       prompt:
@@ -100,6 +105,7 @@ permissions:
 
 jobs:
   run:
+    if: inputs.sandbox_evidence != true
     runs-on: ubuntu-latest
     timeout-minutes: 130
     env:
@@ -717,3 +723,48 @@ jobs:
             fi
             gh issue comment "$ISSUE_NUMBER" -R "$ISSUE_REPOSITORY" --body "$reply_body"
           fi
+
+  sandbox-evidence:
+    if: inputs.sandbox_evidence == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up OpenCode and nono
+        uses: ./.github/actions/setup-opencode
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Verify sandbox policy and OpenCode PONG
+        shell: bash
+        env:
+          GITHUB_TOKEN: ""
+          GH_TOKEN: ""
+          GH_ENTERPRISE_TOKEN: ""
+        run: |
+          set -Eeuo pipefail
+
+          curl -fsS https://api.github.com/rate_limit >/dev/null
+          printf '%s\n' 'GitHub GET allowed'
+
+          if nono run --profile "$NONO_PROFILE" --allow-cwd -- curl -sS -X POST \
+            https://api.github.com/repos/octocat/Hello-World/issues \
+            -H 'Content-Type: application/json' -d '{"title":"sandbox probe"}'; then
+            printf '%s\n' 'Outsider mutation unexpectedly allowed' >&2
+            exit 1
+          fi
+          printf '%s\n' 'Outsider mutation denied'
+
+          status=$(nono run --profile "$NONO_PROFILE" --allow-cwd -- curl -sS -o /dev/null -w '%{http_code}' -X POST \
+            https://api.github.com/repos/bacluc-agent/agent-runner/issues \
+            -H 'Content-Type: application/json' -d '{"title":"sandbox probe"}')
+          [[ "$status" == 401 ]] || { printf 'Owned mutation did not reach GitHub unauthenticated: HTTP %s\n' "$status" >&2; exit 1; }
+          printf '%s\n' 'Owned mutation passed sandbox and was rejected by GitHub without credentials (HTTP 401)'
+
+          output=$(nono run --profile "$NONO_PROFILE" --allow-cwd -- opencode run --model opencode/big-pickle 'Reply with exactly PONG and do nothing else.')
+          printf '%s\n' "$output"
+          [[ "$output" == *PONG* ]]
