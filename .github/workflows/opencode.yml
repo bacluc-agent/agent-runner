@@ -281,7 +281,7 @@ jobs:
             printf '::stop-commands::%s\n' "$stop_token"
             printf 'Model discovery prompt:\n%s\n' "$discovery_prompt"
             set +e
-            timeout "${DISCOVERY_TIMEOUT}m" nono run --profile "$NONO_PROFILE" --allow-cwd -- opencode run --agent model-discovery --model "$fallback_model" --title "model-discovery" "$discovery_prompt" | tee "$discovery_output"
+            timeout "${DISCOVERY_TIMEOUT}m" "$GITHUB_WORKSPACE/scripts/run-agent-sandboxed.sh" run --agent model-discovery --model "$fallback_model" --title "model-discovery" "$discovery_prompt" | tee "$discovery_output"
             discovery_statuses=("${PIPESTATUS[@]}")
             printf '::%s::\n' "$stop_token"
             discovery_status=${discovery_statuses[0]}
@@ -460,10 +460,10 @@ jobs:
           stop_token="$(openssl rand -hex 32)"
           : "${stop_token:?stop-commands fence token generation failed}"
           printf '::stop-commands::%s\n' "$stop_token"
-          printf 'Final coordinator command: nono run --profile %q -- opencode run --agent coordinator --model %q --title %q\n' "$NONO_PROFILE" "$MODEL" "$coordinator_session_title"
+          printf 'Final coordinator command: %q run --agent coordinator --model %q --title %q\n' "$GITHUB_WORKSPACE/scripts/run-agent-sandboxed.sh" "$MODEL" "$coordinator_session_title"
           printf 'Coordinator prompt:\n%s\n' "$PROMPT"
           set +e
-          timeout "${COORDINATOR_TIMEOUT}m" nono run --profile "$NONO_PROFILE" --allow-cwd -- opencode run --agent coordinator --model "$MODEL" --title "$coordinator_session_title" "$PROMPT" 2>&1 | tee "$RUNNER_TEMP/coordinator.out"
+          timeout "${COORDINATOR_TIMEOUT}m" "$GITHUB_WORKSPACE/scripts/run-agent-sandboxed.sh" run --agent coordinator --model "$MODEL" --title "$coordinator_session_title" "$PROMPT" 2>&1 | tee "$RUNNER_TEMP/coordinator.out"
           coordinator_statuses=("${PIPESTATUS[@]}")
           printf '::%s::\n' "$stop_token"
           coordinator_status=${coordinator_statuses[0]}
@@ -730,6 +730,11 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
+    env:
+      OPENCODE_AUTH_CONTENT: ${{ secrets.OPENCODE_AUTH_JSON }}
+      OPENCODE_GO_API_KEY: ${{ secrets.OPENCODE_GO_API_KEY }}
+      OPENCODE_GO_2_API_KEY: ${{ secrets.OPENCODE_GO_2_API_KEY }}
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -765,6 +770,18 @@ jobs:
           [[ "$status" == 401 ]] || { printf 'Owned mutation did not reach GitHub unauthenticated: HTTP %s\n' "$status" >&2; exit 1; }
           printf '%s\n' 'Owned mutation passed sandbox and was rejected by GitHub without credentials (HTTP 401)'
 
-          output=$(nono run --profile "$NONO_PROFILE" --allow-cwd -- opencode run --model opencode/big-pickle 'Reply with exactly PONG and do nothing else.')
+          status=$(nono run --profile "$NONO_PROFILE" --allow-cwd -- curl -sS -o /dev/null -w '%{http_code}' -X POST \
+            https://api.github.com/repos/octocat/Hello-World/forks)
+          [[ "$status" == 401 ]] || { printf 'Sanctioned fork endpoint was not allowed through the sandbox: HTTP %s\n' "$status" >&2; exit 1; }
+          printf '%s\n' 'Sanctioned fork endpoint passed the sandbox and was rejected by GitHub without credentials (HTTP 401)'
+
+          output=$(scripts/run-agent-sandboxed.sh run --model openai/gpt-6-luna 'Reply with exactly PONG and do nothing else.')
           printf '%s\n' "$output"
           [[ "$output" == *PONG* ]]
+
+      - name: Run wrapper and guard unit tests
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 scripts/test_gh_cli_wrapper.py -v
+          python3 scripts/test_http_guard.py -v

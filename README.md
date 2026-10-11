@@ -125,17 +125,23 @@ apply to subsequent steps and child shells, including work in other checkouts.
 The installer saves the real CLI's absolute path before changing PATH.
 
 - `gh pr create` and `gh pr new` require exactly one explicit `-R`/`--repo`
-  targeting `BacLuc` or `bacluc-agent` (case-insensitive) on github.com.
-  For outsider repositories, create the fork and a branch representing upstream
-  main, then open the PR with `-R bacluc-agent/<repo>` against that branch.
+  targeting `BacLuc`, `bacluc-agent` or `bacluc-agent-org` (case-insensitive) on
+  github.com. For outsider repositories, create the fork and a branch representing
+  upstream main, then open the PR with `-R bacluc-agent/<repo>` against that branch.
 - `gh pr revert` requires exactly one PR number or github.com PR URL and an
-  explicit `-R`/`--repo` (or a URL selector) targeting `BacLuc` or
-  `bacluc-agent`; implicit destinations fail closed. The REST revert endpoint
+  explicit `-R`/`--repo` (or a URL selector) targeting one of those owned owners;
+  implicit destinations fail closed. The REST revert endpoint
   `repos/OWNER/REPO/pulls/N/reverts` is checked the same way.
-- REST PR creation is checked too, including implicit POST via fields or
-  `--input`. Ambiguous options, noncanonical paths and routing overrides fail
-  closed. Ordinary REST reads, issue comments, PATCH, forks and dispatches remain
-  available; accepted calls preserve arguments, stdin, output and exit status.
+- Mutating builtin commands (`issue`, `repo`, `workflow`, `discussion`, `label`,
+  `release`, `secret`, `variable`, `ruleset`, `project`) must resolve to an owned
+  repository. `issue` and `workflow` mutations require exactly one explicit
+  `-R`/`--repo` or URL selector; the other commands allow at most one and fall
+  back to `GITHUB_REPOSITORY`. `gh repo fork <upstream> --org <owned>` is the one
+  sanctioned exception and never validates the upstream positional.
+- REST mutations must be a canonical `repos/OWNER/REPO/...` endpoint for an owned
+  owner; the fork exception is CLI-only, so `gh api repos/<outsider>/forks -XPOST`
+  stays denied. Ambiguous options, noncanonical paths and routing overrides fail
+  closed; accepted calls preserve arguments, stdin, output and exit status.
 - Direct `gh api graphql`, configured alias execution, alias management and
   extension commands are denied. Use builtin CLI commands or canonical REST
   endpoints instead. Unknown builtin commands/options on guarded routes require
@@ -159,8 +165,15 @@ allowlist plus explicit `api.github.com` and `github.com` endpoint rules:
 - GitHub reads (`GET`, `HEAD`, `OPTIONS`) are allowed.
 - GitHub API mutations are allowed only below `/repos/<owned-org>/<repo>/...`
   for `BacLuc`, `bacluc-agent`, and `bacluc-agent-org`.
+- `POST /repos/*/*/forks` is the one sanctioned outsider mutation:
+  `gh repo fork <outsider> --org <owned>` is allowed because forking does not
+  modify the upstream repository. Raw `gh api repos/<outsider>/forks -XPOST`
+  stays denied; use the CLI command instead.
 - Git HTTPS upload-pack (fetch/clone) is allowed for any repository; receive-pack
   (push) is allowed only for those owned organizations.
+- The model providers OpenCode needs are additionally host-allowlisted as plain
+  CONNECT tunnels: `opencode.ai`, `chatgpt.com`, `auth.openai.com`, `models.dev`,
+  and `api.search.brave.com`. These carry no method/path rules.
 - Other developer-profile hosts remain host-allowlisted, but their HTTPS
   requests are not method/path-filtered. OpenCode needs methods such as `POST`
   to call model APIs, and nono cannot inspect arbitrary HTTPS requests through
@@ -171,11 +184,19 @@ allowlist plus explicit `api.github.com` and `github.com` endpoint rules:
   daemon's outbound requests outside the sandbox. Do not expose the Docker
   socket to the agent unless daemon egress is independently restricted.
 
+Agents start OpenCode through `scripts/run-agent-sandboxed.sh`, which requires
+`NONO_PROFILE` and execs `nono run --profile "$NONO_PROFILE" --allow-cwd --
+opencode "$@"`.
+
 This kernel sandbox complements, but does not replace, the `gh` wrapper above.
-The wrapper remains in place for its CLI-specific safeguards.
+The wrapper remains in place for its CLI-specific safeguards. `scripts/http_guard.py`
+is an advisory, importable policy helper (`check_request`) for callers that want
+to pre-screen a request and log denials; nono is the enforcement boundary, so the
+helper is intentionally not wired into the wrapper installer.
 
 Regression tests use a fake backend and never create forbidden PRs. Run
-`python3 -m unittest discover -s scripts -p test_gh_cli_wrapper.py` locally. The
+`python3 -m unittest discover -s scripts -p test_gh_cli_wrapper.py` and
+`python3 -m unittest discover -s scripts -p test_http_guard.py` locally. The
 dispatchable CI workflow also runs the actual setup composite with a fake backend
 and verifies forwarding and historical denial in a later step outside the checkout.
 

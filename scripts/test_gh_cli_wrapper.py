@@ -92,7 +92,8 @@ class CliWrapperTest(unittest.TestCase):
         self.call(["pr", "create", "-R", "ecamp/ecamp3", "--base", "devel", "--head",
                    "bacluc-agent:issue-221-move-doctrine-validate-to-required-ci"], False)
         for command in ("create", "new"):
-            for repo in ("BacLuc/r", "BaClUc-AgEnT/r", "github.com/BacLuc/r", "https://github.com/BacLuc/r"):
+            for repo in ("BacLuc/r", "BaClUc-AgEnT/r", "bacluc-agent-org/r",
+                         "github.com/BacLuc/r", "https://github.com/BacLuc/r"):
                 for flags in (["-R", repo], ["-R" + repo], ["-R=" + repo], ["--repo", repo], ["--repo=" + repo]):
                     self.call(["pr", command, *flags, "--title", "--repo=outsider/r", "--body", "-Rbad/r"])
             for flags in ([], ["-R", "outsider/r"], ["-R", "BacLuc-evil/r"],
@@ -151,16 +152,33 @@ class CliWrapperTest(unittest.TestCase):
             self.call(argv)
 
     def test_other_calls_and_aliases(self):
-        for argv in (["issue", "comment", "234", "-R", "outsider/r", "--body", "pr create"],
-                     ["pr", "view", "10800", "-R", "ecamp/ecamp3"], ["search", "issues", "test"],
+        for argv in (["pr", "view", "10800", "-R", "ecamp/ecamp3"], ["search", "issues", "test"],
                      ["repo", "fork", "ecamp/ecamp3", "--org", "bacluc-agent"],
+                     ["repo", "fork", "BacLuc/r", "--org", "bacluc-agent-org"],
+                     ["issue", "comment", "234", "-R", "BaClUc-AgEnT/r", "--body", "hello"],
+                     ["issue", "create", "-R", "BacLuc/r", "-t", "x", "-b", "y"],
+                     ["issue", "edit", "234", "-R", "bacluc-agent-org/r", "-b", "y"],
+                     ["issue", "close", "https://github.com/BacLuc/r/issues/1"],
+                     ["workflow", "run", "ci.yml", "-R", "bacluc-agent/r", "--ref", "main"],
+                     ["api", "search/issues", "-XGET", "-fq=repo:ecamp/ecamp3"],
+                     ["api", "repos/bacluc-agent-org/r/issues", "-fbody=x"]):
+            self.call(argv, TEST_STATUS="17")
+        for argv in (["issue", "comment", "234", "-R", "outsider/r", "--body", "pr create"],
+                     ["issue", "create", "-t", "x", "-b", "y"],
+                     ["issue", "comment", "234", "--body", "x"],
+                     ["issue", "edit", "234", "-R", "outsider/r", "-b", "x"],
+                     ["repo", "fork", "ecamp/ecamp3"],
+                     ["repo", "fork", "ecamp/ecamp3", "--org", "outsider"],
+                     ["repo", "delete", "outsider/r"],
+                     ["repo", "edit", "ecamp/ecamp3", "-d", "x"],
                      ["workflow", "run", "ci.yml", "--ref", "issue-234"],
+                     ["workflow", "run", "ci.yml", "-R", "outsider/r"],
+                     ["workflow", "disable", "ci.yml", "-R", "outsider/r"],
                      ["api", "repos/ecamp/ecamp3/issues/1/comments", "-fbody=test"],
                      ["api", "repos/{owner}/{repo}/issues/comments/1", "-XPATCH", "-fbody=test"],
                      ["api", "repos/ecamp/ecamp3/forks", "-XPOST"],
-                     ["api", "search/issues", "-XGET", "-fq=repo:ecamp/ecamp3"],
                      ["api", "repos/ecamp/ecamp3/actions/workflows/ci.yml/dispatches", "-fref=main"]):
-            self.call(argv, TEST_STATUS="17")
+            self.call(argv, False)
         for argv in (["alias", "set", "p", "pr create"], ["extension", "exec", "p"], ["extensions", "exec", "p"],
                      ["custom"], ["--repo=BacLuc/r", "pr", "create"]):
             self.call(argv, False)

@@ -6,8 +6,33 @@ import subprocess
 import sys
 
 
+OWNED_ORGS = {"bacluc", "bacluc-agent", "bacluc-agent-org"}
+
+MUTATIONS = {
+    "issue": {"create", "edit", "close", "reopen", "comment", "delete", "transfer", "lock", "unlock",
+              "pin", "unpin", "develop", "clone"},
+    "repo": {"create", "edit", "delete", "archive", "rename", "fork", "sync", "transfer", "unarchive",
+             "set-default", "gc", "credits"},
+    "workflow": {"run", "enable", "disable", "delete", "cancel"},
+    "discussion": {"create", "edit", "delete", "close", "reopen", "comment", "transfer", "pin", "unpin"},
+    "label": {"create", "edit", "delete", "clone"},
+    "release": {"create", "edit", "delete", "upload", "download", "delete-asset"},
+    "secret": {"set", "delete"},
+    "variable": {"set", "delete"},
+    "ruleset": {"create", "edit", "delete", "check"},
+    "project": {"create", "edit", "delete", "close", "copy", "item-add", "item-create", "item-edit",
+                "item-archive", "item-delete", "field-create", "field-delete", "link", "unlink",
+                "mark-template"},
+}
+
+
 def deny(reason):
     raise ValueError(reason)
+
+
+def owned_org(org):
+    if org.lower() not in OWNED_ORGS:
+        deny("use a bacluc-owned organization, not the upstream repository")
 
 
 def owned_repo(repo):
@@ -15,7 +40,7 @@ def owned_repo(repo):
     if not re.fullmatch(r"[A-Za-z0-9-]+/[A-Za-z0-9_.-]+", repo):
         deny("use an explicit github.com OWNER/REPO")
     owner, name = repo.split("/")
-    if owner.lower() not in {"bacluc", "bacluc-agent"} or name in {".", ".."}:
+    if owner.lower() not in OWNED_ORGS or name in {".", ".."}:
         deny("create the PR in the bacluc-agent fork, not the upstream repository")
 
 
@@ -97,6 +122,75 @@ def validate_revert(prefix, args):
         deny("PR revert requires an explicit -R/--repo destination or a github.com PR URL")
 
 
+def repo_of(selector):
+    match = re.match(r"^https?://github\.com/([A-Za-z0-9-]+/[A-Za-z0-9_.-]+)", selector, flags=re.IGNORECASE)
+    return match.group(1) if match else selector
+
+
+def org_option(args):
+    for index, arg in enumerate(args):
+        if arg == "--org":
+            return args[index + 1] if index + 1 < len(args) else None
+        if arg.startswith("--org="):
+            return arg.split("=", 1)[1]
+    return None
+
+
+def selectors_of(args):
+    explicit, positional = [], []
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        index += 1
+        if arg in {"-R", "--repo"}:
+            if index < len(args):
+                explicit.append(args[index])
+                index += 1
+        elif arg.startswith("--repo="):
+            explicit.append(arg.split("=", 1)[1])
+        elif arg.startswith("-R") and len(arg) > 2:
+            explicit.append(arg[2:].removeprefix("="))
+        elif arg.startswith("-"):
+            continue
+        else:
+            positional.append(arg)
+    selectors = list(explicit)
+    for value in positional:
+        if re.fullmatch(r"[A-Za-z0-9-]+/[A-Za-z0-9_.-]+", value) or re.match(
+            r"^https?://github\.com/[^/]+/[^/?#]+", value, flags=re.IGNORECASE
+        ):
+            selectors.append(value)
+    return selectors
+
+
+def validate_mutation(command, args):
+    if not args or args[0] not in MUTATIONS.get(command, ()):
+        return
+    subcommand = args[0]
+    if command == "repo" and subcommand == "fork":
+        org = org_option(args)
+        if org is None:
+            deny("repo fork requires an explicit --org in a bacluc-owned organization")
+        owned_org(org)
+        return
+    if command == "repo" and subcommand == "create":
+        org = org_option(args)
+        if org is not None:
+            owned_org(org)
+        else:
+            owned_repo(os.environ.get("GITHUB_REPOSITORY", ""))
+        return
+    selectors = selectors_of(args)
+    if command in {"issue", "workflow"}:
+        if len(selectors) != 1:
+            deny(f"{command} mutations require exactly one explicit owned -R/--repo or URL selector")
+        owned_repo(repo_of(selectors[0]))
+        return
+    if len(selectors) > 1:
+        deny(f"{command} mutations allow at most one explicit owned repository selector")
+    owned_repo(repo_of(selectors[0]) if selectors else os.environ.get("GITHUB_REPOSITORY", ""))
+
+
 def validate_api(args):
     values = {key: key for key in ("--cache", "-q", "--jq", "-p", "--preview", "-t", "--template")}
     for name, flags in {
@@ -138,6 +232,9 @@ def validate_api(args):
         if query:
             deny("put mutation parameters in fields, not the endpoint URL")
         parts = path.split("/")
+        if len(parts) < 3 or parts[0].lower() != "repos":
+            deny("mutating API calls require a canonical repos/OWNER/REPO endpoint")
+        owned_repo("/".join(parts[1:3]))
         if parts[-1].lower() == "pulls":
             if len(parts) != 4 or parts[0] != "repos" or parts[3] != "pulls":
                 deny("PR creation requires the canonical repos/OWNER/REPO/pulls endpoint")
@@ -154,8 +251,8 @@ def main():
         deny("real gh backend is missing or recursive; reinstall the guard")
     args = sys.argv[1:]
     if not args or args[0] not in {
-        "api", "auth", "browse", "cache", "codespace", "completion", "config", "gist", "gpg-key",
-        "help", "issue", "label", "org", "pr", "project", "release", "repo", "ruleset", "run",
+        "api", "auth", "browse", "cache", "codespace", "completion", "config", "discussion", "gist",
+        "gpg-key", "help", "issue", "label", "org", "pr", "project", "release", "repo", "ruleset", "run",
         "search", "secret", "ssh-key", "status", "variable", "workflow", "version", "--version", "--help",
     }:
         deny("only builtin commands are supported; aliases and extensions are disabled")
@@ -170,6 +267,8 @@ def main():
         validate_pr(args[1:])
     elif args[0] == "api":
         validate_api(args[1:])
+    else:
+        validate_mutation(args[0], args[1:])
     os.execv(backend, [backend, *args])
 
 

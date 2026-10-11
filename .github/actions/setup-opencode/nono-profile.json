@@ -10,7 +10,7 @@
   "filesystem": {
     "allow": ["$HOME/.local/share/opencode/log", "$TMPDIR/opencode-db"],
     "read": ["$HOME/.config/opencode"],
-    "read_file": []
+    "read_file": ["$HOME/.local/share/opencode/auth.json"]
   },
   "meta": {
     "name": "agent-runner",
@@ -35,6 +35,7 @@
           { "method": "GET", "path": "/**" },
           { "method": "HEAD", "path": "/**" },
           { "method": "OPTIONS", "path": "/**" },
+          { "method": "POST", "path": "/repos/*/*/forks" },
           {
             "method": "POST",
             "path": "/repos/[bB][aA][cC][lL][uU][cC]/*/**"
@@ -124,7 +125,12 @@
             "path": "/[bB][aA][cC][lL][uU][cC]-[aA][gG][eE][nN][tT]-[oO][rR][gG]/*/git-receive-pack"
           }
         ]
-      }
+      },
+      "opencode.ai",
+      "chatgpt.com",
+      "auth.openai.com",
+      "models.dev",
+      "api.search.brave.com"
     ]
   }
 }
