@@ -2,12 +2,13 @@
   "$schema": "https://nono.sh/schemas/nono-profile.schema.json",
   "environment": {
     "set_vars": {
-      "GIT_CONFIG_NOSYSTEM": "1"
+      "GIT_CONFIG_NOSYSTEM": "1",
+      "OPENCODE_DB": "$TMPDIR/opencode-db/opencode.db"
     }
   },
   "extends": "node-dev",
   "filesystem": {
-    "allow": ["$HOME/.local/share/opencode/log"],
+    "allow": ["$HOME/.local/share/opencode/log", "$TMPDIR/opencode-db"],
     "read_file": []
   },
   "meta": {
