@@ -73,7 +73,7 @@ on:
         type: number
         default: 5
       sandbox_evidence:
-        description: Run credential-free nono policy probes and an OpenCode PONG instead of the agent
+        description: Run nono policy probes, gh wrapper checks inside nono, and an OpenCode PONG instead of the agent
         required: false
         type: boolean
         default: false
@@ -730,6 +730,8 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
+      issues: write
+      pull-requests: write
     env:
       OPENCODE_AUTH_CONTENT: ${{ secrets.OPENCODE_AUTH_JSON }}
       OPENCODE_GO_API_KEY: ${{ secrets.OPENCODE_GO_API_KEY }}
@@ -798,3 +800,44 @@ jobs:
             exit "$pong_status"
           fi
           [[ "$output" == *PONG* ]]
+
+      - name: Verify gh wrapper inside nono with credentials
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+
+          wrapper_dir="${RUNNER_TEMP:?}/gh-cli-wrapper"
+          gh_path="$(command -v gh)"
+          [[ "$gh_path" == "$wrapper_dir/gh" ]] || { printf 'gh did not resolve to the sandbox wrapper: %s\n' "$gh_path" >&2; exit 1; }
+          printf 'gh resolves to the wrapper: %s\n' "$gh_path"
+
+          run_gh() { nono run --profile "$NONO_PROFILE" --allow-cwd -- gh "$@"; }
+
+          set +e
+          out="$(run_gh issue comment 1 -R octocat/Hello-World --body probe 2>&1)"
+          status=$?
+          set -e
+          [[ $status -ne 0 ]] || { printf 'wrapper allowed an outsider mutation\n' >&2; exit 1; }
+          grep -q 'gh cli wrapper:' <<<"$out" || { printf 'outsider mutation was not denied by the wrapper:\n%s\n' "$out" >&2; exit 1; }
+          printf '%s\n' 'Outsider gh mutation denied by the wrapper inside nono'
+
+          label="sandbox-probe-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          cleanup() { run_gh api "repos/bacluc-agent/agent-runner/labels/$label" -X DELETE >/dev/null 2>&1 || true; }
+          trap cleanup EXIT
+          run_gh api repos/bacluc-agent/agent-runner/labels -X POST -f name="$label" -f color=ededed
+          run_gh api "repos/bacluc-agent/agent-runner/labels/$label" --jq '.name' | grep -qx "$label"
+          printf '%s\n' 'Owned gh mutation passed wrapper and sandbox and reached GitHub'
+
+          set +e
+          pr_out="$(run_gh pr create -R bacluc-agent/agent-runner --title sandbox-probe --body probe \
+            --base no-such-base --head no-such-head 2>&1)"
+          pr_status=$?
+          set -e
+          [[ $pr_status -ne 0 && "$pr_out" == *"HTTP 422"* && "$pr_out" != *"HTTP 403"* ]] || {
+            printf 'gh pr create translation did not reach GitHub as REST:\n%s\n' "$pr_out" >&2
+            exit 1
+          }
+          printf '%s\n' 'gh pr create translated to REST and reached GitHub (HTTP 422 as expected)'
