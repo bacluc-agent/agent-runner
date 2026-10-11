@@ -748,8 +748,10 @@ jobs:
         run: |
           set -Eeuo pipefail
 
-          curl -fsS https://api.github.com/rate_limit >/dev/null
-          printf '%s\n' 'GitHub GET allowed'
+          status=$(nono run --profile "$NONO_PROFILE" --allow-cwd -- curl -sS -o /dev/null -w '%{http_code}' \
+            https://api.github.com/rate_limit)
+          [[ "$status" == 200 ]] || { printf 'GitHub GET was not allowed: HTTP %s\n' "$status" >&2; exit 1; }
+          printf '%s\n' 'GitHub GET allowed (HTTP 200)'
 
           status=$(nono run --profile "$NONO_PROFILE" --allow-cwd -- curl -sS -o /dev/null -w '%{http_code}' -X POST \
             https://api.github.com/repos/octocat/Hello-World/issues \
