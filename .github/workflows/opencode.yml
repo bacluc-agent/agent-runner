@@ -806,6 +806,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GITHUB_TOKEN: ${{ github.token }}
+          BACLUC_AGENT_GITHUB_TOKEN: ${{ secrets.BACLUC_AGENT_GITHUB_TOKEN }}
         run: |
           set -Eeuo pipefail
 
@@ -832,7 +833,7 @@ jobs:
           printf '%s\n' 'Owned gh mutation passed wrapper and sandbox and reached GitHub'
 
           set +e
-          pr_out="$(run_gh pr create -R bacluc-agent/agent-runner --title sandbox-probe --body probe \
+          pr_out="$(GH_TOKEN="$BACLUC_AGENT_GITHUB_TOKEN" run_gh pr create -R bacluc-agent/agent-runner --title sandbox-probe --body probe \
             --base no-such-base --head no-such-head 2>&1)"
           pr_status=$?
           set -e
