@@ -14,9 +14,11 @@ MUTATIONS = {
     "repo": {"create", "edit", "delete", "archive", "rename", "fork", "sync", "transfer", "unarchive",
              "set-default", "gc", "credits"},
     "workflow": {"run", "enable", "disable", "delete", "cancel"},
+    "run": {"cancel", "rerun", "delete"},
+    "cache": {"delete"},
     "discussion": {"create", "edit", "delete", "close", "reopen", "comment", "transfer", "pin", "unpin"},
     "label": {"create", "edit", "delete", "clone"},
-    "release": {"create", "edit", "delete", "upload", "download", "delete-asset"},
+    "release": {"create", "edit", "delete", "upload", "delete-asset"},
     "secret": {"set", "delete"},
     "variable": {"set", "delete"},
     "ruleset": {"create", "edit", "delete", "check"},
@@ -42,9 +44,12 @@ def owned_repo(repo):
     owner, name = repo.split("/")
     if owner.lower() not in OWNED_ORGS or name in {".", ".."}:
         deny("create the PR in the bacluc-agent fork, not the upstream repository")
+    return repo
 
 
 def options(args, values, switches):
+    if isinstance(switches, set):
+        switches = {flag: flag for flag in switches}
     positional, parsed = [], {}
     index = 0
     while index < len(args):
@@ -64,10 +69,54 @@ def options(args, values, switches):
                 index += 1
             parsed.setdefault(values[key], []).append(value)
         elif key in switches and (not separator or value in {"true", "false"}):
-            continue
+            parsed.setdefault(switches[key], []).append(True)
         else:
             deny(f"unsupported or ambiguous option {key}")
     return positional, parsed
+
+
+PR_CREATE_VALUES = {
+    "-R": "repo", "--repo": "repo",
+    "-t": "title", "--title": "title",
+    "-b": "body", "--body": "body",
+    "-F": "body_file", "--body-file": "body_file",
+    "-B": "base", "--base": "base",
+    "-H": "head", "--head": "head",
+}
+PR_CREATE_SWITCHES = {"-d": "draft", "--draft": "draft"}
+
+
+def build_pr_create(prefix, args):
+    positional, parsed = options(prefix + args, PR_CREATE_VALUES, PR_CREATE_SWITCHES)
+    if positional:
+        deny("PR creation does not accept positional arguments")
+    repos = parsed.get("repo", [])
+    if len(repos) != 1:
+        deny("PR creation requires exactly one explicit -R/--repo destination")
+    repo = owned_repo(repos[0])
+    for required in ("title", "head", "base"):
+        if required not in parsed:
+            deny(f"gh pr create under the sandbox requires --{required}; GraphQL inference is unavailable, pass it explicitly")
+    if "body" in parsed and "body_file" in parsed:
+        deny("use either --body or --body-file, not both")
+    fields = []
+    for name in ("title", "head", "base"):
+        fields += ["-f", f"{name}={parsed[name][-1]}"]
+    if "body_file" in parsed:
+        source = parsed["body_file"][-1]
+        if source == "-":
+            body = sys.stdin.read()
+        else:
+            try:
+                body = Path(source).read_text()
+            except OSError as error:
+                deny(f"cannot read --body-file: {error}")
+        fields += ["-f", f"body={body}"]
+    elif "body" in parsed:
+        fields += ["-f", f"body={parsed['body'][-1]}"]
+    if "draft" in parsed:
+        fields += ["-F", "draft=true"]
+    return ["api", f"repos/{repo}/pulls", "-X", "POST", "--jq", ".html_url", *fields]
 
 
 def validate_pr(args):
@@ -84,22 +133,12 @@ def validate_pr(args):
         deny("use gh pr SUBCOMMAND followed by options")
     if args[0] == "revert":
         validate_revert(prefix, args)
-        return
+        return None
     if args[0] not in {"create", "new"}:
-        return
-    values = {key: "repo" for key in ("-R", "--repo")}
-    values.update({key: key for key in (
-        "-a", "--assignee", "--attach", "-B", "--base", "-b", "--body", "-F", "--body-file",
-        "-H", "--head", "-l", "--label", "-m", "--milestone", "-p", "--project", "--recover",
-        "-r", "--reviewer", "-T", "--template", "-t", "--title",
-    )})
-    positional, parsed = options(prefix + args[1:], values, {
-        "-d", "--draft", "--dry-run", "-e", "--editor", "-f", "--fill", "--fill-first",
-        "--fill-verbose", "--no-maintainer-edit", "-w", "--web", "--help",
-    })
-    if positional or len(parsed.get("repo", [])) != 1:
-        deny("PR creation requires exactly one explicit -R/--repo destination")
-    owned_repo(parsed["repo"][0])
+        return None
+    if "--help" in prefix + args[1:]:
+        return None
+    return build_pr_create(prefix, args[1:])
 
 
 def validate_revert(prefix, args):
@@ -264,7 +303,9 @@ def main():
     if os.environ.get("GH_HOST", "github.com").lower() != "github.com":
         deny("only github.com is supported")
     if args[0] == "pr":
-        validate_pr(args[1:])
+        translated = validate_pr(args[1:])
+        if translated is not None:
+            os.execv(backend, [backend, *translated])
     elif args[0] == "api":
         validate_api(args[1:])
     else:

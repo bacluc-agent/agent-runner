@@ -33,12 +33,15 @@ def prepare_backend(directory):
 def verify_installed():
     with tempfile.TemporaryDirectory() as directory:
         env = dict(os.environ, TEST_LOG=str(Path(directory) / "log"), TEST_STATUS="23")
-        argv = ["pr", "create", "-R", "BaClUc-AgEnT/ecamp3", "--body-file", "-"]
+        argv = ["pr", "create", "-R", "BaClUc-AgEnT/ecamp3", "--title", "T", "--head", "br",
+                "--base", "main", "--body-file", "-"]
+        expected = ["api", "repos/BaClUc-AgEnT/ecamp3/pulls", "-X", "POST", "--jq", ".html_url",
+                    "-f", "title=T", "-f", "head=br", "-f", "base=main", "-f", "body=body from stdin"]
         result = subprocess.run(["bash", "-c", 'exec gh "$@"', "test", *argv],
                                 cwd=directory, env=env, input="body from stdin",
                                 capture_output=True, text=True)
         assert result.returncode == 23, result.stderr
-        assert json.loads(result.stdout) == {"argv": argv, "stdin": "body from stdin"}
+        assert json.loads(result.stdout) == {"argv": expected, "stdin": ""}
         assert result.stderr == "backend stderr\n"
         log = Path(env["TEST_LOG"])
         log.unlink()
@@ -72,7 +75,7 @@ class CliWrapperTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.env["PATH"] = f"{(self.directory / 'path').read_text().strip()}:{self.env['PATH']}"
 
-    def call(self, argv, allowed=True, **env):
+    def call(self, argv, allowed=True, expect=None, **env):
         log = Path(self.env["TEST_LOG"])
         log.unlink(missing_ok=True)
         result = subprocess.run(["bash", "-c", 'exec gh "$@"', "test", *argv],
@@ -80,9 +83,13 @@ class CliWrapperTest(unittest.TestCase):
                                 capture_output=True, text=True)
         if allowed:
             self.assertEqual(result.returncode, int(env.get("TEST_STATUS", "0")), result.stderr)
-            self.assertEqual(json.loads(result.stdout), {"argv": argv, "stdin": "payload\n"})
-            self.assertEqual(result.stderr, "backend stderr\n")
-            self.assertEqual(log.read_text().splitlines(), [json.dumps(argv)])
+            if expect is None:
+                self.assertEqual(json.loads(result.stdout), {"argv": argv, "stdin": "payload\n"})
+                self.assertEqual(result.stderr, "backend stderr\n")
+                self.assertEqual(log.read_text().splitlines(), [json.dumps(argv)])
+            else:
+                self.assertEqual(json.loads(result.stdout)["argv"], expect)
+                self.assertIn(json.dumps(expect), log.read_text())
         else:
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("gh cli wrapper:", result.stderr)
@@ -94,16 +101,95 @@ class CliWrapperTest(unittest.TestCase):
         for command in ("create", "new"):
             for repo in ("BacLuc/r", "BaClUc-AgEnT/r", "bacluc-agent-org/r",
                          "github.com/BacLuc/r", "https://github.com/BacLuc/r"):
+                canonical = repo.removeprefix("https://github.com/").removeprefix("github.com/")
+                rest = ["api", f"repos/{canonical}/pulls", "-X", "POST", "--jq", ".html_url",
+                        "-f", "title=T", "-f", "head=br", "-f", "base=main"]
                 for flags in (["-R", repo], ["-R" + repo], ["-R=" + repo], ["--repo", repo], ["--repo=" + repo]):
-                    self.call(["pr", command, *flags, "--title", "--repo=outsider/r", "--body", "-Rbad/r"])
+                    self.call(["pr", command, *flags, "--title", "T", "--head", "br", "--base", "main"],
+                              expect=rest)
             for flags in ([], ["-R", "outsider/r"], ["-R", "BacLuc-evil/r"],
                           ["-R", "evil.com/BacLuc/r"], ["-R", "BacLuc/r", "--repo", "BacLuc/r"],
                           ["-R", "ecamp/ecamp3", "--repo", "ecamp/ecamp3"], ["--repo", "ecamp/ecamp3"],
                           ["--body", "--repo=BacLuc/r"], ["--title=-RBacLuc/r"],
                           ["-R", "BacLuc/r", "--unknown"], ["-R"], ["--", "-R", "BacLuc/r"]):
                 self.call(["pr", command, *flags], False)
-        self.call(["pr", "-RBacLuc/r", "create", "--body=-Rbad/r"])
+        self.call(["pr", "-RBacLuc/r", "create", "--title", "T", "--head", "br", "--base", "main"],
+                  expect=["api", "repos/BacLuc/r/pulls", "-X", "POST", "--jq", ".html_url",
+                          "-f", "title=T", "-f", "head=br", "-f", "base=main"])
         self.call(["pr", "create", "-RBacLuc/r"], False, GH_HOST="evil.com")
+
+    def test_pr_create_translation(self):
+        base = ["pr", "create", "-R", "BacLuc/r", "--title", "T", "--head", "br", "--base", "main"]
+        rest = ["api", "repos/BacLuc/r/pulls", "-X", "POST", "--jq", ".html_url",
+                "-f", "title=T", "-f", "head=br", "-f", "base=main"]
+        self.call(base, expect=rest)
+        self.call(base + ["--draft"], expect=rest + ["-F", "draft=true"])
+        self.call(base + ["--body", "hello"], expect=rest + ["-f", "body=hello"])
+        with tempfile.NamedTemporaryFile("w", delete=False) as body_file:
+            body_file.write("body from file")
+            body_path = body_file.name
+        self.addCleanup(lambda: os.unlink(body_path))
+        self.call(base + ["--body-file", body_path], expect=rest + ["-f", "body=body from file"])
+        self.call(base + ["--body-file", "-"], expect=rest + ["-f", "body=payload\n"])
+        self.call(["pr", "new", "-R", "BacLuc/r", "--title", "T", "--head", "br", "--base", "main"],
+                  expect=rest)
+        for repo in ("-RBacLuc/r", "-R=BacLuc/r", "--repo=BacLuc/r"):
+            self.call(["pr", "create", repo, "--title", "T", "--head", "br", "--base", "main"],
+                      expect=rest)
+        for repo in ("github.com/BacLuc/r", "https://github.com/BacLuc/r"):
+            self.call(["pr", "create", "-R", repo, "--title", "T", "--head", "br", "--base", "main"],
+                      expect=rest)
+        self.call(["pr", "create", "--help"])
+        for denied in (
+            ["pr", "create", "-R", "BacLuc/r", "--head", "br", "--base", "main"],
+            ["pr", "create", "-R", "BacLuc/r", "--title", "T", "--base", "main"],
+            ["pr", "create", "-R", "BacLuc/r", "--title", "T", "--head", "br"],
+            ["pr", "create", "-R", "BacLuc/r", "--title", "T", "--head", "br", "--base", "main",
+             "--body", "x", "--body-file", "y"],
+            ["pr", "create", "-R", "BacLuc/r", "--title", "T", "--head", "br", "--base", "main",
+             "--body-file", "missing-file"],
+            ["pr", "create", "-R", "BacLuc/r", "--title", "T", "--head", "br", "--base", "main",
+             "--reviewer", "alice"],
+            ["pr", "create", "-R", "BacLuc/r", "--title", "T", "--head", "br", "--base", "main",
+             "-r", "alice"],
+            ["pr", "create", "-R", "BacLuc/r", "--title", "T", "--head", "br", "--base", "main",
+             "--label", "bug"],
+            ["pr", "create", "-R", "BacLuc/r", "--title", "T", "--head", "br", "--base", "main",
+             "-l", "bug"],
+            ["pr", "create", "-R", "BacLuc/r", "--title", "T", "--head", "br", "--base", "main",
+             "--milestone", "1"],
+            ["pr", "create", "-R", "BacLuc/r", "--title", "T", "--head", "br", "--base", "main",
+             "-m", "1"],
+            ["pr", "create", "-R", "BacLuc/r", "--title", "T", "--head", "br", "--base", "main",
+             "--assignee", "alice"],
+            ["pr", "create", "-R", "BacLuc/r", "--title", "T", "--head", "br", "--base", "main",
+             "-a", "alice"],
+            ["pr", "create", "-R", "BacLuc/r", "--title", "T", "--head", "br", "--base", "main",
+             "--project", "x"],
+            ["pr", "create", "-R", "BacLuc/r", "--title", "T", "--head", "br", "--base", "main",
+             "-p", "x"],
+            ["pr", "create", "-R", "BacLuc/r", "--title", "T", "--head", "br", "--base", "main",
+             "-T", "tpl"],
+            ["pr", "create", "-R", "BacLuc/r", "--title", "T", "--head", "br", "--base", "main",
+             "--fill"],
+            ["pr", "create", "-R", "BacLuc/r", "--title", "T", "--head", "br", "--base", "main",
+             "--fill-first"],
+            ["pr", "create", "-R", "BacLuc/r", "--title", "T", "--head", "br", "--base", "main",
+             "--fill-verbose"],
+            ["pr", "create", "-R", "BacLuc/r", "--title", "T", "--head", "br", "--base", "main",
+             "--web"],
+            ["pr", "create", "-R", "BacLuc/r", "--title", "T", "--head", "br", "--base", "main",
+             "--dry-run"],
+            ["pr", "create", "-R", "BacLuc/r", "--title", "T", "--head", "br", "--base", "main",
+             "--recover", "x"],
+            ["pr", "create", "-R", "BacLuc/r", "--title", "T", "--head", "br", "--base", "main",
+             "--attach", "f"],
+            ["pr", "create", "-R", "BacLuc/r", "--title", "T", "--head", "br", "--base", "main",
+             "--no-maintainer-edit"],
+            ["pr", "create", "-R", "BacLuc/r", "--title", "T", "--head", "br", "--base", "main",
+             "-e"],
+        ):
+            self.call(denied, False)
 
     def test_api(self):
         for endpoint in ("repos/ecamp/ecamp3/pulls", "/repos/ecamp/ecamp3/pulls", "https://api.github.com/repos/ecamp/ecamp3/pulls"):
@@ -160,6 +246,11 @@ class CliWrapperTest(unittest.TestCase):
                      ["issue", "edit", "234", "-R", "bacluc-agent-org/r", "-b", "y"],
                      ["issue", "close", "https://github.com/BacLuc/r/issues/1"],
                      ["workflow", "run", "ci.yml", "-R", "bacluc-agent/r", "--ref", "main"],
+                     ["run", "cancel", "123", "-R", "BacLuc/r"],
+                     ["run", "rerun", "123", "-R", "bacluc-agent/r"],
+                     ["run", "delete", "123", "-R", "BacLuc/r"],
+                     ["cache", "delete", "key", "-R", "BacLuc/r"],
+                     ["release", "download", "v1", "-R", "BacLuc/r"],
                      ["api", "search/issues", "-XGET", "-fq=repo:ecamp/ecamp3"],
                      ["api", "repos/bacluc-agent-org/r/issues", "-fbody=x"]):
             self.call(argv, TEST_STATUS="17")
@@ -174,6 +265,8 @@ class CliWrapperTest(unittest.TestCase):
                      ["workflow", "run", "ci.yml", "--ref", "issue-234"],
                      ["workflow", "run", "ci.yml", "-R", "outsider/r"],
                      ["workflow", "disable", "ci.yml", "-R", "outsider/r"],
+                     ["run", "cancel", "123", "-R", "outsider/r"],
+                     ["cache", "delete", "key", "-R", "outsider/r"],
                      ["api", "repos/ecamp/ecamp3/issues/1/comments", "-fbody=test"],
                      ["api", "repos/{owner}/{repo}/issues/comments/1", "-XPATCH", "-fbody=test"],
                      ["api", "repos/ecamp/ecamp3/forks", "-XPOST"],
