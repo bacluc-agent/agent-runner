@@ -153,7 +153,9 @@ and verifies forwarding and historical denial in a later step outside the checko
 
 ## Agent network sandbox feasibility
 
-The `scripts/network_policy_proxy.py` policy endpoint is a runnable, standard-library PoC for the decision rule: outsider `GET`/`HEAD`/`OPTIONS` are allowed, mutations are denied except GitHub REST mutations targeting `BacLuc` or `bacluc-agent`. Run its local HTTP exercise with `python3 scripts/test_network_policy_proxy.py`. It evaluates supplied method/URL pairs only; it does not intercept, forward, or constrain agent traffic and is not a security boundary.
+The `scripts/network_policy_proxy.py` policy endpoint is a runnable, standard-library PoC for the decision rule: outsider `GET`/`HEAD`/`OPTIONS` are allowed, mutations are denied except GitHub REST mutations targeting `BacLuc` or `bacluc-agent`. Run its local HTTP exercise with `python3 scripts/test_network_policy_proxy.py`. It evaluates supplied method/URL pairs only; it does not intercept or forward agent requests, intercept mutations at the kernel level, integrate with an agent runtime, or constrain agent traffic. It is not a security boundary.
+
+The table below is a shortlist of documented sandboxing and networking approaches, selected for relevance to process isolation, egress control, or HTTP policy enforcement in this runner. It is not an exhaustive evaluation of all agent sandbox tools: no tools were installed or benchmarked, and compatibility, bypass resistance, and enforcement claims remain unverified on GitHub-hosted runners. In particular, the documented nono capabilities are a prototype lead, not evidence of a kernel-level HTTP interceptor.
 
 A production design needs two enforced layers: an L7 credential proxy that checks GitHub method/path and prevents the credential being used elsewhere, plus a sandbox that prevents the agent and child processes from bypassing that proxy. HTTPS method/path are encrypted on the wire, so Linux syscall filters, namespaces, and firewall rules cannot infer them. A direct-to-network escape therefore defeats a proxy-only policy.
 
