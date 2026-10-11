@@ -124,6 +124,9 @@ class CliWrapperTest(unittest.TestCase):
                 "-f", "title=T", "-f", "head=br", "-f", "base=main"]
         self.call(base, expect=rest)
         self.call(base + ["--draft"], expect=rest + ["-F", "draft=true"])
+        self.call(base + ["-d"], expect=rest + ["-F", "draft=true"])
+        self.call(base + ["--draft=true"], expect=rest + ["-F", "draft=true"])
+        self.call(base + ["--draft=false"], expect=rest)
         self.call(base + ["--body", "hello"], expect=rest + ["-f", "body=hello"])
         with tempfile.NamedTemporaryFile("w", delete=False) as body_file:
             body_file.write("body from file")
@@ -190,6 +193,23 @@ class CliWrapperTest(unittest.TestCase):
              "-e"],
         ):
             self.call(denied, False)
+
+    def test_repo_create_owner_guard(self):
+        for argv in (
+            ["repo", "create", "outsider/r"],
+            ["repo", "create", "outsider/r", "--public"],
+            ["repo", "create", "r", "--org", "outsider"],
+            ["repo", "create", "outsider/r", "--org", "bacluc-agent"],
+        ):
+            self.call(argv, False, GITHUB_REPOSITORY="BacLuc/r")
+        for argv in (
+            ["repo", "create", "BacLuc/r"],
+            ["repo", "create", "bacluc-agent/r"],
+            ["repo", "create", "r"],
+            ["repo", "create", "r", "--org", "bacluc-agent"],
+            ["repo", "create", "r", "--public"],
+        ):
+            self.call(argv, TEST_STATUS="17", GITHUB_REPOSITORY="BacLuc/r")
 
     def test_api(self):
         for endpoint in ("repos/ecamp/ecamp3/pulls", "/repos/ecamp/ecamp3/pulls", "https://api.github.com/repos/ecamp/ecamp3/pulls"):

@@ -136,7 +136,9 @@ The installer saves the real CLI's absolute path before changing PATH.
   fails closed.
 - Known gaps: `gh project` mutations with `--owner` are not owner-checked
   (GraphQL-only; the token cannot reach outsider orgs), and a `gh cache delete`
-  key containing `/` is a fail-closed false positive.
+  key shaped exactly like `owner/repo` is a fail-closed false positive (it is
+  mistaken for a repository selector); a key such as `key/with/slash` is
+  allowed.
 - `gh pr revert` requires exactly one PR number or github.com PR URL and an
   explicit `-R`/`--repo` (or a URL selector) targeting one of those owned owners;
   implicit destinations fail closed. The REST revert endpoint

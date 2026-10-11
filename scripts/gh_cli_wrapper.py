@@ -69,7 +69,7 @@ def options(args, values, switches):
                 index += 1
             parsed.setdefault(values[key], []).append(value)
         elif key in switches and (not separator or value in {"true", "false"}):
-            parsed.setdefault(switches[key], []).append(True)
+            parsed.setdefault(switches[key], []).append(value if separator else True)
         else:
             deny(f"unsupported or ambiguous option {key}")
     return positional, parsed
@@ -114,7 +114,7 @@ def build_pr_create(prefix, args):
         fields += ["-f", f"body={body}"]
     elif "body" in parsed:
         fields += ["-f", f"body={parsed['body'][-1]}"]
-    if "draft" in parsed:
+    if "draft" in parsed and parsed["draft"][-1] != "false":
         fields += ["-F", "draft=true"]
     return ["api", f"repos/{repo}/pulls", "-X", "POST", "--jq", ".html_url", *fields]
 
@@ -175,6 +175,22 @@ def org_option(args):
     return None
 
 
+def repo_create_owner(args):
+    """Owner of the positional repository argument of `gh repo create`, if any."""
+    index = 1  # skip the subcommand
+    while index < len(args):
+        arg = args[index]
+        index += 1
+        if not arg.startswith("-"):
+            if "/" in arg:
+                return arg.split("/", 1)[0]
+            return None
+        if arg in {"--default-branch", "--description", "--gitignore", "--homepage", "--license",
+                   "--org", "--remote", "--source", "--team", "--template"}:
+            index += 1
+    return None
+
+
 def selectors_of(args):
     explicit, positional = [], []
     index = 0
@@ -218,6 +234,9 @@ def validate_mutation(command, args):
             owned_org(org)
         else:
             owned_repo(os.environ.get("GITHUB_REPOSITORY", ""))
+        owner = repo_create_owner(args)
+        if owner is not None:
+            owned_org(owner)
         return
     selectors = selectors_of(args)
     if command in {"issue", "workflow"}:
