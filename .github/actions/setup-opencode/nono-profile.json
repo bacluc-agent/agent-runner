@@ -8,7 +8,7 @@
   },
   "extends": "node-dev",
   "filesystem": {
-    "allow": ["$HOME/.local/share/opencode/log", "$TMPDIR/opencode-db"],
+    "allow": ["$HOME/.local/share/opencode", "$TMPDIR/opencode-db"],
     "read": ["$HOME/.config/opencode"],
     "read_file": ["$HOME/.local/share/opencode/auth.json"]
   },

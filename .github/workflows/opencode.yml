@@ -744,6 +744,13 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
 
+      - name: Run wrapper and guard unit tests
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 scripts/test_gh_cli_wrapper.py -v
+          python3 scripts/test_http_guard.py -v
+
       - name: Verify sandbox policy and OpenCode PONG
         shell: bash
         env:
@@ -775,13 +782,19 @@ jobs:
           [[ "$status" == 401 ]] || { printf 'Sanctioned fork endpoint was not allowed through the sandbox: HTTP %s\n' "$status" >&2; exit 1; }
           printf '%s\n' 'Sanctioned fork endpoint passed the sandbox and was rejected by GitHub without credentials (HTTP 401)'
 
-          output=$(scripts/run-agent-sandboxed.sh run --model openai/gpt-6-luna 'Reply with exactly PONG and do nothing else.')
-          printf '%s\n' "$output"
-          [[ "$output" == *PONG* ]]
+          status=$(nono run --profile "$NONO_PROFILE" --allow-cwd -- curl -sS -o /dev/null -w '%{http_code}' https://opencode.ai/)
+          printf 'Provider domain opencode.ai reachability: HTTP %s\n' "$status"
+          [[ "$status" != 403 ]] || { printf 'Provider domain opencode.ai was denied by nono: HTTP %s\n' "$status" >&2; exit 1; }
 
-      - name: Run wrapper and guard unit tests
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          python3 scripts/test_gh_cli_wrapper.py -v
-          python3 scripts/test_http_guard.py -v
+          set +e
+          output=$(scripts/run-agent-sandboxed.sh run --model openai/gpt-5.6-luna 'Reply with exactly PONG and do nothing else.')
+          pong_status=$?
+          set -e
+          printf '%s\n' "$output"
+          if ((pong_status != 0)); then
+            printf '%s\n' 'OpenCode PONG failed; dumping opencode and nono logs:' >&2
+            cat ~/.local/share/opencode/log/*.log 2>/dev/null || true
+            find "$HOME/.local/share/nono" "$HOME/.local/state/nono" "$RUNNER_TEMP" -maxdepth 4 -name '*.log' -print -exec cat {} \; 2>/dev/null || true
+            exit "$pong_status"
+          fi
+          [[ "$output" == *PONG* ]]
