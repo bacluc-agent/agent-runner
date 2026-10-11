@@ -751,12 +751,10 @@ jobs:
           curl -fsS https://api.github.com/rate_limit >/dev/null
           printf '%s\n' 'GitHub GET allowed'
 
-          if nono run --profile "$NONO_PROFILE" --allow-cwd -- curl -sS -X POST \
+          status=$(nono run --profile "$NONO_PROFILE" --allow-cwd -- curl -sS -o /dev/null -w '%{http_code}' -X POST \
             https://api.github.com/repos/octocat/Hello-World/issues \
-            -H 'Content-Type: application/json' -d '{"title":"sandbox probe"}'; then
-            printf '%s\n' 'Outsider mutation unexpectedly allowed' >&2
-            exit 1
-          fi
+            -H 'Content-Type: application/json' -d '{"title":"sandbox probe"}')
+          [[ "$status" == 403 ]] || { printf 'Outsider mutation was not denied: HTTP %s\n' "$status" >&2; exit 1; }
           printf '%s\n' 'Outsider mutation denied'
 
           status=$(nono run --profile "$NONO_PROFILE" --allow-cwd -- curl -sS -o /dev/null -w '%{http_code}' -X POST \
