@@ -200,6 +200,19 @@ class CliWrapperTest(unittest.TestCase):
             ["repo", "create", "outsider/r", "--public"],
             ["repo", "create", "r", "--org", "outsider"],
             ["repo", "create", "outsider/r", "--org", "bacluc-agent"],
+            ["repo", "create", "-d", "x", "outsider/r"],
+            ["repo", "create", "-g", "x", "outsider/r"],
+            ["repo", "create", "-h", "x", "outsider/r"],
+            ["repo", "create", "-l", "x", "outsider/r"],
+            ["repo", "create", "-r", "x", "outsider/r"],
+            ["repo", "create", "-s", ".", "outsider/r"],
+            ["repo", "create", "-t", "x", "outsider/r"],
+            ["repo", "create", "-p", "x", "outsider/r"],
+            ["repo", "create", "-d", "x", "--org", "bacluc-agent", "outsider/r"],
+            ["repo", "create", "-d=x", "outsider/r"],
+            ["repo", "create", "--description=x", "outsider/r"],
+            ["repo", "create", "-c", "outsider/r"],
+            ["repo", "create", "--public", "outsider/r"],
         ):
             self.call(argv, False, GITHUB_REPOSITORY="BacLuc/r")
         for argv in (
@@ -208,6 +221,11 @@ class CliWrapperTest(unittest.TestCase):
             ["repo", "create", "r"],
             ["repo", "create", "r", "--org", "bacluc-agent"],
             ["repo", "create", "r", "--public"],
+            ["repo", "create", "-d", "x", "BacLuc/r"],
+            ["repo", "create", "-d=x", "BacLuc/r"],
+            ["repo", "create", "--description=x", "BacLuc/r"],
+            ["repo", "create", "-c", "BacLuc/r"],
+            ["repo", "create", "--public", "BacLuc/r"],
         ):
             self.call(argv, TEST_STATUS="17", GITHUB_REPOSITORY="BacLuc/r")
 

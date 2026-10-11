@@ -175,20 +175,28 @@ def org_option(args):
     return None
 
 
-def repo_create_owner(args):
-    """Owner of the positional repository argument of `gh repo create`, if any."""
+REPO_CREATE_VALUE_FLAGS = {
+    "-d", "--description", "-g", "--gitignore", "-h", "--homepage", "-l", "--license",
+    "-p", "--template", "-r", "--remote", "-s", "--source", "-t", "--team", "--org",
+}
+
+
+def repo_create_owners(args):
+    """Owners of positional `owner/name` arguments of `gh repo create`, if any."""
+    owners = []
     index = 1  # skip the subcommand
     while index < len(args):
         arg = args[index]
         index += 1
-        if not arg.startswith("-"):
-            if "/" in arg:
-                return arg.split("/", 1)[0]
-            return None
-        if arg in {"--default-branch", "--description", "--gitignore", "--homepage", "--license",
-                   "--org", "--remote", "--source", "--team", "--template"}:
-            index += 1
-    return None
+        if arg.startswith("-"):
+            key, separator, _ = arg.partition("=")
+            if key in REPO_CREATE_VALUE_FLAGS and not separator:
+                index += 1  # skip the separate value
+            continue
+        owner, separator, name = arg.partition("/")
+        if separator and owner and name and "/" not in name:
+            owners.append(owner)
+    return owners
 
 
 def selectors_of(args):
@@ -234,8 +242,7 @@ def validate_mutation(command, args):
             owned_org(org)
         else:
             owned_repo(os.environ.get("GITHUB_REPOSITORY", ""))
-        owner = repo_create_owner(args)
-        if owner is not None:
+        for owner in repo_create_owners(args):
             owned_org(owner)
         return
     selectors = selectors_of(args)
