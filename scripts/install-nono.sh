@@ -14,6 +14,7 @@ NONO_VERSION="v$NONO_VERSION" NONO_INSTALL_DIR="$NONO_INSTALL_DIR" sh "$NONO_INS
 rm -f "$NONO_INSTALLER"
 nono="$NONO_INSTALL_DIR/nono"
 "$nono" --version
+mkdir -p "$HOME/.local/share/opencode/log"
 
 python3 - "$GITHUB_ACTION_PATH/nono-profile.json" "$RUNNER_TEMP/agent-runner-nono-profile.json" "$RUNNER_TEMP" << 'PY'
 import json

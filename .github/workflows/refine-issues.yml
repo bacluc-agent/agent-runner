@@ -189,7 +189,7 @@ jobs:
               stop_token="$(openssl rand -hex 32)"
               : "${stop_token:?stop-commands fence token generation failed}"
               printf '::stop-commands::%s\n' "$stop_token"
-              timeout 8m nono run --profile "$NONO_PROFILE" -- opencode run --agent issue-refiner --model "$selection_model" --title "issue-refiner" \
+              timeout 8m nono run --profile "$NONO_PROFILE" --allow-cwd -- opencode run --agent issue-refiner --model "$selection_model" --title "issue-refiner" \
                 "$(< "$prompt")" | tee "$out"
               statuses=("${PIPESTATUS[@]}")
               printf '::%s::\n' "$stop_token"
