@@ -9,6 +9,7 @@
   "extends": "node-dev",
   "filesystem": {
     "allow": ["$HOME/.local/share/opencode/log", "$TMPDIR/opencode-db"],
+    "read": ["$HOME/.config/opencode"],
     "read_file": []
   },
   "meta": {
