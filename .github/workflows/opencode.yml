@@ -793,10 +793,12 @@ jobs:
           printf 'GET to explicitly allowlisted CONNECT host opencode.ai: HTTP %s\n' "$status"
           [[ "$status" != 403 ]] || { printf 'GET to explicitly allowlisted opencode.ai was denied by nono: HTTP %s\n' "$status" >&2; exit 1; }
 
-          probe_bin="$RUNNER_TEMP/nono-denial-probe"
+          probe_bin="$GITHUB_WORKSPACE/.nono-denial-probe"
           mkdir -p "$probe_bin"
           printf '#!/usr/bin/env bash\nexec curl -sS https://example.com/\n' > "$probe_bin/opencode"
           chmod +x "$probe_bin/opencode"
+          cleanup_probe() { rm -rf "$probe_bin"; }
+          trap cleanup_probe EXIT
           export PATH="$probe_bin:$PATH"
           rm -f "$RUNNER_TEMP/nono-proxy.log"
           set +e
@@ -807,7 +809,7 @@ jobs:
           [[ -s "$RUNNER_TEMP/nono-proxy.log" ]] || { printf 'nono stderr log was not captured\n' >&2; exit 1; }
           printf '%s\n' 'Captured nono stderr for denied outbound request:'
           cat "$RUNNER_TEMP/nono-proxy.log"
-          grep -Eiq 'example\.com|den(y|ied|ial)|blocked' "$RUNNER_TEMP/nono-proxy.log" || {
+          grep -Eiq 'example\.com.*den(y|ied|ial)|den(y|ied|ial).*example\.com' "$RUNNER_TEMP/nono-proxy.log" || {
             printf 'Captured nono stderr did not identify the denied request\n' >&2
             exit 1
           }
