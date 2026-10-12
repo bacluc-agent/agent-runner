@@ -5,6 +5,7 @@ exec nono run --profile "$NONO_PROFILE" --allow-cwd \
   --allow "$HOME/.local/share/opencode" \
   --allow "$HOME/.local/state/opencode" \
   --allow "${TMPDIR:-/tmp}/opencode-db" \
-  --read "$HOME/.config" \
+  --read "$HOME/.config/opencode" \
+  --read "$HOME/.config/gh" \
   --read "${RUNNER_TEMP:?}" \
   -- opencode "$@"
