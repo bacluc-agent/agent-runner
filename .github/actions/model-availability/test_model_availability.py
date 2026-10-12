@@ -1273,6 +1273,18 @@ class TestRefineIssuesNoCandidates:
         end = next(i for i in range(start + 1, len(lines)) if lines[i].strip() == "fi")
         return "\n".join(lines[start : end + 1])
 
+    @classmethod
+    def _comment_fetch_failure_block(cls):
+        lines = cls.WORKFLOW.read_text().splitlines()
+        start = next(
+            i
+            for i, line in enumerate(lines)
+            if line.strip()
+            == 'if [[ ! -s "$candidates" ]] && (( comments_fetch_failed > 0 )); then'
+        )
+        end = next(i for i in range(start + 1, len(lines)) if lines[i].strip() == "fi")
+        return "\n".join(lines[start : end + 1])
+
     def test_no_candidates_exits_zero_before_the_guard(self, tmp_path):
         search_json = tmp_path / "candidates.json"
         search_json.write_text("[]")
@@ -1281,6 +1293,7 @@ class TestRefineIssuesNoCandidates:
         script = (
             f"search_json={str(search_json)!r}\n"
             f"candidates={str(candidates)!r}\n"
+            "comments_fetch_failed=0\n"
             "jq -r '.[].number | tostring' \"$search_json\" > \"$candidates\"\n"
             f"{block}\n"
             # canary: the block's own `exit 0` must stop the script before the guard
@@ -1300,6 +1313,25 @@ class TestRefineIssuesNoCandidates:
         assert content.index("No unrefined open issues; nothing to do.") < content.index(
             "(( refined > 0 )) || exit 1"
         )
+
+    def test_comment_fetch_failure_is_not_reported_as_no_work(self, tmp_path):
+        candidates = tmp_path / "candidate-numbers.txt"
+        candidates.write_text("")
+        block = self._comment_fetch_failure_block()
+        result = subprocess.run(
+            [
+                "bash",
+                "-Eeuo",
+                "pipefail",
+                "-c",
+                f'candidates={str(candidates)!r}\ncomments_fetch_failed=1\n{block}',
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 1
+        assert "comment fetching failed" in result.stderr.lower()
+        assert "No unrefined open issues; nothing to do." not in result.stdout
 
 
 class TestRefineIssuesComments:
@@ -1323,7 +1355,9 @@ class TestRefineIssuesComments:
         relabel = content.index('gh issue edit "$number" --add-label "agent-refined"')
         assert validation < relabel
 
-    def test_prompt_includes_filtered_human_comments(self, tmp_path):
+    def test_removed_agent_refined_candidate_uses_fresh_body_and_filtered_feedback(
+        self, tmp_path
+    ):
         content = self.WORKFLOW.read_text()
         start = content.index('search_json="$RUNNER_TEMP/candidates.json"')
         end = content.index('} > "$prompt"', start) + len('} > "$prompt"')
@@ -1337,10 +1371,14 @@ args = sys.argv[1:]
 if args[0] == "issue":
     number = args[1]
     field = args[args.index("--json") + 1]
-    print(f"Title of {number}" if field == "title" else f"Body of {number}")
+    if field != "title,body":
+        raise SystemExit(f"expected live title and body query, got {field}")
+    print(json.dumps({"title": f"Title of {number}", "body": "Current issue body"}))
 elif args[0] == "api":
     if args[1].startswith("search/issues?q="):
-        print(json.dumps([{"number": 11, "title": "Example", "body": "Original issue body", "labels": [], "updated_at": "2026-02-01T00:00:00Z"}]))
+        if "-label:agent-refined" not in args[1]:
+            raise SystemExit("candidate search must include issues with agent-refined removed")
+        print(json.dumps([{"number": 11, "title": "Example", "body": "Stale search body", "labels": [], "updated_at": "2026-02-01T00:00:00Z"}]))
     else:
         print(json.dumps([[{"user": {"type": "User", "login": "human"}, "body": "please add tests", "created_at": "2026-02-02T00:00:00Z"}, {"user": {"type": "User", "login": "bacluc-agent"}, "body": "progress note", "created_at": "2026-02-03T00:00:00Z"}, {"user": {"type": "Bot", "login": "github-actions[bot]"}, "body": "bot comment", "created_at": "2026-02-04T00:00:00Z"}, {"user": {"type": "User", "login": "human"}, "body": "<!-- agent-progress -->\\nprogress", "created_at": "2026-02-05T00:00:00Z"}]]))
 """
@@ -1368,7 +1406,8 @@ elif args[0] == "api":
             in result.stdout
         )
         assert "please add tests" in result.stdout
-        assert "Original issue body" in result.stdout
+        assert "Current issue body" in result.stdout
+        assert "Stale search body" not in result.stdout
         assert "progress note" not in result.stdout
         assert "bot comment" not in result.stdout
         assert "agent-progress" not in result.stdout

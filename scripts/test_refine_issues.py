@@ -46,3 +46,14 @@ def test_refinement_still_includes_human_comments_and_filters_agent_comments():
     assert 'select(.user.login != "bacluc-agent")' in workflow
     assert 'contains("<!-- agent-progress -->") | not' in workflow
     assert "Reviewer comments (feedback to fold into the Goal and steps" in workflow
+
+
+def test_issue_body_is_read_from_the_fresh_issue_view():
+    workflow = WORKFLOW.read_text()
+
+    assert (
+        'issue_json="$(gh issue view "$number" -R "$ISSUE_REPOSITORY" --json title,body)"'
+        in workflow
+    )
+    assert 'body="$(jq -r \'.body // ""\' <<<"$issue_json")"' in workflow
+    assert 'select(.number == $number)' not in workflow
