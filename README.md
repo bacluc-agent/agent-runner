@@ -2,7 +2,9 @@
 
 This repository runs an automated software agent that turns ideas into merged
 pull requests. You write an idea as a GitHub issue, and the agent implements
-it, opens a pull request, and reacts to review comments — all on its own.
+it and reacts to review comments — all on its own. A branch and pull request
+follow when the work changes code; a no-code-change task delivers its result
+on the issue instead.
 
 ## How it works: two repositories
 
@@ -14,6 +16,7 @@ The system is split across two public repositories:
   the "workshop". This repository contains the GitHub Actions workflows that
   run the agent.
 
+There are some example issues in [issues](../../issues) that show how the issues could look like. \
 The runner reads issues from the todo repository through the
 `ISSUE_REPOSITORY` repository variable (set to `bacluc-agent/agent-todo`).
 
@@ -37,12 +40,13 @@ anything.
    when the run ends.
 4. **The issue is implemented** (right after selection). The _coordinator_
    agent checks which AI models are currently available (using a cache so it
-   stays fast), picks a model, implements the issue, and pushes the work to a
-   branch named `agent-run/<issue-number>-<run-id>`. It keeps a single
-   structured progress comment on the issue.
-5. **A pull request is opened.** The coordinator agent opens the pull request
-   itself. Its description links the GitHub Actions runs that prove the
-   change works.
+   stays fast), picks a model, and implements the issue. It keeps a single
+   structured progress comment on the issue. When the work changes code, the
+   coordinator pushes the work to its own branch; the workflow pushes
+   `agent-run/<issue-number>-<run-id>` only as a fallback for uncommitted work.
+5. **A pull request is opened, when code changed.** The coordinator agent opens
+   the pull request itself. Its description links the GitHub Actions runs that
+   prove the change works.
 6. **Review comments are applied** (every 4 hours, at minute 32). The
    _review-fixes_ workflow finds open pull requests with review comments and
    sends the agent back to apply them.
@@ -54,7 +58,7 @@ idea (issue in agent-todo)
   → refine (hourly :07)
   → select (hourly :24)
   → implement (coordinator agent)
-  → pull request (opened by the agent)
+  → pull request (opened by the agent, when code changed)
   → review comments → fixes (every 4 h)
   → merge (human)
 ```
@@ -88,8 +92,9 @@ dispatching when no allowed model is available.
 
 ### Agents (the AI personas)
 
-- `issue-selector` — reads the candidate issues and picks one, avoiding
-  duplicates and repeating recent picks.
+- `issue-selector` — reads the candidate issues and picks one from the best
+  available mechanically ranked tier.
+
 - `issue-refiner` — a technical writer that rewrites issue bodies into
   `## Goal` and `## How to implement`, keeping at most 4000 visible
   characters before any `<details>` fold and moving the rest into one
@@ -376,5 +381,5 @@ Tracked in bacluc-agent/agent-todo#152.
   a table of action runs. It posts a new comment only as a short reply to
   a comment you wrote.
 - **Who merges the pull request?** Mostly a human. In this repo, the agent
-  already merged things by himself. The agent implements and opens the PR;
-  a person reviews and merges.
+  already merged things by himself. The agent implements the change and opens
+  the PR when the work changes code; a person reviews and merges.

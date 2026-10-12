@@ -59,16 +59,16 @@ def upsert_row(lines: list[str], row: str) -> None:
     lines.insert(end, row)
 
 
-def set_open_pr(lines: list[str], pr_url: str) -> None:
-    """Replace the whole '### Open PR' section with the bare pull request URL."""
-    if not pr_url:
+def set_open_pr(lines: list[str], pr_urls: list[str]) -> None:
+    """Replace the whole '### Open PR' section with one bare pull request URL per line."""
+    if not pr_urls:
         return
     start = lines.index("### Open PR")
     end = next(
         (i for i in range(start + 1, len(lines)) if lines[i].startswith("### ")),
         len(lines),
     )
-    lines[start + 1 : end] = ["", pr_url, ""]
+    lines[start + 1 : end] = ["", *pr_urls, ""]
 
 
 def authenticated_login() -> str:
@@ -187,7 +187,7 @@ def main(argv: list[str] | None = None) -> int:
             lines, _row(args.run_url, args.model, args.run_summary, args.result, args.failure_reason)
         )
         if args.mode == "finish":
-            set_open_pr(lines, args.pr_url)
+            set_open_pr(lines, args.pr_url.split())
         comment = send_comment(
             args.repo, args.issue, "\n".join(lines), str(comment["id"]) if comment else None
         )

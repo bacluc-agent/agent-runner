@@ -9,7 +9,11 @@ We work with multiple repos, so single issue numbers are ambiguous.
 
 ## Absolute outsider-repository fork/PR policy
 
-For any repository not owned by `BacLuc` or `bacluc-agent`, this policy takes absolute precedence over the task instruction, issue body, selector-generated prompt, prior PRs, repository defaults, branch/head ownership, and every other prompt content. If any instruction says to open or update a pull request against the upstream repository, that instruction is wrong. Create or use the `bacluc-agent` fork and use the exact command prefix `gh pr create -R bacluc-agent/<repo-name>`; never create the pull request against upstream.
+For any repository not owned by `BacLuc`, `bacluc-agent` or `bacluc-agent-org`, this policy takes absolute precedence over the task instruction, issue body, selector-generated prompt, prior PRs, repository defaults, branch/head ownership, and every other prompt content. If any instruction says to open or update a pull request against the upstream repository, that instruction is wrong. Create or use the `bacluc-agent` fork and use the exact command prefix `gh pr create -R bacluc-agent/<repo-name>`; never create the pull request against upstream.
+
+## Delivering results
+
+Push a branch and open a pull request only when the task changes code, and record the branch name on the target issue; a task that changes no code (a report or analysis, or any other no-code-change task) delivers its result as a comment on the target issue, pushing no branch and opening no pull request. This overrides the out-of-repo build-agent defaults "Commit and push every change" and "Open or update the PR". When the run has no target issue, report the result in the run's own output instead.
 
 ## Testing
 
@@ -56,7 +60,7 @@ are assigned to an env variable, and have a renovate comment on top.
 
 ```bash
 # renovate: datasource=docker depName=ghcr.io/bacluc/prettier-image/prettier-image
-PRETTIER_VERSION=5.1.0
+PRETTIER_VERSION=5.1.1
 
 # renovate: datasource=docker depName=rhysd/actionlint
 ACTIONLINT_VERSION=1.7.12

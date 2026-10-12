@@ -9,6 +9,7 @@ on:
       - ".github/workflows/refine-issues.yml"
       - ".github/actions/**"
       - ".opencode/**"
+      - "scripts/**"
 
 permissions:
   contents: read
@@ -185,9 +186,13 @@ jobs:
               fi
 
               set +e
+              stop_token="$(openssl rand -hex 32)"
+              : "${stop_token:?stop-commands fence token generation failed}"
+              printf '::stop-commands::%s\n' "$stop_token"
               timeout 8m opencode run --agent issue-refiner --model "$selection_model" --title "issue-refiner" \
-                "$(< "$prompt")" 2> >(tee "${out}.stderr" >&2) | tee "$out"
+                "$(< "$prompt")" | tee "$out"
               statuses=("${PIPESTATUS[@]}")
+              printf '::%s::\n' "$stop_token"
               opencode_status=${statuses[0]}
               tee_status=${statuses[1]}
               validation_out="$(python3 scripts/validate_refined_issue.py --file "$out" 2>&1)"
@@ -247,6 +252,7 @@ jobs:
           done < "$candidates"
 
           printf '\nRefinement complete: %s refined, %s failed.\n' "$refined" "$failed"
+          (( refined > 0 )) || exit 1
 
       - name: Dump debug output
         if: always()

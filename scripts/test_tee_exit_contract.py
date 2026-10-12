@@ -184,6 +184,7 @@ def run_selection_block(script, tmp_path):
         ROOT / "scripts/issue-selection-tail.txt", work / "scripts/issue-selection-tail.txt"
     )
     shutil.copy(ROOT / "scripts/model-deny-list.txt", work / "scripts/model-deny-list.txt")
+    shutil.copy(ROOT / "scripts/selection_tiers.py", work / "scripts/selection_tiers.py")
     runner_temp = tmp_path / "runner-temp"
     runner_temp.mkdir()
     output = runner_temp / "github-output"

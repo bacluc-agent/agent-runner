@@ -20,6 +20,7 @@ on:
       - ".github/workflows/opencode.yml"
       - ".github/actions/**"
       - ".opencode/**"
+      - "scripts/**"
 
 permissions:
   contents: write
@@ -65,7 +66,11 @@ jobs:
         if: always()
         shell: bash
         run: |
+          stop_token="$(openssl rand -hex 32)"
+          : "${stop_token:?stop-commands fence token generation failed}"
+          printf '::stop-commands::%s\n' "$stop_token"
           cat "$RUNNER_TEMP"/model-probes/*.log 2>/dev/null || true
+          printf '::%s::\n' "$stop_token"
 
       - name: Pick issue and dispatch
         id: pick
@@ -87,6 +92,10 @@ jobs:
           if ! gh label create agent-running -R "$ISSUE_REPOSITORY" \
             --color 0E8A16 --description 'Selected by the hourly issue runner' --force; then
             printf '::warning::could not ensure the agent-running label exists; the claim may not apply\n'
+          fi
+          if ! gh label create agent-attempted -R "$ISSUE_REPOSITORY" \
+            --color 1D76DB --description 'Already attempted by the hourly issue runner' --force; then
+            printf '::warning::could not ensure the agent-attempted label exists; attempt history may not apply\n'
           fi
 
           printf '\n\n\n\n\n\n'
@@ -164,8 +173,10 @@ jobs:
           default_tail="$(cat scripts/issue-selection-tail.txt)"
           tail_instruction="${SELECTION_PROMPT:-$default_tail}"
 
-          enriched="$RUNNER_TEMP/candidates.enriched.txt"
-          : > "$enriched"
+          enriched="$RUNNER_TEMP/candidates.enriched.json"
+          cp "$search_json" "$enriched"
+          gh api "repos/${GITHUB_REPOSITORY}/branches?per_page=100" --paginate --jq '.[].name' > "$RUNNER_TEMP/branches.txt"
+          : > "$RUNNER_TEMP/enrichment.jsonl"
 
           # Repos to check for open agent PRs: the known agent repos plus any repos
           # referenced in candidate issue bodies (e.g. upstream ecamp/ecamp3).
@@ -198,61 +209,59 @@ jobs:
           mkdir -p "$pr_lookup_dir"
           for repo in "${repo_list[@]}"; do
             key="$(echo "$repo" | tr '/' '_')"
-            gh pr list -R "$repo" --state all --limit 200 --json number,updatedAt,headRefName,state,title \
-              --jq '.[] | "\(.headRefName)|#\(.number)|\(.updatedAt)|\(.state)|\(.title)"' 2>/dev/null \
-              | sort -t'|' -k3 -r > "$pr_lookup_dir/$key.lookup" || true
+            gh pr list -R "$repo" --state all --limit 200 --json number,createdAt,updatedAt,headRefName,state,title \
+              --jq '.[] | "\(.headRefName)|#\(.number)|\(.createdAt)|\(.updatedAt)|\(.state)|\(.title)"' 2>/dev/null \
+              | sort -t'|' -k4 -r > "$pr_lookup_dir/$key.lookup" || true
           done
 
           # Shuffle candidates so enrichment order (and the debug dump) is random.
           while IFS= read -r num; do
             pr_info="none"
+            pr_repo=""
+            pr_number=""
             for repo in "${repo_list[@]}"; do
               key="$(echo "$repo" | tr '/' '_')"
               match="$(grep -m1 -E "issue-${num}([-_]|[^0-9A-Za-z_-]|$)|${ISSUE_REPOSITORY}#${num}([^0-9]|$)" "$pr_lookup_dir/$key.lookup" 2>/dev/null || true)"
               if [[ -n "$match" ]]; then
+                pr_repo="$repo"
                 pr_number="$(echo "$match" | cut -d'|' -f2 | tr -d '#')"
-                pr_updated="$(echo "$match" | cut -d'|' -f3)"
-                pr_state="$(echo "$match" | cut -d'|' -f4)"
+                pr_created="$(echo "$match" | cut -d'|' -f3)"
+                pr_state="$(echo "$match" | cut -d'|' -f5)"
+                pr_last_commit="$(gh api --paginate --slurp "repos/$pr_repo/pulls/$pr_number/commits" | jq -er --arg fallback "$pr_created" '([.[][] | .commit.committer.date] | max) // $fallback')"
                 case "$pr_state" in
-                  MERGED) pr_info="merged #${pr_number} updated:${pr_updated}" ;;
-                  CLOSED) pr_info="closed #${pr_number} updated:${pr_updated}" ;;
-                  *) pr_info="open #${pr_number} updated:${pr_updated}" ;;
+                  MERGED) pr_info="merged #${pr_number} last-commit:${pr_last_commit}" ;;
+                  CLOSED) pr_info="closed #${pr_number} last-commit:${pr_last_commit}" ;;
+                  *) pr_info="open #${pr_number} last-commit:${pr_last_commit}" ;;
                 esac
                 break
               fi
             done
-            human_ts="$(gh issue view "$num" -R "$ISSUE_REPOSITORY" --json comments --jq '[.comments[] | select(.author.login != "bacluc-agent")] | max_by(.createdAt) | .createdAt // "none"' 2>/dev/null || echo "none")"
-            if [[ -z "$human_ts" || "$human_ts" == "null" ]]; then
-              human_ts="none"
+            # Newest non-bot feedback on the issue or on the matched PR. Formal reviews carry
+            # submitted_at and also mirror inline review comments, so one call covers both.
+            pr_human_ts="none"
+            if [[ -n "$pr_number" ]]; then
+              pr_human_ts="$(gh pr view "$pr_number" -R "$pr_repo" --json comments,reviews --jq '[[.comments[] | select(.author.login != "bacluc-agent") | .createdAt], [.reviews[] | select(.author.login != "bacluc-agent") | .submittedAt]] | add | max // "none"' 2>/dev/null || echo "none")"
             fi
-            printf '%s|%s|%s\n' "$num" "$pr_info" "$human_ts" >> "$enriched"
+            issue_human_ts="$(gh issue view "$num" -R "$ISSUE_REPOSITORY" --json comments --jq '[.comments[] | select(.author.login != "bacluc-agent")] | max_by(.createdAt) | .createdAt // "none"' 2>/dev/null || echo "none")"
+            jq -nc --arg num "$num" --arg pr "$pr_info" --arg a "$issue_human_ts" --arg b "$pr_human_ts" '{number:($num|tonumber),pr_info:$pr,last_human_comment_at:([$a,$b]|map(select(test("^[0-9]")))|max // null)}' >> "$RUNNER_TEMP/enrichment.jsonl"
           done < <(shuf "$candidates")
-          printf 'Candidate enrichment (PR + feedback):\n'
-          cat "$enriched"
-          printf '\n'
-
-          candidate_lines="$RUNNER_TEMP/candidate-lines.txt"
-          : > "$candidate_lines"
-          while IFS='|' read -r num pr_info human_ts; do
-            line="$(jq -r --arg num "$num" --arg pr_info "$pr_info" --arg human_ts "$human_ts" '.[] | select((.number | tostring) == $num) | "\(.number): \(.title) [labels: \([.labels[].name] | join(","))] [created: \(.created_at)] [PR: \($pr_info)] [last-human-feedback:\($human_ts)] | \((.body // "" | gsub("[\\r\\n\\t]+"; " ") | .[0:300]))"' "$search_json")"
-            printf '%s\n' "$line" >> "$candidate_lines"
-          done < "$enriched"
-
-          recent_issues="$(gh pr list -R "$GITHUB_REPOSITORY" --state all --limit 30 --json headRefName --jq '.[].headRefName' | grep -oE 'issue-[0-9]+' | grep -oE '[0-9]+' | awk '!seen[$0]++' | head -n 10 | paste -sd, - || true)"
-          recent_issues="${recent_issues:-none}"
+          jq -n --slurpfile issues "$enriched" --slurpfile enrichment "$RUNNER_TEMP/enrichment.jsonl" '$issues[0] | map(. as $issue | ($enrichment | map(select(.number == $issue.number)) | .[0]) as $e | if $e then . + {last_human_comment_at:$e.last_human_comment_at, pr_state:($e.pr_info|split(" ")[0]), pr_number:(if $e.pr_info == "none" then null else ($e.pr_info|split("#")[1]|split(" ")[0]|tonumber) end), pr_last_commit_at:(if $e.pr_info == "none" then null else ($e.pr_info|split("last-commit:")[1]) end)} else . end)' > "$RUNNER_TEMP/candidates.final.json"
+          cp "$RUNNER_TEMP/candidates.final.json" "$enriched"
 
           prompt="$RUNNER_TEMP/selection-prompt.txt"
-          {
-            printf '%s\n' 'Open issue candidates in this repository (number: title [labels] [created] [PR: none|open|merged|closed #<n> updated:<ts>] [last-human-feedback:<ts|none>] | body-excerpt), RANDOM ORDER — position carries no priority:'
-            cat "$candidate_lines" | shuf
-            printf '%s\n' "Recently selected — avoid: ${recent_issues}"
-            printf '%s\n' "$tail_instruction"
-          } > "$prompt"
+          printf '%s\n' "$tail_instruction" > "$RUNNER_TEMP/tail.txt"
+          python3 scripts/selection_tiers.py --candidates "$enriched" --branches "$RUNNER_TEMP/branches.txt" --tail-file "$RUNNER_TEMP/tail.txt" > "$prompt"
+          printf 'Selected-tier candidates:\n'
+          cat "$prompt"
 
           selection="$RUNNER_TEMP/selection.out"
           set +e
-          timeout "${SELECTION_TIMEOUT_MINUTES}m" opencode run --agent issue-selector --model "$selection_model" --title "issue-selector" "$(< "$prompt")" 2> >(tee "${selection}.stderr" >&2) | tee "$selection"
+          stop_token="$(openssl rand -hex 32)"
+          : "${stop_token:?stop-commands fence token generation failed}"
+          printf '::stop-commands::%s\n' "$stop_token"
+          timeout "${SELECTION_TIMEOUT_MINUTES}m" opencode run --agent issue-selector --model "$selection_model" --title "issue-selector" "$(< "$prompt")" | tee "$selection"
           selection_statuses=("${PIPESTATUS[@]}")
+          printf '::%s::\n' "$stop_token"
           selection_status=${selection_statuses[0]}
           selection_tee_status=${selection_statuses[1]}
           set -e
@@ -276,12 +285,12 @@ jobs:
           # pipeline, and the assignment would abort the step before the dispatch happens.
           issue_number="$(grep -E '^SELECTED_ISSUE:[[:space:]]*[0-9]+[[:space:]]*$' "$selection" | tail -1 | grep -oE '[0-9]+' || true)"
           if [[ -z "$issue_number" ]] || ! grep -qxF "$issue_number" "$candidates"; then
-            printf '::warning::could not determine selected issue; dispatching without a claim\n'
-          else
-            printf 'issue_number=%s\n' "$issue_number" >> "$GITHUB_OUTPUT"
-            if ! gh issue edit "$issue_number" -R "$ISSUE_REPOSITORY" --add-label agent-running; then
-              printf '::warning::could not claim issue %s; dispatching unclaimed\n' "$issue_number"
-            fi
+            printf '::error::missing or invalid SELECTED_ISSUE; not dispatching\n'
+            exit 1
+          fi
+          printf 'issue_number=%s\n' "$issue_number" >> "$GITHUB_OUTPUT"
+          if ! gh issue edit "$issue_number" -R "$ISSUE_REPOSITORY" --add-label agent-running,agent-attempted; then
+            printf '::warning::could not claim issue %s; dispatching unclaimed\n' "$issue_number"
           fi
           {
             printf 'prompt<<%s\n' "$eof"
@@ -289,8 +298,12 @@ jobs:
             printf '%s\n' "$eof"
           } >> "$GITHUB_OUTPUT"
 
+          stop_token="$(openssl rand -hex 32)"
+          : "${stop_token:?stop-commands fence token generation failed}"
+          printf '::stop-commands::%s\n' "$stop_token"
           printf '%s\n' 'Implementation prompt:'
           cat "$selection"
+          printf '::%s::\n' "$stop_token"
 
       - name: Update cache on selection failure
         if: failure() && steps.pick.outputs.selection_model != '' && steps.model-availability.outputs.cache-issue != ''
@@ -340,6 +353,7 @@ jobs:
     uses: ./.github/workflows/opencode.yml
     with:
       prompt: ${{ needs.select.outputs.prompt }}
+      issue_number: ${{ needs.select.outputs.issue_number }}
     secrets: inherit
 
   release:

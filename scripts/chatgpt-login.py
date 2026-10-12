@@ -78,18 +78,6 @@ OTP_SELECTORS = [
 
 TWO_FA_TEXTS = ["Two-factor", "Two-factor authentication", "authenticator"]
 
-
-def _env(name: str, fallbacks: list[str]) -> str | None:
-    val = os.environ.get(name)
-    if val:
-        return val
-    for fb in fallbacks:
-        v = os.environ.get(fb)
-        if v:
-            return v
-    return None
-
-
 def _is_headless() -> bool:
     return os.environ.get("CHATGPT_HEADLESS", "").lower() in ("1", "true")
 
@@ -380,7 +368,7 @@ def _do_current_step(page, email: str, password: str, totp_key: str | None) -> b
         return _do_password_step(page, password)
     if path.startswith("/mfa-challenge"):
         if not totp_key:
-            print("2FA required but no TOTP key (CHATGPT_2FA_KEY/OPENAI_2FA_KEY/CHATGPT_TOTP_KEY) set", file=sys.stderr)
+            print("2FA required but no TOTP key (OPENAI_2FA_KEY) set", file=sys.stderr)
             return False
         return _do_2fa_step(page, totp_key)
     if path == "/choose-an-account":
@@ -391,7 +379,7 @@ def _do_current_step(page, email: str, password: str, totp_key: str | None) -> b
 
 
 def cmd_start() -> int:
-    cdp_port = int(os.environ.get("CHATGPT_CDP_PORT", "9222"))
+    cdp_port = int(os.environ.get("OPENAI_CDP_PORT", "9222"))
 
     try:
         probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -550,11 +538,11 @@ def cmd_step() -> int:
             json.dump({"step": "done"}, sys.stdout)
             return 0
 
-        email = _env("CHATGPT_EMAIL", ["OPENAI_USERNAME"])
-        password = _env("CHATGPT_PASSWORD", ["OPENAI_PASSWORD"])
-        totp_key = _env("CHATGPT_2FA_KEY", ["OPENAI_2FA_KEY", "CHATGPT_TOTP_KEY"])
+        email = os.environ.get("OPENAI_USERNAME")
+        password = os.environ.get("OPENAI_PASSWORD")
+        totp_key = os.environ.get("OPENAI_2FA_KEY")
         if not email or not password:
-            print("CHATGPT_EMAIL/OPENAI_USERNAME and CHATGPT_PASSWORD/OPENAI_PASSWORD must be set", file=sys.stderr)
+            print("OPENAI_USERNAME and OPENAI_PASSWORD must be set", file=sys.stderr)
             return 1
 
         ok = _do_current_step(page, email, password, totp_key)
@@ -577,12 +565,12 @@ def cmd_step() -> int:
 
 
 def _full_login() -> int:
-    email = _env("CHATGPT_EMAIL", ["OPENAI_USERNAME"])
-    password = _env("CHATGPT_PASSWORD", ["OPENAI_PASSWORD"])
-    totp_key = _env("CHATGPT_2FA_KEY", ["OPENAI_2FA_KEY", "CHATGPT_TOTP_KEY"])
+    email = os.environ.get("OPENAI_USERNAME")
+    password = os.environ.get("OPENAI_PASSWORD")
+    totp_key = os.environ.get("OPENAI_2FA_KEY")
 
     if not email or not password:
-        print("CHATGPT_EMAIL/OPENAI_USERNAME and CHATGPT_PASSWORD/OPENAI_PASSWORD must be set", file=sys.stderr)
+        print("OPENAI_USERNAME and OPENAI_PASSWORD must be set", file=sys.stderr)
         return 1
 
     verifier, _ = _generate_pkce()
@@ -676,7 +664,7 @@ def _full_login() -> int:
                         _do_password_step(page, password)
                 elif path.startswith("/mfa-challenge"):
                     if not totp_key:
-                        print("2FA required but no TOTP key (CHATGPT_2FA_KEY/OPENAI_2FA_KEY/CHATGPT_TOTP_KEY) set", file=sys.stderr)
+                        print("2FA required but no TOTP key (OPENAI_2FA_KEY) set", file=sys.stderr)
                         browser.close()
                         callback.close()
                         return 1

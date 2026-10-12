@@ -401,6 +401,9 @@ class TestParseWhitelistedModels:
             "openai/gpt-6-astra\n"
             "openai/gpt-6\n"
             "openai/gpt-6-astra-fast\n"
+            "openai/gpt-6-luna\n"
+            "openai/gpt-6-luna-fast\n"
+            "openai/gpt-6-luna-preview\n"
             "opencode/gpt-5.6-luna-preview\n"
             "opencode/ling-3.0-flash-fin-free\n"
         )
@@ -410,6 +413,9 @@ class TestParseWhitelistedModels:
             "openai/gpt-5.3-codex-sparky",
             "openai/gpt-5.6-luna",
             "openai/gpt-5.6-luna-preview",
+            "openai/gpt-6-luna",
+            "openai/gpt-6-luna-fast",
+            "openai/gpt-6-luna-preview",
             "opencode/gpt-5.6-luna-preview",
         ]
 
@@ -626,6 +632,7 @@ class TestCandidatePriority:
 
     def test_openai_models(self):
         assert model_availability.candidate_priority("openai/gpt-5.6-luna") == 4
+        assert model_availability.candidate_priority("openai/gpt-6-luna") == 4
         assert model_availability.candidate_priority("openai/gpt-5.4") == 4
 
     def test_go_openai_providers(self):
@@ -1113,7 +1120,7 @@ class TestOpencodeWhitelist:
             assert model_availability.is_whitelisted(model, patterns)
         assert not model_availability.is_whitelisted("opencode/some-paid-model", patterns)
 
-    def test_openai_whitelist_prohibits_only_sol_and_terra(self):
+    def test_openai_whitelist_allows_gpt_6_luna_blocks_other_gpt_6(self):
         patterns = model_availability.PROVIDER_WHITELISTS["openai"]
         for model in [
             "gpt-5.3-codex-spark",
@@ -1126,6 +1133,9 @@ class TestOpencodeWhitelist:
             "gpt-5.6-luna",
             "gpt-5.6-luna-fast",
             "gpt-5.6-luna-preview",
+            "gpt-6-luna",
+            "gpt-6-luna-fast",
+            "gpt-6-luna-preview",
             "gpt-4o",
         ]:
             assert model_availability.is_whitelisted(model, patterns)
@@ -1136,6 +1146,10 @@ class TestOpencodeWhitelist:
             "gpt-5.6-terra",
             "gpt-5.6-terra-fast",
             "gpt-5.6-terra-preview",
+            "gpt-6",
+            "gpt-6-astra",
+            "gpt-6-astra-fast",
+            "gpt-6-sol",
         ]:
             assert not model_availability.is_whitelisted(model, patterns)
 
@@ -1213,6 +1227,79 @@ class TestMainProbeSummary:
 class TestDiscoveryTimeout:
     def test_discovery_timeout_is_bounded(self):
         assert model_availability.DISCOVERY_TIMEOUT_SECONDS <= 120
+
+
+class TestRefineIssuesExitCode:
+    WORKFLOW = Path(__file__).parents[3] / ".github/workflows/refine-issues.yml"
+
+    @classmethod
+    def _completion_tail(cls):
+        lines = cls.WORKFLOW.read_text().splitlines()
+        index = next(
+            i
+            for i, line in enumerate(lines)
+            if line.strip().startswith("printf '\\nRefinement complete:")
+        )
+        return "\n".join(lines[index : index + 2])
+
+    @staticmethod
+    def _run(tail, refined, failed):
+        return subprocess.run(
+            ["bash", "-c", f"refined={refined}\nfailed={failed}\n{tail}"],
+            capture_output=True,
+            text=True,
+        )
+
+    def test_all_refinements_failed_fails_the_step(self):
+        result = self._run(self._completion_tail(), 0, 3)
+        assert result.returncode == 1
+        assert "0 refined, 3 failed" in result.stdout
+
+    def test_partial_success_still_succeeds(self):
+        assert self._run(self._completion_tail(), 1, 2).returncode == 0
+
+
+class TestRefineIssuesNoCandidates:
+    WORKFLOW = Path(__file__).parents[3] / ".github/workflows/refine-issues.yml"
+
+    @classmethod
+    def _no_candidates_block(cls):
+        lines = cls.WORKFLOW.read_text().splitlines()
+        start = next(
+            i
+            for i, line in enumerate(lines)
+            if line.strip() == 'if [[ ! -s "$candidates" ]]; then'
+        )
+        end = next(i for i in range(start + 1, len(lines)) if lines[i].strip() == "fi")
+        return "\n".join(lines[start : end + 1])
+
+    def test_no_candidates_exits_zero_before_the_guard(self, tmp_path):
+        search_json = tmp_path / "candidates.json"
+        search_json.write_text("[]")
+        candidates = tmp_path / "candidate-numbers.txt"
+        block = self._no_candidates_block()
+        script = (
+            f"search_json={str(search_json)!r}\n"
+            f"candidates={str(candidates)!r}\n"
+            "jq -r '.[].number | tostring' \"$search_json\" > \"$candidates\"\n"
+            f"{block}\n"
+            # canary: the block's own `exit 0` must stop the script before the guard
+            "printf 'GUARD-REACHED\\n'\n"
+        )
+        result = subprocess.run(
+            ["bash", "-Eeuo", "pipefail", "-c", script],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0
+        assert "No unrefined open issues; nothing to do." in result.stdout
+        assert "GUARD-REACHED" not in result.stdout
+
+    def test_no_candidates_exit_precedes_the_guard(self):
+        content = self.WORKFLOW.read_text()
+        assert content.index("No unrefined open issues; nothing to do.") < content.index(
+            "(( refined > 0 )) || exit 1"
+        )
 
 
 class TestWorkflowOpenRouterSelection:
