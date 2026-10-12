@@ -28,7 +28,6 @@ def test_only_unrefined_candidates_are_selected_with_the_search_limit():
     assert "refined_query" not in workflow
     assert "scan_window" not in workflow
     assert "agent-refined-through:" not in workflow
-    assert "--remove-label" not in workflow
 
 
 def test_candidates_include_filtered_human_comments():
@@ -57,3 +56,14 @@ def test_issue_body_is_read_from_the_fresh_issue_view():
     )
     assert 'body="$(jq -r \'.body // ""\' <<<"$issue_json")"' in workflow
     assert 'select(.number == $number)' not in workflow
+
+
+def test_new_human_issue_comment_removes_refined_label():
+    workflow = WORKFLOW.read_text()
+
+    assert 'issue_comment:\n    types: [created]' in workflow
+    assert 'github.event.issue.pull_request' in workflow
+    assert 'github.event.comment.user.type' in workflow
+    assert 'github.event.comment.user.login != \'bacluc-agent\'' in workflow
+    assert 'contains(github.event.comment.body, \'<!-- agent-progress -->\')' in workflow
+    assert 'gh issue edit "$ISSUE_NUMBER" -R "$ISSUE_REPOSITORY" --remove-label agent-refined' in workflow

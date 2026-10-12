@@ -4,6 +4,8 @@ on:
   schedule:
     - cron: "7 * * * *"
   workflow_dispatch:
+  issue_comment:
+    types: [created]
   push:
     paths:
       - ".github/workflows/refine-issues.yml"
@@ -16,7 +18,22 @@ permissions:
   issues: write
 
 jobs:
+  reconsider-after-feedback:
+    if: github.event_name == 'issue_comment'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    env:
+      GH_TOKEN: ${{ secrets.BACLUC_AGENT_GITHUB_TOKEN }}
+      ISSUE_REPOSITORY: ${{ vars.ISSUE_REPOSITORY || github.repository }}
+      ISSUE_NUMBER: ${{ github.event.issue.number }}
+    steps:
+      - name: Remove refined label after human issue feedback
+        if: github.event.issue.pull_request == null && github.event.comment.user.type != 'Bot' && github.event.comment.user.login != 'bacluc-agent' && !contains(github.event.comment.body, '<!-- agent-progress -->')
+        run: gh issue edit "$ISSUE_NUMBER" -R "$ISSUE_REPOSITORY" --remove-label agent-refined
+
   refine:
+    if: github.event_name != 'issue_comment'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
