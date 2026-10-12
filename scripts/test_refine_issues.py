@@ -18,11 +18,17 @@ def test_first_time_candidate_search_preserves_the_five_issue_limit():
 
 def test_only_unrefined_candidates_are_selected_with_the_search_limit():
     workflow = WORKFLOW.read_text()
+    searches = [line for line in workflow.splitlines() if "search/issues?q=" in line]
 
-    assert "search/issues?q=repo:${ISSUE_REPOSITORY}+is:open+is:issue+-label:agent-refined" in workflow
-    assert "per_page=5" in workflow
+    assert len(searches) == 1
+    assert (
+        'search/issues?q=repo:${ISSUE_REPOSITORY}+is:open+is:issue+-label:agent-refined'
+        "+-label:agent-ignore+sort:created-asc&per_page=5"
+    ) in searches[0]
     assert "refined_query" not in workflow
     assert "scan_window" not in workflow
+    assert "agent-refined-through:" not in workflow
+    assert "--remove-label" not in workflow
 
 
 def test_candidates_include_filtered_human_comments():

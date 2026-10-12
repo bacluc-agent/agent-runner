@@ -1325,25 +1325,24 @@ class TestRefineIssuesComments:
 
     def test_prompt_includes_filtered_human_comments(self, tmp_path):
         content = self.WORKFLOW.read_text()
-        start = content.index("while IFS= read -r number; do")
+        start = content.index('search_json="$RUNNER_TEMP/candidates.json"')
         end = content.index('} > "$prompt"', start) + len('} > "$prompt"')
         block = content[start:end]
         candidates = tmp_path / "candidate-numbers.txt"
-        candidates.write_text("11\n")
-        (tmp_path / "comments-11.json").write_text(
-            '[{"user":{"type":"User","login":"human"},"body":"please add tests","created_at":"2026-02-02T00:00:00Z"}]'
-        )
         fake_gh = tmp_path / "gh"
         fake_gh.write_text(
             """#!/usr/bin/env python3
 import json, sys
 args = sys.argv[1:]
 if args[0] == "issue":
-    number = args[2]
+    number = args[1]
     field = args[args.index("--json") + 1]
     print(f"Title of {number}" if field == "title" else f"Body of {number}")
 elif args[0] == "api":
-    print(json.dumps([[{"user": {"type": "User", "login": "human"}, "body": "please add tests", "created_at": "2026-02-02T00:00:00Z"}, {"user": {"type": "User", "login": "bacluc-agent"}, "body": "progress note", "created_at": "2026-02-03T00:00:00Z"}, {"user": {"type": "Bot", "login": "github-actions[bot]"}, "body": "bot comment", "created_at": "2026-02-04T00:00:00Z"}, {"user": {"type": "User", "login": "human"}, "body": "<!-- agent-progress -->\\nprogress", "created_at": "2026-02-05T00:00:00Z"}]]))
+    if args[1].startswith("search/issues?q="):
+        print(json.dumps([{"number": 11, "title": "Example", "body": "Original issue body", "labels": [], "updated_at": "2026-02-01T00:00:00Z"}]))
+    else:
+        print(json.dumps([[{"user": {"type": "User", "login": "human"}, "body": "please add tests", "created_at": "2026-02-02T00:00:00Z"}, {"user": {"type": "User", "login": "bacluc-agent"}, "body": "progress note", "created_at": "2026-02-03T00:00:00Z"}, {"user": {"type": "Bot", "login": "github-actions[bot]"}, "body": "bot comment", "created_at": "2026-02-04T00:00:00Z"}, {"user": {"type": "User", "login": "human"}, "body": "<!-- agent-progress -->\\nprogress", "created_at": "2026-02-05T00:00:00Z"}]]))
 """
         )
         fake_gh.chmod(0o755)
@@ -1351,8 +1350,6 @@ elif args[0] == "api":
             f"ISSUE_REPOSITORY=example/issues\n"
             f"RUNNER_TEMP={str(tmp_path)!r}\n"
             f"PATH={str(tmp_path)!r}:$PATH\n"
-            f"search_json={str(tmp_path / 'search.json')!r}\n"
-            f"echo '[{{\"number\":11,\"body\":\"Original issue body\"}}]' > \"$search_json\"\n"
             "AVAILABLE_MODELS=test-model\n"
             f"candidates={str(candidates)!r}\n"
             f"{block}\n"
@@ -1365,11 +1362,13 @@ elif args[0] == "api":
             text=True,
         )
         assert result.returncode == 0, result.stderr
+        assert candidates.read_text() == "11\n"
         assert (
             "Reviewer comments (feedback to fold into the Goal and steps; do not quote them wholesale):"
             in result.stdout
         )
         assert "please add tests" in result.stdout
+        assert "Original issue body" in result.stdout
         assert "progress note" not in result.stdout
         assert "bot comment" not in result.stdout
         assert "agent-progress" not in result.stdout

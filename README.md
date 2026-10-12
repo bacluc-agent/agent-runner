@@ -35,8 +35,8 @@ anything.
    rewrites the issue body into two clear sections — `## Goal` and
    `## How to implement` — and labels it `ready-for-implementation`. Human
    comments are folded into the body when an issue is selected for refinement.
-   To refine again after feedback, remove `agent-refined`; the next run considers
-   it through the regular candidate search.
+   The `agent-refined` label excludes an issue from the regular candidate search;
+   remove it after feedback to make the issue eligible for the next run.
 3. **An issue is selected** (hourly, at minute 24). The _issue-selector_
    agent picks one ready issue, claims it with `agent-running` for the run, and
    writes the implementation prompt for the next step. The claim is removed
