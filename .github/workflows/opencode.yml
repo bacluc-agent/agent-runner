@@ -834,9 +834,13 @@ jobs:
           [[ "$gh_path" == "$wrapper_dir/gh" ]] || { printf 'gh did not resolve to the sandbox wrapper: %s\n' "$gh_path" >&2; exit 1; }
           printf 'gh resolves to the wrapper: %s\n' "$gh_path"
 
-          run_gh() { nono run --profile "$NONO_PROFILE" --allow-cwd -- gh "$@"; }
+          run_gh() {
+            nono run --profile "$NONO_PROFILE" --allow-cwd \
+              --read "$RUNNER_TEMP" --read "$HOME/.config" -- gh "$@"
+          }
 
-          sandbox_gh_path="$(nono run --profile "$NONO_PROFILE" --allow-cwd -- sh -c 'command -v gh')"
+          sandbox_gh_path="$(nono run --profile "$NONO_PROFILE" --allow-cwd \
+            --read "$RUNNER_TEMP" --read "$HOME/.config" -- sh -c 'command -v gh')"
           [[ "$sandbox_gh_path" == "$wrapper_dir/gh" ]] || {
             printf 'gh did not resolve to the wrapper inside nono: %s\n' "$sandbox_gh_path" >&2
             exit 1

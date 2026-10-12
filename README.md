@@ -209,9 +209,12 @@ Agents start OpenCode through `scripts/run-agent-sandboxed.sh`, which requires
 opencode "$@"`.
 
 This kernel sandbox complements, but does not replace, the `gh` wrapper above.
-The profile adds no filesystem grants beyond denying `/dev`, so the wrapper
-installed on PATH and `$HOME/.config/gh` remain accessible inside nono; it
-translates PR creation. Docker provides the broader filesystem isolation.
+The profile adds no filesystem grants beyond denying `/dev`. Since nono's
+`node-dev` base still uses filesystem capabilities, `scripts/run-agent-sandboxed.sh`
+grants OpenCode's state/database paths and read access to `$HOME/.config`
+and `$RUNNER_TEMP` (the wrapper and git credential include files). This keeps the
+wrapper executable inside nono while Docker remains the broader filesystem
+isolation boundary.
 `scripts/http_guard.py` remains an advisory, importable policy helper
 (`check_request`) for callers that want to pre-screen a request and log denials;
 nono is the enforcement boundary, so the helper is intentionally not wired into
