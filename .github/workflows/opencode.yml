@@ -762,6 +762,9 @@ jobs:
         run: |
           set -Eeuo pipefail
 
+          jq -e '.network.allow_domain | any(. == "api.search.brave.com")' "$NONO_PROFILE" >/dev/null
+          printf '%s\n' 'Brave Search API is in the nono allowlist'
+
           status=$(nono run --profile "$NONO_PROFILE" --allow-cwd -- curl -sS -o /dev/null -w '%{http_code}' \
             https://api.github.com/rate_limit)
           [[ "$status" == 200 ]] || { printf 'GitHub GET was not allowed: HTTP %s\n' "$status" >&2; exit 1; }
