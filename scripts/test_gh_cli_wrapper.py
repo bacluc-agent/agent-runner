@@ -323,6 +323,18 @@ class CliWrapperTest(unittest.TestCase):
         self.call(["pr", "view"], False, TEST_ALIAS_STATUS="1")
         self.call(["pr", "view"], TEST_ALIASES="co: pr checkout\n")
 
+    def test_project_owner_guard(self):
+        for argv in (
+            ["project", "edit", "1", "--owner", "outsider"],
+            ["project", "edit", "1", "--owner=outsider"],
+        ):
+            self.call(argv, False, GITHUB_REPOSITORY="BacLuc/r")
+        for argv in (
+            ["project", "edit", "1", "--owner", "bacluc-agent"],
+            ["project", "edit", "1", "--owner=BaClUc"],
+        ):
+            self.call(argv, TEST_STATUS="17", GITHUB_REPOSITORY="BacLuc/r")
+
     def test_subsequent_step_probe(self):
         result = subprocess.run([sys.executable, str(Path(__file__).resolve()), "--verify-installed"],
                                 env=self.env, capture_output=True, text=True)

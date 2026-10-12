@@ -7,16 +7,7 @@
     }
   },
   "extends": "node-dev",
-  "filesystem": {
-    "allow": [
-      "$HOME/.local/share/opencode",
-      "$HOME/.local/state/opencode",
-      "$HOME/.npm",
-      "$TMPDIR/opencode-db"
-    ],
-    "read": ["$HOME/.config/opencode", "$HOME/.config/gh"],
-    "read_file": ["$HOME/.local/share/opencode/auth.json"]
-  },
+  "filesystem": { "deny": ["/dev"] },
   "meta": {
     "name": "agent-runner",
     "version": "1.0.0",

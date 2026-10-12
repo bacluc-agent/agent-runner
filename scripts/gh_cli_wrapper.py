@@ -231,6 +231,25 @@ def validate_mutation(command, args):
     if not args or args[0] not in MUTATIONS.get(command, ()):
         return
     subcommand = args[0]
+    if command == "project":
+        owners = []
+        index = 1
+        while index < len(args):
+            arg = args[index]
+            if arg == "--owner":
+                if index + 1 == len(args):
+                    deny("missing value for --owner")
+                owners.append(args[index + 1])
+                index += 2
+            else:
+                if arg.startswith("--owner="):
+                    owners.append(arg.split("=", 1)[1])
+                index += 1
+        if len(owners) > 1:
+            deny("project mutations allow exactly one --owner")
+        if owners:
+            owned_org(owners[0])
+            return
     if command == "repo" and subcommand == "fork":
         org = org_option(args)
         if org is None:

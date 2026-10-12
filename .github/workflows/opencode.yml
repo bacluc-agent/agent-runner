@@ -768,6 +768,11 @@ jobs:
           printf '%s\n' 'GitHub GET allowed (HTTP 200)'
 
           status=$(nono run --profile "$NONO_PROFILE" --allow-cwd -- curl -sS -o /dev/null -w '%{http_code}' -X POST \
+            https://api.github.com/graphql -H 'Content-Type: application/json' -d '{}')
+          [[ "$status" == 403 ]] || { printf 'GraphQL POST was not denied: HTTP %s\n' "$status" >&2; exit 1; }
+          printf '%s\n' 'GraphQL POST denied by nono'
+
+          status=$(nono run --profile "$NONO_PROFILE" --allow-cwd -- curl -sS -o /dev/null -w '%{http_code}' -X POST \
             https://api.github.com/repos/octocat/Hello-World/issues \
             -H 'Content-Type: application/json' -d '{"title":"sandbox probe"}')
           [[ "$status" == 403 ]] || { printf 'Outsider mutation was not denied: HTTP %s\n' "$status" >&2; exit 1; }
@@ -785,8 +790,22 @@ jobs:
           printf '%s\n' 'Sanctioned fork endpoint passed the sandbox and was rejected by GitHub without credentials (HTTP 401)'
 
           status=$(nono run --profile "$NONO_PROFILE" --allow-cwd -- curl -sS -o /dev/null -w '%{http_code}' https://opencode.ai/)
-          printf 'Provider domain opencode.ai reachability: HTTP %s\n' "$status"
-          [[ "$status" != 403 ]] || { printf 'Provider domain opencode.ai was denied by nono: HTTP %s\n' "$status" >&2; exit 1; }
+          printf 'GET to explicitly allowlisted CONNECT host opencode.ai: HTTP %s\n' "$status"
+          [[ "$status" != 403 ]] || { printf 'GET to explicitly allowlisted opencode.ai was denied by nono: HTTP %s\n' "$status" >&2; exit 1; }
+
+          dev_probe="/dev/shm/nono-write-probe-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          : > "$dev_probe" || { printf '/dev/shm is not writable outside nono; cannot verify sandbox denial\n' >&2; exit 1; }
+          rm -f "$dev_probe"
+          set +e
+          dev_out=$(nono run --profile "$NONO_PROFILE" --allow-cwd -- touch "$dev_probe" 2>&1)
+          dev_status=$?
+          set -e
+          [[ $dev_status -ne 0 && ! -e "$dev_probe" && "$dev_out" == *"Permission denied"* ]] || {
+            rm -f "$dev_probe"
+            printf '/dev write was not denied by the sandbox (status %s):\n%s\n' "$dev_status" "$dev_out" >&2
+            exit 1
+          }
+          printf '%s\n' '/dev write denied by nono after confirming /dev/shm was writable outside the sandbox'
 
           set +e
           output=$(scripts/run-agent-sandboxed.sh run --model openai/gpt-5.6-luna 'Reply with exactly PONG and do nothing else.')
@@ -816,6 +835,15 @@ jobs:
           printf 'gh resolves to the wrapper: %s\n' "$gh_path"
 
           run_gh() { nono run --profile "$NONO_PROFILE" --allow-cwd -- gh "$@"; }
+
+          sandbox_gh_path="$(nono run --profile "$NONO_PROFILE" --allow-cwd -- sh -c 'command -v gh')"
+          [[ "$sandbox_gh_path" == "$wrapper_dir/gh" ]] || {
+            printf 'gh did not resolve to the wrapper inside nono: %s\n' "$sandbox_gh_path" >&2
+            exit 1
+          }
+          gh_version="$(run_gh --version)"
+          [[ "$gh_version" == *"gh version"* ]] || { printf 'wrapped gh was not usable inside nono:\n%s\n' "$gh_version" >&2; exit 1; }
+          printf 'Sandbox resolves and runs wrapper: %s\n' "$sandbox_gh_path"
 
           set +e
           out="$(run_gh issue comment 1 -R octocat/Hello-World --body probe 2>&1)"

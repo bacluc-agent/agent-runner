@@ -134,11 +134,10 @@ The installer saves the real CLI's absolute path before changing PATH.
   `-B/--base`, `-H/--head`, `-d/--draft`; `--title`, `--head` and `--base` are
   required because GraphQL inference is unavailable, and any unmapped option
   fails closed.
-- Known gaps: `gh project` mutations with `--owner` are not owner-checked
-  (GraphQL-only; the token cannot reach outsider orgs), and a `gh cache delete`
-  key shaped exactly like `owner/repo` is a fail-closed false positive (it is
-  mistaken for a repository selector); a key such as `key/with/slash` is
-  allowed.
+- `gh project` mutations with `--owner` require one of those owned organizations.
+  A `gh cache delete` key shaped exactly like `owner/repo` is a fail-closed false
+  positive (it is mistaken for a repository selector); a key such as
+  `key/with/slash` is allowed.
 - `gh pr revert` requires exactly one PR number or github.com PR URL and an
   explicit `-R`/`--repo` (or a URL selector) targeting one of those owned owners;
   implicit destinations fail closed. The REST revert endpoint
@@ -170,9 +169,8 @@ HTTP 403 inside the sandbox — use `gh api` REST endpoints instead.
 
 OpenCode runs in `nono` using the pinned profile in
 `.github/actions/setup-opencode/nono-profile.json`. Setup installs the pinned
-release through `https://nono.sh/install.sh`; the installer verifies the
-downloaded installer against a pinned SHA-256 digest, and the installer verifies
-the platform archive against the release's SHA-256 checksum before installing it.
+release through `https://nono.sh/install.sh` using the Renovate-managed
+`NONO_VERSION`.
 The profile extends nono's `node-dev` profile and uses the `developer` network
 allowlist plus explicit `api.github.com` and `github.com` endpoint rules:
 
@@ -186,14 +184,22 @@ allowlist plus explicit `api.github.com` and `github.com` endpoint rules:
 - Git HTTPS upload-pack (fetch/clone) is allowed for any repository; receive-pack
   (push) is allowed only for those owned organizations.
 - The model providers OpenCode needs are additionally host-allowlisted as plain
-  CONNECT tunnels: `opencode.ai`, `chatgpt.com`, `auth.openai.com`, `models.dev`,
-  and `api.search.brave.com`. These carry no method/path rules.
-- Other developer-profile hosts remain host-allowlisted, but their HTTPS
-  requests are not method/path-filtered. OpenCode needs methods such as `POST`
-  to call model APIs, and nono cannot inspect arbitrary HTTPS requests through
-  an ordinary CONNECT tunnel. The rules therefore do not claim universal
-  `GET`-only behavior on every host. No catch-all domain or universal wildcard
-  FQDN rule is configured.
+  CONNECT tunnels, including `opencode.ai`, `chatgpt.com`, `auth.openai.com`,
+  `models.dev`, `models.opencode.ai`, and `api.search.brave.com`; the developer
+  profile also provides hosts such as `api.openai.com` and `openrouter.ai`.
+  Plain host entries do not filter HTTP methods or paths, and the provider APIs
+  need methods such as `POST`.
+- Endpoint rules are host-specific and default-deny unmatched methods/paths on
+  that hostname. They require TLS interception to inspect method/path;
+  `tls_intercept.ca_env_vars` makes the generated CA trusted by clients that use
+  runtime-specific CA environment variables. Other allowed hosts use end-to-end
+  CONNECT tunnels. nono 0.79 has no global method default or wildcard endpoint
+  policy, so it cannot express “GET to arbitrary domains, but no POST” while
+  preserving provider POSTs. No catch-all host is configured; this policy does
+  not claim GET-only access to arbitrary domains.
+- `filesystem.deny` blocks `/dev`; Docker provides the broader filesystem
+  isolation. On Linux, nono covers matching `/dev` paths present when the
+  sandbox starts.
 - A process that sends work to a Docker daemon through its socket makes the
   daemon's outbound requests outside the sandbox. Do not expose the Docker
   socket to the agent unless daemon egress is independently restricted.
@@ -203,8 +209,9 @@ Agents start OpenCode through `scripts/run-agent-sandboxed.sh`, which requires
 opencode "$@"`.
 
 This kernel sandbox complements, but does not replace, the `gh` wrapper above.
-The wrapper directory is granted read+execute in the nono profile at setup time,
-so the wrapper is reachable inside the sandbox and translates PR creation.
+The profile adds no filesystem grants beyond denying `/dev`, so the wrapper
+installed on PATH and `$HOME/.config/gh` remain accessible inside nono; it
+translates PR creation. Docker provides the broader filesystem isolation.
 `scripts/http_guard.py` remains an advisory, importable policy helper
 (`check_request`) for callers that want to pre-screen a request and log denials;
 nono is the enforcement boundary, so the helper is intentionally not wired into
