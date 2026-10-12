@@ -1346,7 +1346,6 @@ class TestRefineIssuesComments:
     def test_comment_filter_contract(self):
         content = self.WORKFLOW.read_text()
         assert 'select(.user.type != "Bot")' in content
-        assert 'select(.user.login != "bacluc-agent")' in content
         assert 'contains("<!-- agent-progress -->") | not' in content
 
     def test_relabel_after_validation_is_preserved(self):
@@ -1380,7 +1379,7 @@ elif args[0] == "api":
             raise SystemExit("candidate search must include issues with agent-refined removed")
         print(json.dumps([{"number": 11, "title": "Example", "body": "Stale search body", "labels": [], "updated_at": "2026-02-01T00:00:00Z"}]))
     else:
-        print(json.dumps([[{"user": {"type": "User", "login": "human"}, "body": "please add tests", "created_at": "2026-02-02T00:00:00Z"}, {"user": {"type": "User", "login": "bacluc-agent"}, "body": "progress note", "created_at": "2026-02-03T00:00:00Z"}, {"user": {"type": "Bot", "login": "github-actions[bot]"}, "body": "bot comment", "created_at": "2026-02-04T00:00:00Z"}, {"user": {"type": "User", "login": "human"}, "body": "<!-- agent-progress -->\\nprogress", "created_at": "2026-02-05T00:00:00Z"}]]))
+        print(json.dumps([[{"user": {"type": "User", "login": "human"}, "body": "please add tests", "created_at": "2026-02-02T00:00:00Z"}, {"user": {"type": "User", "login": "bacluc-agent"}, "body": "please fold my feedback", "created_at": "2026-02-03T00:00:00Z"}, {"user": {"type": "Bot", "login": "github-actions[bot]"}, "body": "bot comment", "created_at": "2026-02-04T00:00:00Z"}, {"user": {"type": "User", "login": "human"}, "body": "<!-- agent-progress -->\\nprogress", "created_at": "2026-02-05T00:00:00Z"}]]))
 """
         )
         fake_gh.chmod(0o755)
@@ -1408,7 +1407,7 @@ elif args[0] == "api":
         assert "please add tests" in result.stdout
         assert "Current issue body" in result.stdout
         assert "Stale search body" not in result.stdout
-        assert "progress note" not in result.stdout
+        assert "please fold my feedback" in result.stdout
         assert "bot comment" not in result.stdout
         assert "agent-progress" not in result.stdout
 

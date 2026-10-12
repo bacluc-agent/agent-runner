@@ -38,11 +38,10 @@ def test_candidates_include_filtered_human_comments():
     assert "refined-candidates" not in workflow
 
 
-def test_refinement_still_includes_human_comments_and_filters_agent_comments():
+def test_refinement_still_includes_human_comments_and_filters_bot_and_progress_comments():
     workflow = WORKFLOW.read_text()
 
     assert 'select(.user.type != "Bot")' in workflow
-    assert 'select(.user.login != "bacluc-agent")' in workflow
     assert 'contains("<!-- agent-progress -->") | not' in workflow
     assert "Reviewer comments (feedback to fold into the Goal and steps" in workflow
 

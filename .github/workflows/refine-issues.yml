@@ -81,7 +81,7 @@ jobs:
           while IFS= read -r number; do
             comments_file="$RUNNER_TEMP/comments-${number}.json"
             gh api --paginate --slurp "repos/$ISSUE_REPOSITORY/issues/$number/comments?per_page=100" > "$RUNNER_TEMP/all-comments-${number}.json" || { echo "::warning::skip $number: fetch comments failed" >&2; (( comments_fetch_failed++ )) || true; continue; }
-            jq 'add | map(select(.user.type != "Bot") | select(.user.login != "bacluc-agent") | select((.body // "") | contains("<!-- agent-progress -->") | not))' "$RUNNER_TEMP/all-comments-${number}.json" > "$comments_file"
+            jq 'add | map(select(.user.type != "Bot") | select((.body // "") | contains("<!-- agent-progress -->") | not))' "$RUNNER_TEMP/all-comments-${number}.json" > "$comments_file"
             printf '%s\n' "$number" >> "$candidates"
           done < <(jq -r '.[].number' "$search_json")
 
