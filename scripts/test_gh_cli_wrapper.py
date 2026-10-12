@@ -4,6 +4,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 
 
@@ -14,8 +15,20 @@ from pathlib import Path
 if sys.argv[1:] == ["alias", "list"]:
     print(os.environ.get("TEST_ALIASES", ""), end="")
     sys.exit(int(os.environ.get("TEST_ALIAS_STATUS", "0")))
-with Path(os.environ["TEST_LOG"]).open("a") as log:
-    log.write(json.dumps(sys.argv[1:]) + "\\n")
+if sys.argv[1:] == ["api", "rate_limit"]:
+    print(json.dumps({"resources": {"core": {
+        "remaining": int(os.environ.get("TEST_CORE_REMAINING", "5000")),
+        "reset": int(os.environ.get("TEST_CORE_RESET", "0"))}}}))
+    sys.exit(0)
+log = Path(os.environ["TEST_LOG"])
+seen = log.with_suffix(".count")
+attempts = int(seen.read_text()) if seen.exists() else 0
+seen.write_text(str(attempts + 1))
+with log.open("a") as handle:
+    handle.write(json.dumps(sys.argv[1:]) + "\\n")
+if attempts < int(os.environ.get("TEST_RATE_LIMIT_TIMES", "0")):
+    print(os.environ.get("TEST_ERROR", "gh: HTTP 403: API rate limit exceeded for user"), file=sys.stderr)
+    sys.exit(int(os.environ.get("TEST_RATE_LIMIT_STATUS", "1")))
 print(json.dumps({"argv": sys.argv[1:], "stdin": sys.stdin.read()}))
 print("backend stderr", file=sys.stderr)
 sys.exit(int(os.environ.get("TEST_STATUS", "0")))
@@ -41,7 +54,17 @@ def verify_installed():
         assert json.loads(result.stdout) == {"argv": argv, "stdin": "body from stdin"}
         assert result.stderr == "backend stderr\n"
         log = Path(env["TEST_LOG"])
+        limited = dict(env, TEST_RATE_LIMIT_TIMES="1", TEST_RATE_LIMIT_STATUS="23",
+                       TEST_CORE_REMAINING="0", TEST_CORE_RESET=str(int(time.time())))
+        result = subprocess.run(["bash", "-c", 'exec gh "$@"', "test", *argv],
+                                cwd=directory, env=limited, input="body from stdin",
+                                capture_output=True, text=True)
+        assert result.returncode == 23, result.stderr
+        assert json.loads(result.stdout) == {"argv": argv, "stdin": "body from stdin"}
+        assert result.stderr == "backend stderr\n"
+        assert log.read_text().splitlines() == [json.dumps(argv), json.dumps(argv)]
         log.unlink()
+        log.with_suffix(".count").unlink()
         result = subprocess.run(["bash", "-c", 'gh pr create -R ecamp/ecamp3 --base devel --head bacluc-agent:issue-221-move-doctrine-validate-to-required-ci'],
                                 cwd=directory, env=env, capture_output=True, text=True)
         assert result.returncode != 0
@@ -75,6 +98,7 @@ class CliWrapperTest(unittest.TestCase):
     def call(self, argv, allowed=True, **env):
         log = Path(self.env["TEST_LOG"])
         log.unlink(missing_ok=True)
+        log.with_suffix(".count").unlink(missing_ok=True)
         result = subprocess.run(["bash", "-c", 'exec gh "$@"', "test", *argv],
                                 cwd="/tmp", env=dict(self.env, **env), input="payload\n",
                                 capture_output=True, text=True)
@@ -172,6 +196,45 @@ class CliWrapperTest(unittest.TestCase):
         result = subprocess.run([sys.executable, str(Path(__file__).resolve()), "--verify-installed"],
                                 env=self.env, capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
+
+    def attempts(self):
+        return int(Path(self.env["TEST_LOG"]).with_suffix(".count").read_text())
+
+    def retry(self, **env):
+        """One rate-limited `gh pr view`; the reset is now so the sleep is ~0s."""
+        argv = ["pr", "view", "10800", "-R", "ecamp/ecamp3"]
+        result = subprocess.run(["bash", "-c", 'exec gh "$@"', "test", *argv],
+                                cwd="/tmp", input="payload\n",
+                                env=dict(self.env, TEST_CORE_RESET=str(int(time.time())), **env),
+                                capture_output=True, text=True)
+        return argv, result
+
+    def test_rate_limit_retries_and_shows_only_the_final_attempt(self):
+        argv, result = self.retry(TEST_RATE_LIMIT_TIMES="2", TEST_CORE_REMAINING="0")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout), {"argv": argv, "stdin": "payload\n"})
+        self.assertEqual(result.stderr, "backend stderr\n")
+        self.assertEqual(self.attempts(), 3)
+
+    def test_rate_limit_gives_up_loudly_and_exits_with_the_real_code(self):
+        _, result = self.retry(GH_CLI_WRAPPER_MAX_ATTEMPTS="2", TEST_RATE_LIMIT_TIMES="99",
+                               TEST_RATE_LIMIT_STATUS="23", TEST_CORE_REMAINING="0")
+        self.assertEqual(result.returncode, 23, result.stderr)
+        self.assertIn("::warning::gh cli wrapper:", result.stderr)
+        self.assertEqual(self.attempts(), 2)
+
+    def test_http_403_with_quota_left_is_not_retried(self):
+        _, result = self.retry(TEST_RATE_LIMIT_TIMES="99", TEST_RATE_LIMIT_STATUS="23",
+                               TEST_ERROR="gh: HTTP 403: Resource not accessible by integration")
+        self.assertEqual(result.returncode, 23, result.stderr)
+        self.assertNotIn("::warning::", result.stderr)
+        self.assertEqual(self.attempts(), 1)
+
+    def test_secondary_rate_limit_backs_off_without_a_reset(self):
+        _, result = self.retry(TEST_RATE_LIMIT_TIMES="1",
+                               TEST_ERROR="gh: HTTP 403: You have exceeded a secondary rate limit")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.attempts(), 2)
 
     def test_installer_recursion_and_missing_backend(self):
         result = subprocess.run(["bash", str(ROOT / "scripts/install-gh-cli-wrapper.sh")],
