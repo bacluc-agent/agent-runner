@@ -7,6 +7,8 @@ on:
       - "scripts/gh_cli_wrapper.py"
       - "scripts/test_gh_cli_wrapper.py"
       - "scripts/install-gh-cli-wrapper.sh"
+      - "scripts/selection_tiers.py"
+      - "scripts/test_selection_tiers.py"
       - ".github/workflows/test-gh-cli-wrapper.yml"
 
 permissions:
@@ -22,3 +24,6 @@ jobs:
 
       - name: Run gh CLI wrapper tests
         run: python3 scripts/test_gh_cli_wrapper.py
+
+      - name: Run selection tier tests
+        run: python3 -m pip install --quiet pytest && python3 -m pytest -q scripts/test_selection_tiers.py
