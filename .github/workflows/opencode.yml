@@ -863,16 +863,16 @@ jobs:
           git_credential_file=("$RUNNER_TEMP"/git-credentials-*.config)
           [[ -f "${git_credential_file[0]}" ]] || { printf 'checkout Git credential include was not found\n' >&2; exit 1; }
           nono run --profile "$NONO_PROFILE" --allow-cwd \
-            --read "$wrapper_dir" --read "$RUNNER_TEMP"/git-credentials-*.config -- \
+            --read "$wrapper_dir" --read-file "$RUNNER_TEMP"/git-credentials-*.config -- \
             git config --get-all http.https://github.com/.extraheader >/dev/null
 
           run_gh() {
             nono run --profile "$NONO_PROFILE" --allow-cwd \
-              --read "$wrapper_dir" --read "$RUNNER_TEMP"/git-credentials-*.config -- gh "$@"
+              --read "$wrapper_dir" --read-file "$RUNNER_TEMP"/git-credentials-*.config -- gh "$@"
           }
 
           sandbox_gh_path="$(nono run --profile "$NONO_PROFILE" --allow-cwd \
-            --read "$wrapper_dir" --read "$RUNNER_TEMP"/git-credentials-*.config -- sh -c 'command -v gh')"
+            --read "$wrapper_dir" --read-file "$RUNNER_TEMP"/git-credentials-*.config -- sh -c 'command -v gh')"
           [[ "$sandbox_gh_path" == "$wrapper_dir/gh" ]] || {
             printf 'gh did not resolve to the wrapper inside nono: %s\n' "$sandbox_gh_path" >&2
             exit 1
