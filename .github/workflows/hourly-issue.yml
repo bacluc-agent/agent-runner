@@ -257,9 +257,6 @@ jobs:
           selection_tee_status=${selection_statuses[1]}
           set -e
           printf 'Model selection statuses: opencode=%s tee=%s\n' "$selection_status" "$selection_tee_status"
-          if (( selection_tee_status != 0 )); then
-            exit "$selection_tee_status"
-          fi
           if (( selection_status != 0 )); then
             printf 'Selection failed (opencode=%s); not dispatching.\n' "$selection_status" >&2
             ((selection_status == 124)) && printf '::error::issue selection exceeded the %sm limit (opencode exit %s)\n' "$SELECTION_TIMEOUT_MINUTES" "$selection_status"
