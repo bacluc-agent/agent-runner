@@ -89,13 +89,16 @@ jobs:
           printf '::add-mask::%s\n' "$OPENCODE_GO_2_API_KEY"
           printf '::add-mask::%s\n' "$OPENCODE_AUTH_CONTENT"
 
-          if ! quota="$(gh api rate_limit --jq '.resources.core | "\(.remaining) \(.reset)"' 2>/dev/null)"; then
+          if ! quota="$(gh api rate_limit --jq '"\(.resources.core.remaining) \(.resources.core.reset) \(.resources.graphql.remaining) \(.resources.graphql.reset)"' 2>/dev/null)"; then
             printf '::warning::rate_limit probe failed; continuing and letting real errors surface\n' >&2
           else
-            remaining="${quota%% *}"
-            reset="${quota#* }"
-            if [[ "$remaining" == "0" ]]; then
-              printf '::error::GitHub API core quota exhausted; resets at %s (%s). Standing down this run.\n' "$reset" "$(date -u -d "@$reset" '+%Y-%m-%d %H:%M:%S UTC' 2>/dev/null || date -u -r "$reset" '+%Y-%m-%d %H:%M:%S UTC' 2>/dev/null || echo 'unknown')"
+            read -r core_remaining core_reset graphql_remaining graphql_reset <<< "$quota"
+            if [[ "$core_remaining" == "0" ]]; then
+              printf '::error::GitHub API core quota exhausted; resets at %s (%s). Standing down this run.\n' "$core_reset" "$(date -u -d "@$core_reset" '+%Y-%m-%d %H:%M:%S UTC' 2>/dev/null || date -u -r "$core_reset" '+%Y-%m-%d %H:%M:%S UTC' 2>/dev/null || echo 'unknown')"
+              exit 0
+            fi
+            if [[ "$graphql_remaining" == "0" ]]; then
+              printf '::error::GitHub API graphql quota exhausted; resets at %s (%s). Standing down this run.\n' "$graphql_reset" "$(date -u -d "@$graphql_reset" '+%Y-%m-%d %H:%M:%S UTC' 2>/dev/null || date -u -r "$graphql_reset" '+%Y-%m-%d %H:%M:%S UTC' 2>/dev/null || echo 'unknown')"
               exit 0
             fi
           fi
@@ -220,8 +223,10 @@ jobs:
           mkdir -p "$pr_lookup_dir"
           for repo in "${repo_list[@]}"; do
             key="$(echo "$repo" | tr '/' '_')"
-            gh pr list -R "$repo" --state all --limit 200 --json number,createdAt,updatedAt,headRefName,state,title \
-              --jq '.[] | "\(.headRefName)|#\(.number)|\(.createdAt)|\(.updatedAt)|\(.state)|\(.title)"' 2>/dev/null \
+            # REST list on the core bucket: `gh pr list` uses GraphQL, and the
+            # lowercase REST state is upper-cased so the `case` below stays unchanged.
+            gh api "repos/$repo/pulls?state=all&per_page=100" --paginate \
+              --jq '.[] | "\(.head.ref)|#\(.number)|\(.created_at)|\(.updated_at)|\(.state | ascii_upcase)|\(.title)"' 2>/dev/null \
               | sort -t'|' -k4 -r > "$pr_lookup_dir/$key.lookup" || true
           done
 

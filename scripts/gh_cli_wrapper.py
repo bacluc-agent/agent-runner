@@ -163,32 +163,41 @@ def max_attempts():
         return 4
 
 
-def core_quota(backend):
-    """(remaining, reset epoch seconds) from the free `<backend> api rate_limit`, or None."""
+RATE_LIMIT_BUCKETS = ("core", "search", "graphql")
+
+
+def quota_buckets(backend):
+    """[(name, remaining, reset epoch seconds)] from the free rate_limit probe, or None."""
     probe = subprocess.run([backend, "api", "rate_limit"], capture_output=True)
     try:
-        core = json.loads(probe.stdout)["resources"]["core"]
-        return core["remaining"], core["reset"]
+        resources = json.loads(probe.stdout)["resources"]
     except (ValueError, KeyError, TypeError):
         return None
+    return [(name, int(resources[name]["remaining"]), int(resources[name]["reset"]))
+            for name in RATE_LIMIT_BUCKETS if name in resources]
 
 
 def retry_delay(stderr, backend, attempt):
     """Seconds to sleep before the next attempt, or None when this is not a rate limit.
 
-    ONE free `<backend> api rate_limit` probe supplies the reset; for a bare
-    HTTP 403 that same probe is what confirms the quota is the cause.
+    A secondary limit backs off blindly. A primary mark or a bare HTTP 403 probes
+    every rate-limit bucket once and sleeps until the reset of any exhausted bucket:
+    search and graphql reset far sooner than core (minutes vs ~55 min), so a
+    search/graphql 403 no longer waits out the core window. A 403 with every bucket
+    healthy is not a rate limit.
     """
     marks = stderr.lower()
     if any(mark in marks for mark in SECONDARY_MARKS):
         return min(60, 5 * 2 ** (attempt - 1))
-    proven = any(mark in marks for mark in PRIMARY_MARKS)
-    if not proven and b"http 403" not in marks:
+    if not any(mark in marks for mark in PRIMARY_MARKS) and b"http 403" not in marks:
         return None
-    quota = core_quota(backend)
-    if quota is None or (not proven and quota[0] != 0):
+    buckets = quota_buckets(backend)
+    if buckets is None:
         return None
-    return max(0, int(quota[1] or 0) - int(time.time())) + 2
+    exhausted = [reset for _, remaining, reset in buckets if remaining == 0]
+    if not exhausted:
+        return None
+    return max(0, max(exhausted) - int(time.time())) + 2
 
 
 def run(backend, args):

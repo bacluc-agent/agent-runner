@@ -1,3 +1,4 @@
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -6,6 +7,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -16,9 +18,21 @@ if sys.argv[1:] == ["alias", "list"]:
     print(os.environ.get("TEST_ALIASES", ""), end="")
     sys.exit(int(os.environ.get("TEST_ALIAS_STATUS", "0")))
 if sys.argv[1:] == ["api", "rate_limit"]:
-    print(json.dumps({"resources": {"core": {
+    if os.environ.get("TEST_RATE_LIMIT_BROKEN"):
+        print("not json", file=sys.stderr)
+        sys.exit(1)
+    resources = {"core": {
         "remaining": int(os.environ.get("TEST_CORE_REMAINING", "5000")),
-        "reset": int(os.environ.get("TEST_CORE_RESET", "0"))}}}))
+        "reset": int(os.environ.get("TEST_CORE_RESET", "0"))}}
+    if "TEST_SEARCH_REMAINING" in os.environ:
+        resources["search"] = {
+            "remaining": int(os.environ["TEST_SEARCH_REMAINING"]),
+            "reset": int(os.environ.get("TEST_SEARCH_RESET", "0"))}
+    if "TEST_GRAPHQL_REMAINING" in os.environ:
+        resources["graphql"] = {
+            "remaining": int(os.environ["TEST_GRAPHQL_REMAINING"]),
+            "reset": int(os.environ.get("TEST_GRAPHQL_RESET", "0"))}
+    print(json.dumps({"resources": resources}))
     sys.exit(0)
 log = Path(os.environ["TEST_LOG"])
 seen = log.with_suffix(".count")
@@ -33,6 +47,16 @@ print(json.dumps({"argv": sys.argv[1:], "stdin": sys.stdin.read()}))
 print("backend stderr", file=sys.stderr)
 sys.exit(int(os.environ.get("TEST_STATUS", "0")))
 '''
+
+
+def load_wrapper():
+    spec = importlib.util.spec_from_file_location("gh_cli_wrapper", ROOT / "scripts" / "gh_cli_wrapper.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+WRAPPER = load_wrapper()
 
 
 def prepare_backend(directory):
@@ -235,6 +259,53 @@ class CliWrapperTest(unittest.TestCase):
                                TEST_ERROR="gh: HTTP 403: You have exceeded a secondary rate limit")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.attempts(), 2)
+
+    def test_default_max_attempts_is_four(self):
+        env = {key: value for key, value in os.environ.items()
+               if key != "GH_CLI_WRAPPER_MAX_ATTEMPTS"}
+        with mock.patch.dict(os.environ, env, clear=True):
+            self.assertEqual(WRAPPER.max_attempts(), 4)
+
+    def test_secondary_retry_delay_is_bounded(self):
+        self.assertEqual(WRAPPER.retry_delay(b"HTTP 403: secondary rate limit", str(self.backend), 3), 20)
+
+    def test_retry_delay_uses_exhausted_search_bucket_not_core(self):
+        now = int(time.time())
+        env = {"TEST_CORE_REMAINING": "5000", "TEST_CORE_RESET": str(now + 3300),
+               "TEST_SEARCH_REMAINING": "0", "TEST_SEARCH_RESET": str(now)}
+        with mock.patch.dict(os.environ, env):
+            delay = WRAPPER.retry_delay(b"gh: HTTP 403: API rate limit exceeded", str(self.backend), 1)
+        self.assertLess(delay, 3000, "must not wait out the healthy core bucket")
+        self.assertEqual(delay, 2)
+
+    def test_retry_delay_uses_exhausted_graphql_bucket(self):
+        now = int(time.time())
+        env = {"TEST_CORE_REMAINING": "5000", "TEST_CORE_RESET": str(now + 3300),
+               "TEST_GRAPHQL_REMAINING": "0", "TEST_GRAPHQL_RESET": str(now)}
+        with mock.patch.dict(os.environ, env):
+            delay = WRAPPER.retry_delay(b"HTTP 403: API rate limit exceeded", str(self.backend), 1)
+        self.assertEqual(delay, 2)
+
+    def test_retry_delay_returns_none_when_no_bucket_is_exhausted(self):
+        now = int(time.time())
+        env = {"TEST_CORE_REMAINING": "5000", "TEST_CORE_RESET": str(now + 3300)}
+        with mock.patch.dict(os.environ, env):
+            delay = WRAPPER.retry_delay(b"HTTP 403: Resource not accessible by integration", str(self.backend), 1)
+        self.assertIsNone(delay)
+
+    def test_retry_delay_is_safe_when_rate_limit_probe_fails(self):
+        with mock.patch.dict(os.environ, {"TEST_RATE_LIMIT_BROKEN": "1"}):
+            delay = WRAPPER.retry_delay(b"HTTP 403: API rate limit exceeded", str(self.backend), 1)
+        self.assertIsNone(delay)
+
+    def test_search_bucket_rate_limit_retries_without_waiting_for_the_core_reset(self):
+        now = int(time.time())
+        _, result = self.retry(TEST_RATE_LIMIT_TIMES="99", TEST_RATE_LIMIT_STATUS="23",
+                               TEST_CORE_REMAINING="5000",
+                               TEST_SEARCH_REMAINING="0", TEST_SEARCH_RESET=str(now))
+        self.assertEqual(result.returncode, 23, result.stderr)
+        self.assertIn("::warning::gh cli wrapper:", result.stderr)
+        self.assertEqual(self.attempts(), 4)
 
     def test_installer_recursion_and_missing_backend(self):
         result = subprocess.run(["bash", str(ROOT / "scripts/install-gh-cli-wrapper.sh")],

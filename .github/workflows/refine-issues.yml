@@ -57,13 +57,12 @@ jobs:
           printf '::add-mask::%s\n' "$OPENCODE_GO_2_API_KEY"
           printf '::add-mask::%s\n' "$OPENCODE_AUTH_CONTENT"
 
-          if ! quota="$(gh api rate_limit --jq '"\(.resources.core.remaining) \(.resources.search.remaining)"' 2>/dev/null)"; then
+          if ! quota="$(gh api rate_limit --jq '"\(.resources.core.remaining) \(.resources.search.remaining) \(.resources.graphql.remaining)"' 2>/dev/null)"; then
             printf '::warning::rate_limit probe failed; continuing and letting real errors surface\n' >&2
           else
-            core_remaining="${quota%% *}"
-            search_remaining="${quota#* }"
-            if [[ "$core_remaining" == "0" || "$search_remaining" == "0" ]]; then
-              printf '::error::GitHub API quota exhausted (core or search). Standing down this run.\n'
+            read -r core_remaining search_remaining graphql_remaining <<< "$quota"
+            if [[ "$core_remaining" == "0" || "$search_remaining" == "0" || "$graphql_remaining" == "0" ]]; then
+              printf '::error::GitHub API quota exhausted (core, search or graphql). Standing down this run.\n'
               exit 0
             fi
           fi
@@ -84,8 +83,11 @@ jobs:
           printf '\n\n\n\n\n\n'
 
           search_json="$RUNNER_TEMP/candidates.json"
-          gh api "search/issues?q=repo:${ISSUE_REPOSITORY}+is:open+is:issue+-label:agent-refined+-label:ready-for-implementation+-label:agent-ignore+sort:created-asc&per_page=5" \
-            --jq '.items' > "$search_json"
+          # List-with-filters on the core bucket (5000/h) instead of the Search API
+          # (30/min): oldest open issues first, dropping PRs and already-labeled
+          # issues client-side, then keeping the oldest 5.
+          gh api "repos/${ISSUE_REPOSITORY}/issues?state=open&sort=created&direction=asc&per_page=100" \
+            --jq 'map(select(.pull_request == null)) | map(select((.labels | map(.name) | index("agent-refined")) == null and (.labels | map(.name) | index("ready-for-implementation")) == null and (.labels | map(.name) | index("agent-ignore")) == null)) | .[0:5]' > "$search_json"
 
           candidates="$RUNNER_TEMP/candidate-numbers.txt"
           jq -r '.[].number | tostring' "$search_json" > "$candidates"
@@ -158,8 +160,9 @@ jobs:
             fi
             printf '\n\n\n\n\n\n'
 
-            title="$(gh issue view "$number" -R "$ISSUE_REPOSITORY" --json title --jq '.title')" || { echo "::warning::skip $number: view title failed" >&2; ((failed++)) || true; continue; }
-            body="$(gh issue view "$number" -R "$ISSUE_REPOSITORY" --json body --jq '.body')" || { echo "::warning::skip $number: view body failed" >&2; ((failed++)) || true; continue; }
+            issue_json="$(gh api "repos/${ISSUE_REPOSITORY}/issues/${number}")" || { echo "::warning::skip $number: view failed" >&2; ((failed++)) || true; continue; }
+            title="$(jq -r '.title' <<< "$issue_json")"
+            body="$(jq -r '.body // ""' <<< "$issue_json")"
 
             prompt="$RUNNER_TEMP/refine-prompt.txt"
             {
