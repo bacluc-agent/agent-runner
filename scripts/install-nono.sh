@@ -10,6 +10,7 @@ curl -fsSL https://nono.sh/install.sh | NONO_VERSION="v$NONO_VERSION" NONO_INSTA
 nono="$NONO_INSTALL_DIR/nono"
 "$nono" --version
 mkdir -p "$HOME/.local/share/opencode/log"
+mkdir -p "$HOME/.config/gh"
 mkdir -p "${TMPDIR:-/tmp}/opencode-db"
 
 printf '%s\n' "$NONO_INSTALL_DIR" >> "$GITHUB_PATH"

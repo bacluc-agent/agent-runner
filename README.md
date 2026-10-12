@@ -212,8 +212,8 @@ This kernel sandbox complements, but does not replace, the `gh` wrapper above.
 The profile adds no filesystem grants beyond denying `/dev`. Since nono's
 `node-dev` base still uses filesystem capabilities, `scripts/run-agent-sandboxed.sh`
 grants OpenCode's state/database paths, read access to its config and
-`$HOME/.config/gh`, and read access to `$RUNNER_TEMP` (the wrapper and git
-credential include files). This keeps the
+`$HOME/.config/gh`, writable npm cache access, and read access to `$RUNNER_TEMP`
+(the wrapper and git credential include files). This keeps the
 wrapper executable inside nono while Docker remains the broader filesystem
 isolation boundary.
 `scripts/http_guard.py` remains an advisory, importable policy helper
