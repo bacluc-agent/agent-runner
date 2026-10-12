@@ -180,7 +180,8 @@ def quota_buckets(backend):
 def retry_delay(stderr, backend, attempt):
     """Seconds to sleep before the next attempt, or None when this is not a rate limit.
 
-    A secondary limit backs off blindly. A primary mark or a bare HTTP 403 probes
+    A secondary limit backs off blindly, ignoring any Retry-After header, with 5*2^(n-1)
+    seconds capped at 60. A primary mark or a bare HTTP 403 probes
     every rate-limit bucket once and sleeps until the reset of any exhausted bucket:
     search and graphql reset far sooner than core (minutes vs ~55 min), so a
     search/graphql 403 no longer waits out the core window. A 403 with every bucket

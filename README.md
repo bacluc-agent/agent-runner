@@ -143,6 +143,8 @@ The installer saves the real CLI's absolute path before changing PATH.
 - A rate-limited call is retried with the identical argv and stdin; the output of a
   failed attempt is never shown, and after `GH_CLI_WRAPPER_MAX_ATTEMPTS` (default 4)
   attempts the wrapper prints `::warning::` and exits with the real CLI's status.
+  Secondary-limit backoff ignores any `Retry-After` header and uses `5·2^(n-1)`
+  seconds capped at 60.
 
 This is an accidental-misrouting guardrail, **not a sandbox or universal PR
 prevention**. An absolute executable path, direct HTTP, changing PATH or changing

@@ -86,6 +86,7 @@ jobs:
           # List-with-filters on the core bucket (5000/h) instead of the Search API
           # (30/min): oldest open issues first, dropping PRs and already-labeled
           # issues client-side, then keeping the oldest 5.
+          # ponytail: REST list vs Search can diverge if >100 labeled issues crowd the page — upgrade path: keep per_page ahead of growth.
           gh api "repos/${ISSUE_REPOSITORY}/issues?state=open&sort=created&direction=asc&per_page=100" \
             --jq 'map(select(.pull_request == null)) | map(select((.labels | map(.name) | index("agent-refined")) == null and (.labels | map(.name) | index("ready-for-implementation")) == null and (.labels | map(.name) | index("agent-ignore")) == null)) | .[0:5]' > "$search_json"
 
