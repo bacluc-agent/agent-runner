@@ -7,6 +7,6 @@ exec nono run --profile "$NONO_PROFILE" --allow-cwd \
   --allow "$HOME/.npm" \
   --allow "${TMPDIR:-/tmp}/opencode-db" \
   --read "$HOME/.config/opencode" \
-  --read "$HOME/.config/gh" \
-  --read "${RUNNER_TEMP:?}" \
+  --read "$HOME/.config/gh/hosts.yml" \
+  --read "${RUNNER_TEMP:?}/gh-cli-wrapper" \
   -- opencode "$@"

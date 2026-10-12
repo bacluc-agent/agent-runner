@@ -836,11 +836,11 @@ jobs:
 
           run_gh() {
             nono run --profile "$NONO_PROFILE" --allow-cwd \
-              --read "$RUNNER_TEMP" --read "$HOME/.config/gh" -- gh "$@"
+              --read "$wrapper_dir" --read "$HOME/.config/gh/hosts.yml" -- gh "$@"
           }
 
           sandbox_gh_path="$(nono run --profile "$NONO_PROFILE" --allow-cwd \
-            --read "$RUNNER_TEMP" --read "$HOME/.config/gh" -- sh -c 'command -v gh')"
+            --read "$wrapper_dir" --read "$HOME/.config/gh/hosts.yml" -- sh -c 'command -v gh')"
           [[ "$sandbox_gh_path" == "$wrapper_dir/gh" ]] || {
             printf 'gh did not resolve to the wrapper inside nono: %s\n' "$sandbox_gh_path" >&2
             exit 1
