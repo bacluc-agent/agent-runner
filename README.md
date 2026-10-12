@@ -205,8 +205,28 @@ allowlist plus explicit `api.github.com` and `github.com` endpoint rules:
   socket to the agent unless daemon egress is independently restricted.
 
 Agents start OpenCode through `scripts/run-agent-sandboxed.sh`, which requires
-`NONO_PROFILE` and execs `nono run --profile "$NONO_PROFILE" --allow-cwd --
-opencode "$@"`.
+`NONO_PROFILE` and runs `nono run --profile "$NONO_PROFILE" --allow-cwd` with
+the required runtime grants. The wrapper leaves stdout and stderr visible and
+appends nono's stderr (including proxy denial diagnostics) to
+`$RUNNER_TEMP/nono-proxy.log` without changing the command's exit status.
+Review this log for recurring denials before proposing allowlist additions;
+only allow a host or endpoint when the agent workflow needs it. Avoid copying
+unreviewed log contents into prompts or committing them.
+
+nono is pinned to 0.79.0. Its `nono run` help supports counted `-v` verbosity,
+and its `nono audit show <session> --json` command exposes a completed session's
+audit record. Audit files are stored under
+`$XDG_STATE_HOME/nono/audit/<session>/` (normally
+`~/.local/state/nono/audit/<session>/`), including `audit-events.ndjson`.
+Find session IDs with `nono audit list`, then inspect them with
+`nono audit show <session> --json`; these files are distinct from the live
+stderr capture at `$RUNNER_TEMP/nono-proxy.log` and are created when sessions
+finalize. Don't use `nono audit show` as a live-session log reader.
+
+Brave Search MCP access requires `api.search.brave.com`, already present in
+`.github/actions/setup-opencode/nono-profile.json`. When adding an MCP provider,
+review its required hosts and methods before changing the profile; plain host
+allowlist entries are CONNECT access, not method-specific endpoint policy.
 
 This kernel sandbox complements, but does not replace, the `gh` wrapper above.
 The profile adds no filesystem grants beyond denying `/dev`. Since nono's
