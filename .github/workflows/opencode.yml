@@ -799,6 +799,7 @@ jobs:
           chmod +x "$probe_bin/opencode"
           cleanup_probe() { rm -rf "$probe_bin"; }
           trap cleanup_probe EXIT
+          original_path="$PATH"
           export PATH="$probe_bin:$PATH"
           rm -f "$RUNNER_TEMP/nono-proxy.log"
           set +e
@@ -813,6 +814,9 @@ jobs:
             printf 'Captured nono stderr did not identify the denied request\n' >&2
             exit 1
           }
+          export PATH="$original_path"
+          cleanup_probe
+          trap - EXIT
           printf '%s\n' 'Nonallowlisted outbound denial was recorded in the captured nono log'
 
           dev_probe="/dev/shm/nono-write-probe-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
