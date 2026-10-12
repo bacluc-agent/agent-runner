@@ -834,6 +834,12 @@ jobs:
           [[ "$gh_path" == "$wrapper_dir/gh" ]] || { printf 'gh did not resolve to the sandbox wrapper: %s\n' "$gh_path" >&2; exit 1; }
           printf 'gh resolves to the wrapper: %s\n' "$gh_path"
 
+          git_credential_file=("$RUNNER_TEMP"/git-credentials-*.config)
+          [[ -f "${git_credential_file[0]}" ]] || { printf 'checkout Git credential include was not found\n' >&2; exit 1; }
+          nono run --profile "$NONO_PROFILE" --allow-cwd \
+            --read "$wrapper_dir" --read "$HOME/.config/gh/hosts.yml" -- \
+            git config --get-all http.https://github.com/.extraheader >/dev/null
+
           run_gh() {
             nono run --profile "$NONO_PROFILE" --allow-cwd \
               --read "$wrapper_dir" --read "$HOME/.config/gh/hosts.yml" -- gh "$@"
