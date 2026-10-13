@@ -66,6 +66,36 @@ jobs:
             --color 0E8A16 --description 'Approved for agent implementation' --force; then
             printf '::warning::could not ensure the ready-for-implementation label exists; the label may not be applied\n'
           fi
+          printf '::group::poll for new human comments on agent-refined issues\n'
+          refined_issues_json="$RUNNER_TEMP/refined-issues.json"
+          if gh api "search/issues?q=repo:${ISSUE_REPOSITORY}+is:open+is:issue+label:agent-refined&per_page=100" --jq '.items' > "$refined_issues_json" 2>/dev/null; then
+            while IFS= read -r number; do
+              [[ -n "$number" ]] || continue
+              comments_pages="$RUNNER_TEMP/refined-comments-pages-${number}.json"
+              timeline_pages="$RUNNER_TEMP/refined-timeline-pages-${number}.json"
+              if ! gh api --paginate --slurp "repos/$ISSUE_REPOSITORY/issues/$number/comments?per_page=100" > "$comments_pages" 2>/dev/null; then
+                printf '::warning::skip %s: fetch comments failed during poll\n' "$number" >&2
+                continue
+              fi
+              if ! gh api --paginate --slurp "repos/$ISSUE_REPOSITORY/issues/$number/timeline?per_page=100" > "$timeline_pages" 2>/dev/null; then
+                printf '::warning::skip %s: fetch timeline failed during poll\n' "$number" >&2
+                continue
+              fi
+              newest_comment_at="$(jq -r '[.[].[] | select(.user.type != "Bot") | select((.body // "") | contains("<!-- agent-progress -->") | not) | .created_at] | sort | last // empty' "$comments_pages")"
+              last_labeled_at="$(jq -r '[.[].[] | select(.event == "labeled" and .label.name == "agent-refined") | .created_at] | sort | last // empty' "$timeline_pages")"
+              if [[ -n "$newest_comment_at" && -n "$last_labeled_at" ]]; then
+                if [[ "$newest_comment_at" > "$last_labeled_at" ]]; then
+                  if gh issue edit "$number" --remove-label agent-refined -R "$ISSUE_REPOSITORY" >/dev/null 2>&1; then
+                    printf 'Removed agent-refined from #%s (comment %s newer than label %s)\n' "$number" "$newest_comment_at" "$last_labeled_at"
+                  else
+                    printf '::warning::failed to remove agent-refined from #%s\n' "$number" >&2
+                  fi
+                fi
+              fi
+            done < <(jq -r '.[].number' "$refined_issues_json")
+          else
+            printf '::warning::failed to poll refined issues\n' >&2
+          fi
           printf '::endgroup::\n'
 
           printf '\n\n\n\n\n\n'

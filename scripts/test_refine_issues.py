@@ -7,7 +7,7 @@ WORKFLOW = Path(__file__).parents[1] / ".github/workflows/refine-issues.yml"
 def test_first_time_candidate_search_preserves_the_five_issue_limit():
     workflow = WORKFLOW.read_text()
     candidate_search = next(
-        line for line in workflow.splitlines() if "search/issues?q=repo:" in line
+        line for line in workflow.splitlines() if "search/issues?q=repo:" in line and "+-label:agent-refined" in line and "+-label:agent-ignore" in line
     )
 
     assert "+-label:agent-refined" in candidate_search
@@ -20,11 +20,12 @@ def test_only_unrefined_candidates_are_selected_with_the_search_limit():
     workflow = WORKFLOW.read_text()
     searches = [line for line in workflow.splitlines() if "search/issues?q=" in line]
 
-    assert len(searches) == 1
-    assert (
+    # Poll adds another search for refined issues; candidate search must still be correct
+    assert any(
         'search/issues?q=repo:${ISSUE_REPOSITORY}+is:open+is:issue+-label:agent-refined'
-        "+-label:agent-ignore+sort:created-asc&per_page=5"
-    ) in searches[0]
+        "+-label:agent-ignore+sort:created-asc&per_page=5" in s
+        for s in searches
+    )
     assert "refined_query" not in workflow
     assert "scan_window" not in workflow
     assert "agent-refined-through:" not in workflow
