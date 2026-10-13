@@ -122,7 +122,8 @@ def test_pr_lookup_variables_are_initialised_before_the_pr_feedback_lookup():
 
 def test_workflow_uses_latest_commit_and_created_at_when_pr_has_no_commits():
     content = WORKFLOW.read_text()
-    assert "--json number,createdAt,updatedAt,headRefName,state,title" in content
+    assert 'gh api "repos/$repo/pulls?state=all&per_page=100"' in content
+    assert r'"\(.head.ref)|#\(.number)|\(.created_at)|\(.updated_at)|\(if .merged_at then "MERGED" else (.state | ascii_upcase) end)|\(.title)"' in content
     assert "sort -t'|' -k4 -r" in content
     assert 'gh api --paginate --slurp "repos/$pr_repo/pulls/$pr_number/commits" | jq -er --arg fallback "$pr_created"' in content
     assert '([.[][] | .commit.committer.date] | max) // $fallback' in content
