@@ -23,39 +23,37 @@ def command(backend, model, prompt, name="coordinator", title=None):
 
 
 def t3_code_executable():
-    executable = next(
-        (path for name in ("t3-code", "t3") if (path := shutil.which(name))), None
-    )
-    if not executable:
+    executables = [
+        path for name in ("t3-code", "t3") if (path := shutil.which(name))
+    ]
+    if not executables:
         raise RuntimeError(
             "T3 Code headless agent execution is experimental and unsupported: no `t3-code` or `t3` CLI is on PATH. "
             "The official CLI provides server commands such as `t3 serve`, not the required `run` command; use OpenCode."
         )
-    try:
-        help_result = subprocess.run(
-            [executable, "run", "--help"],
-            check=False,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            timeout=10,
-        )
-    except (OSError, subprocess.TimeoutExpired) as error:
-        raise RuntimeError(
-            f"T3 Code headless agent execution is unsupported: `{executable} run --help` could not be verified; "
-            "expected a `run` command with `--model` and `--prompt`. Use OpenCode."
-        ) from error
-    help_text = help_result.stdout or ""
-    if help_result.returncode or not all(
-        re.search(rf"(?<![\w-]){flag}(?![\w-])", help_text)
-        for flag in ("--model", "--prompt")
-    ):
-        raise RuntimeError(
-            f"T3 Code headless agent execution is unsupported: `{executable} run --help` did not verify a `run` "
-            "command with `--model` and `--prompt`. The official CLI documents `t3 serve` for headless server use, "
-            "not one-shot agent execution; use OpenCode."
-        )
-    return executable
+    for executable in executables:
+        try:
+            help_result = subprocess.run(
+                [executable, "run", "--help"],
+                check=False,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                timeout=10,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            continue
+        help_text = help_result.stdout or ""
+        if not help_result.returncode and all(
+            re.search(rf"(?<![\w-]){flag}(?![\w-])", help_text)
+            for flag in ("--model", "--prompt")
+        ):
+            return executable
+    raise RuntimeError(
+        "T3 Code headless agent execution is unsupported: neither `t3-code` nor `t3` "
+        "verified a `run` command with `--model` and `--prompt`. The official CLI "
+        "documents `t3 serve` for headless server use, not one-shot agent execution; use OpenCode."
+    )
 
 
 def run_agent(agent, backend):

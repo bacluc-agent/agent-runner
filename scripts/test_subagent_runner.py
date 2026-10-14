@@ -40,7 +40,7 @@ def test_t3_code_discovery_tries_code_then_t3(monkeypatch):
     assert checked == ["t3-code", "t3"]
 
 
-def test_t3_code_discovery_stops_at_first_installed_cli(monkeypatch):
+def test_t3_code_discovery_falls_back_when_first_installed_cli_is_unsupported(monkeypatch):
     checked = []
 
     def which(executable):
@@ -48,14 +48,23 @@ def test_t3_code_discovery_stops_at_first_installed_cli(monkeypatch):
         return f"/usr/bin/{executable}"
 
     monkeypatch.setattr(subagent_runner.shutil, "which", which)
-    monkeypatch.setattr(
-        subprocess,
-        "run",
-        lambda args, **kwargs: subprocess.CompletedProcess(args, 1, stdout="unsupported"),
-    )
-    with pytest.raises(RuntimeError, match="headless agent execution is unsupported"):
-        subagent_runner.t3_code_executable()
-    assert checked == ["t3-code"]
+    probes = []
+
+    def run(args, **kwargs):
+        probes.append(args)
+        if args[0] == "/usr/bin/t3-code":
+            return subprocess.CompletedProcess(args, 1, stdout="unsupported")
+        return subprocess.CompletedProcess(
+            args, 0, stdout="Usage: t3 run --model <model> --prompt <prompt>"
+        )
+
+    monkeypatch.setattr(subprocess, "run", run)
+    assert subagent_runner.t3_code_executable() == "/usr/bin/t3"
+    assert checked == ["t3-code", "t3"]
+    assert probes == [
+        ["/usr/bin/t3-code", "run", "--help"],
+        ["/usr/bin/t3", "run", "--help"],
+    ]
 
 
 @pytest.mark.parametrize(
