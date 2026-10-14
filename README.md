@@ -94,16 +94,18 @@ Its JSON config accepts `opencode` and `t3-code` backends, parallel `agents`
 with a required explicit `model` and prompt, and optional `judge` and `fallback`
 agent objects. Each agent may set a `config` path; for OpenCode it is passed
 only to that process (`OPENCODE_CONFIG`), keeping nested coordinators isolated.
-OpenCode uses `opencode run --agent ... --model ...`; T3 Code currently constructs
-`t3-code run --model ... --prompt ...` and checks for `t3-code` on `PATH`.
+OpenCode uses `opencode run --agent ... --model ...`. T3 Code is not currently a
+supported execution backend: before starting work, the runner checks that
+`t3-code run --help` or `t3 run --help` succeeds and advertises both `--model`
+and `--prompt`. It refuses to run when that capability cannot be verified.
 
-**T3 Code CLI limitation:** the provisioned project deploys the T3 Code AppImage
-and desktop launcher, not a headless agent CLI; upstream CLI documentation
-currently describes server management, not a `run` command. Therefore the T3
-command shape is an explicit integration assumption, covered by mocked command
-construction only, and has not been validated against an installed executable.
-The `t3-code` backend requires a compatible headless CLI on `PATH`; use OpenCode
-until one is installed and its agent command is confirmed.
+**T3 Code CLI limitation:** upstream documents a `t3` CLI for running a headless
+server (`t3 serve`), not one-shot agent execution (`t3 run`). The provisioned
+project installs the desktop AppImage, not a verified one-shot agent CLI. The
+capability probe prevents the assumed command from being advertised as working;
+use OpenCode unless a compatible CLI implementing `run --model --prompt` is
+installed. See upstream's [T3 Code CLI documentation](https://github.com/pingdotgg/t3code#command-line)
+and [remote-access guide](https://github.com/pingdotgg/t3code/blob/main/docs/user/remote-access.md).
 
 The shared AI configuration is pulled from `bacluc/provision-machines` by
 `setup-opencode`; `.opencode/opencode.json` in this repository is only a local

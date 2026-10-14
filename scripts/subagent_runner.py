@@ -5,6 +5,7 @@ import argparse
 import concurrent.futures
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -21,19 +22,50 @@ def command(backend, model, prompt, name="coordinator", title=None):
     raise ValueError(f"unsupported backend: {backend}")
 
 
+def t3_code_executable():
+    executable = shutil.which("t3-code") or shutil.which("t3")
+    if not executable:
+        raise RuntimeError(
+            "T3 Code headless agent execution is unsupported: no `t3-code` or `t3` CLI is on PATH. "
+            "The official CLI provides server commands such as `t3 serve`, not the required `run` command; use OpenCode."
+        )
+    try:
+        help_result = subprocess.run(
+            [executable, "run", "--help"],
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise RuntimeError(
+            f"T3 Code headless agent execution is unsupported: `{executable} run --help` could not be verified; "
+            "expected a `run` command with `--model` and `--prompt`. Use OpenCode."
+        ) from error
+    help_text = help_result.stdout or ""
+    if help_result.returncode or not all(
+        re.search(rf"(?<![\w-]){flag}(?![\w-])", help_text)
+        for flag in ("--model", "--prompt")
+    ):
+        raise RuntimeError(
+            f"T3 Code headless agent execution is unsupported: `{executable} run --help` did not verify a `run` "
+            "command with `--model` and `--prompt`. The official CLI documents `t3 serve` for headless server use, "
+            "not one-shot agent execution; use OpenCode."
+        )
+    return executable
+
+
 def run_agent(agent, backend):
     args = command(
         backend, agent["model"], agent["prompt"],
         agent.get("name", "coordinator"), agent.get("title"),
     )
     executable = args[0]
-    if not shutil.which(executable):
-        hint = (
-            "Install the T3 Code CLI and ensure its headless agent command is on PATH"
-            if backend == "t3-code"
-            else f"{executable} CLI not found"
-        )
-        raise RuntimeError(hint)
+    if backend == "t3-code":
+        args[0] = t3_code_executable()
+    elif not shutil.which(executable):
+        raise RuntimeError(f"{executable} CLI not found")
     env = os.environ.copy()
     if agent.get("config"):
         if backend == "opencode":

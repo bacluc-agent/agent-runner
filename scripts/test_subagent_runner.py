@@ -17,8 +17,57 @@ def test_commands_select_opencode_and_explicit_model():
 
 def test_t3_code_missing_cli_has_actionable_error(monkeypatch):
     monkeypatch.setattr(subagent_runner.shutil, "which", lambda executable: None)
-    with pytest.raises(RuntimeError, match="Install the T3 Code CLI.*headless agent command"):
+    with pytest.raises(RuntimeError, match="headless agent execution is unsupported.*use OpenCode"):
         subagent_runner.run_agent({"model": "m", "prompt": "p"}, "t3-code")
+
+
+@pytest.mark.parametrize(
+    ("returncode", "help_text", "supported"),
+    [
+        (0, "Usage: t3 run --model <model> --prompt <prompt>", True),
+        (0, "Usage: t3 serve [--host <host>]", False),
+        (1, "error: unknown command 'run'", False),
+    ],
+)
+def test_t3_code_capability_probe_checks_command_and_flags(
+    monkeypatch, returncode, help_text, supported
+):
+    calls = []
+    monkeypatch.setattr(subagent_runner.shutil, "which", lambda executable: "/bin/t3")
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda args, **kwargs: calls.append((args, kwargs))
+        or subprocess.CompletedProcess(args, returncode, stdout=help_text),
+    )
+    if supported:
+        assert subagent_runner.t3_code_executable() == "/bin/t3"
+    else:
+        with pytest.raises(RuntimeError, match="headless agent execution is unsupported"):
+            subagent_runner.t3_code_executable()
+    assert calls[0][0] == ["/bin/t3", "run", "--help"]
+
+
+def test_run_agent_probes_t3_before_invoking_supported_cli(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        subagent_runner.shutil, "which", lambda executable: "/usr/bin/t3"
+    )
+
+    def run(args, **kwargs):
+        calls.append(args)
+        if args[-1] == "--help":
+            return subprocess.CompletedProcess(
+                args, 0, stdout="Usage: t3 run --model <model> --prompt <prompt>"
+            )
+        return subprocess.CompletedProcess(args, 0, stdout="done")
+
+    monkeypatch.setattr(subprocess, "run", run)
+    assert subagent_runner.run_agent({"model": "m", "prompt": "p"}, "t3-code") == "done"
+    assert calls == [
+        ["/usr/bin/t3", "run", "--help"],
+        ["/usr/bin/t3", "run", "--model", "m", "--prompt", "p"],
+    ]
 
 
 def test_agents_dispatch_in_parallel(monkeypatch):
