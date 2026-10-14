@@ -20,15 +20,11 @@ def test_only_unrefined_candidates_are_selected_with_the_search_limit():
     workflow = WORKFLOW.read_text()
     searches = [line for line in workflow.splitlines() if "search/issues?q=" in line]
 
-    # Poll adds another search for refined issues; candidate search must still be correct
-    assert any(
+    assert len(searches) == 1
+    assert (
         'search/issues?q=repo:${ISSUE_REPOSITORY}+is:open+is:issue+-label:agent-refined'
-        "+-label:agent-ignore+sort:created-asc&per_page=5" in s
-        for s in searches
+        "+-label:agent-ignore+sort:created-asc&per_page=5" in searches[0]
     )
-    assert "refined_query" not in workflow
-    assert "scan_window" not in workflow
-    assert "agent-refined-through:" not in workflow
 
 
 def test_candidates_include_filtered_human_comments():

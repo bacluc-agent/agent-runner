@@ -1527,16 +1527,5 @@ class TestWorkflowOpenRouterSelection:
         )
         assert kept.returncode == 0, "opencode/big-pickle must be kept"
 
-class TestRefineIssuesPollForNewComments:
-    WORKFLOW = Path(__file__).parents[3] / ".github/workflows/refine-issues.yml"
-
-    def test_poll_block_exists_and_is_before_candidate_search(self):
-        content = self.WORKFLOW.read_text()
-        poll_marker = 'poll for new human comments on agent-refined issues'
-        assert poll_marker in content
-        poll_pos = content.index(poll_marker)
-        search_pos = content.index('search_json="$RUNNER_TEMP/candidates.json"')
-        assert poll_pos < search_pos
-
 
 
