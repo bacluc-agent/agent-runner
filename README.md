@@ -94,18 +94,19 @@ Its JSON config accepts `opencode` and `t3-code` backends, parallel `agents`
 with a required explicit `model` and prompt, and optional `judge` and `fallback`
 agent objects. Each agent may set a `config` path; for OpenCode it is passed
 only to that process (`OPENCODE_CONFIG`), keeping nested coordinators isolated.
-OpenCode uses `opencode run --agent ... --model ...`. T3 Code is not currently a
-supported execution backend: before starting work, the runner checks that
-`t3-code run --help` or `t3 run --help` succeeds and advertises both `--model`
-and `--prompt`. It refuses to run when that capability cannot be verified.
+OpenCode uses `opencode run --agent ... --model ...`. T3 Code execution is
+experimental and conditional: the runner checks `t3-code` first, then `t3`, and
+requires `run --help` to succeed and advertise both `--model` and `--prompt`.
+This verifies only the advertised interface, not that a real headless agent
+invocation works.
 
 **T3 Code CLI limitation:** upstream documents a `t3` CLI for running a headless
 server (`t3 serve`), not one-shot agent execution (`t3 run`). The provisioned
-project installs the desktop AppImage, not a verified one-shot agent CLI. The
-capability probe prevents the assumed command from being advertised as working;
-use OpenCode unless a compatible CLI implementing `run --model --prompt` is
-installed. See upstream's [T3 Code CLI documentation](https://github.com/pingdotgg/t3code#command-line)
-and [remote-access guide](https://github.com/pingdotgg/t3code/blob/main/docs/user/remote-access.md).
+project installs the desktop AppImage; no compatible one-shot agent CLI or real
+headless invocation has been verified. Use OpenCode unless a compatible T3 CLI
+is installed and its invocation is independently confirmed. See upstream's
+[T3 Code CLI documentation](https://github.com/pingdotgg/t3code#command-line) and
+[remote-access guide](https://github.com/pingdotgg/t3code/blob/main/docs/user/remote-access.md).
 
 The shared AI configuration is pulled from `bacluc/provision-machines` by
 `setup-opencode`; `.opencode/opencode.json` in this repository is only a local

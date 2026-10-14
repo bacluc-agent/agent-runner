@@ -17,8 +17,45 @@ def test_commands_select_opencode_and_explicit_model():
 
 def test_t3_code_missing_cli_has_actionable_error(monkeypatch):
     monkeypatch.setattr(subagent_runner.shutil, "which", lambda executable: None)
-    with pytest.raises(RuntimeError, match="headless agent execution is unsupported.*use OpenCode"):
+    with pytest.raises(RuntimeError, match="headless agent execution is experimental and unsupported.*use OpenCode"):
         subagent_runner.run_agent({"model": "m", "prompt": "p"}, "t3-code")
+
+
+def test_t3_code_discovery_tries_code_then_t3(monkeypatch):
+    checked = []
+
+    def which(executable):
+        checked.append(executable)
+        return {"t3-code": None, "t3": "/usr/bin/t3"}[executable]
+
+    monkeypatch.setattr(subagent_runner.shutil, "which", which)
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda args, **kwargs: subprocess.CompletedProcess(
+            args, 0, stdout="Usage: t3 run --model <model> --prompt <prompt>"
+        ),
+    )
+    assert subagent_runner.t3_code_executable() == "/usr/bin/t3"
+    assert checked == ["t3-code", "t3"]
+
+
+def test_t3_code_discovery_stops_at_first_installed_cli(monkeypatch):
+    checked = []
+
+    def which(executable):
+        checked.append(executable)
+        return f"/usr/bin/{executable}"
+
+    monkeypatch.setattr(subagent_runner.shutil, "which", which)
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda args, **kwargs: subprocess.CompletedProcess(args, 1, stdout="unsupported"),
+    )
+    with pytest.raises(RuntimeError, match="headless agent execution is unsupported"):
+        subagent_runner.t3_code_executable()
+    assert checked == ["t3-code"]
 
 
 @pytest.mark.parametrize(

@@ -23,10 +23,12 @@ def command(backend, model, prompt, name="coordinator", title=None):
 
 
 def t3_code_executable():
-    executable = shutil.which("t3-code") or shutil.which("t3")
+    executable = next(
+        (path for name in ("t3-code", "t3") if (path := shutil.which(name))), None
+    )
     if not executable:
         raise RuntimeError(
-            "T3 Code headless agent execution is unsupported: no `t3-code` or `t3` CLI is on PATH. "
+            "T3 Code headless agent execution is experimental and unsupported: no `t3-code` or `t3` CLI is on PATH. "
             "The official CLI provides server commands such as `t3 serve`, not the required `run` command; use OpenCode."
         )
     try:

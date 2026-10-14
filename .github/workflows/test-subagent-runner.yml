@@ -1,6 +1,11 @@
 name: Test subagent runner
 
 on:
+  push:
+    paths:
+      - scripts/subagent_runner.py
+      - scripts/test_subagent_runner.py
+      - .github/workflows/test-subagent-runner.yml
   workflow_dispatch:
 
 permissions:
