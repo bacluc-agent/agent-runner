@@ -10,8 +10,15 @@ def test_commands_select_opencode_and_explicit_model():
     assert subagent_runner.command("opencode", "alpha/model", "task") == [
         "opencode", "run", "--agent", "coordinator", "--model", "alpha/model", "task"
     ]
-    with pytest.raises(ValueError, match="unsupported backend: t3-code"):
-        subagent_runner.command("t3-code", "alpha/model", "task")
+    assert subagent_runner.command("t3-code", "alpha/model", "task") == [
+        "t3-code", "run", "--model", "alpha/model", "--prompt", "task"
+    ]
+
+
+def test_t3_code_missing_cli_has_actionable_error(monkeypatch):
+    monkeypatch.setattr(subagent_runner.shutil, "which", lambda executable: None)
+    with pytest.raises(RuntimeError, match="Install the T3 Code CLI.*headless agent command"):
+        subagent_runner.run_agent({"model": "m", "prompt": "p"}, "t3-code")
 
 
 def test_agents_dispatch_in_parallel(monkeypatch):

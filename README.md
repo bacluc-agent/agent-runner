@@ -90,12 +90,20 @@ Selectors apply the shared `scripts/model-deny-list.txt` and stop instead of
 dispatching when no allowed model is available.
 
 The workflow delegates coordinator execution to `scripts/subagent_runner.py`.
-Its JSON config accepts the verified `opencode` backend, parallel `agents`
+Its JSON config accepts `opencode` and `t3-code` backends, parallel `agents`
 with a required explicit `model` and prompt, and optional `judge` and `fallback`
-agent objects. Each agent may set a `config` path; it is passed only to that
-process (`OPENCODE_CONFIG`), keeping nested coordinators isolated.
-The runner uses `opencode run --agent ... --model ...`. T3 Code remains
-unavailable until its supported headless execution route is verified.
+agent objects. Each agent may set a `config` path; for OpenCode it is passed
+only to that process (`OPENCODE_CONFIG`), keeping nested coordinators isolated.
+OpenCode uses `opencode run --agent ... --model ...`; T3 Code currently constructs
+`t3-code run --model ... --prompt ...` and checks for `t3-code` on `PATH`.
+
+**T3 Code CLI limitation:** the provisioned project deploys the T3 Code AppImage
+and desktop launcher, not a headless agent CLI; upstream CLI documentation
+currently describes server management, not a `run` command. Therefore the T3
+command shape is an explicit integration assumption, covered by mocked command
+construction only, and has not been validated against an installed executable.
+The `t3-code` backend requires a compatible headless CLI on `PATH`; use OpenCode
+until one is installed and its agent command is confirmed.
 
 The shared AI configuration is pulled from `bacluc/provision-machines` by
 `setup-opencode`; `.opencode/opencode.json` in this repository is only a local

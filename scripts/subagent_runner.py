@@ -17,7 +17,7 @@ def command(backend, model, prompt, name="coordinator", title=None):
             *( ["--title", title] if title else [] ), prompt,
         ]
     if backend == "t3-code":
-        raise ValueError("unsupported backend: t3-code")
+        return ["t3-code", "run", "--model", model, "--prompt", prompt]
     raise ValueError(f"unsupported backend: {backend}")
 
 
@@ -28,13 +28,16 @@ def run_agent(agent, backend):
     )
     executable = args[0]
     if not shutil.which(executable):
-        raise RuntimeError(f"{executable} CLI not found")
+        hint = (
+            "Install the T3 Code CLI and ensure its headless agent command is on PATH"
+            if backend == "t3-code"
+            else f"{executable} CLI not found"
+        )
+        raise RuntimeError(hint)
     env = os.environ.copy()
     if agent.get("config"):
         if backend == "opencode":
             env["OPENCODE_CONFIG"] = agent["config"]
-        else:
-            env["T3_CONFIG"] = agent["config"]
     return subprocess.run(
         args,
         check=True,
