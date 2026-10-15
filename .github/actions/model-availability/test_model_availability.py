@@ -1343,6 +1343,10 @@ class TestRefineIssuesComments:
         assert "$refined_at" not in content
         assert "This is a prior refinement" not in content
 
+    def test_automatic_refined_label_removal_is_absent(self):
+        content = self.WORKFLOW.read_text()
+        assert "--remove-label agent-refined" not in content
+
     def test_comment_filter_contract(self):
         content = self.WORKFLOW.read_text()
         assert 'select(.user.type != "Bot")' in content
