@@ -190,13 +190,15 @@ allowlist plus explicit `api.github.com` and `github.com` endpoint rules:
   Plain host entries do not filter HTTP methods or paths, and the provider APIs
   need methods such as `POST`.
 - Endpoint rules are host-specific and default-deny unmatched methods/paths on
-  that hostname. They require TLS interception to inspect method/path;
-  `tls_intercept.ca_env_vars` makes the generated CA trusted by clients that use
-  runtime-specific CA environment variables. Other allowed hosts use end-to-end
-  CONNECT tunnels. nono 0.79 has no global method default or wildcard endpoint
-  policy, so it cannot express “GET to arbitrary domains, but no POST” while
-  preserving provider POSTs. No catch-all host is configured; this policy does
-  not claim GET-only access to arbitrary domains.
+  that hostname. They require TLS interception to inspect method/path. When
+  interception is active, nono automatically points the standard client CA
+  variables (`SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE`, `NODE_EXTRA_CA_CERTS`,
+  `CURL_CA_BUNDLE`, `GIT_SSL_CAINFO`) at the generated CA bundle, so no
+  `tls_intercept.ca_env_vars` entry is needed in the profile. Other allowed
+  hosts use end-to-end CONNECT tunnels. nono 0.79 has no global method default
+  or wildcard endpoint policy, so it cannot express “GET to arbitrary domains,
+  but no POST” while preserving provider POSTs. No catch-all host is configured;
+  this policy does not claim GET-only access to arbitrary domains.
 - `filesystem.deny` blocks `/dev`; Docker provides the broader filesystem
   isolation. On Linux, nono covers matching `/dev` paths present when the
   sandbox starts.
