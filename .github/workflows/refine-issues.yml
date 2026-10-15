@@ -66,6 +66,7 @@ jobs:
             --color 0E8A16 --description 'Approved for agent implementation' --force; then
             printf '::warning::could not ensure the ready-for-implementation label exists; the label may not be applied\n'
           fi
+          printf '::endgroup::\n'
           printf '\n\n\n\n\n\n'
           printf 'Fetching github issues...\n'
           printf '\n\n\n\n\n\n'
@@ -172,7 +173,8 @@ jobs:
               printf '%s\n' "$body"
               if [[ -s "$comments" ]] && [[ "$(jq 'length' "$comments")" -gt 0 ]]; then
                 printf '\n%s\n' 'Reviewer comments (feedback to fold into the Goal and steps; do not quote them wholesale):'
-                jq -r '.[] | "Author: \(.user.login)\nCreated at: \(.created_at)\nBody:\n\(.body)\n"' "$comments"
+                # Keep the newest feedback: the prompt is one argv word and Linux caps it at MAX_ARG_STRLEN (131072 bytes).
+                jq -r '.[] | "Author: \(.user.login)\nCreated at: \(.created_at)\nBody:\n\(.body)\n"' "$comments" | tail -c 32768
               fi
               printf '%s\n' ''
               printf '%s\n' 'Your task: rewrite the issue body so that a coding agent can implement it'

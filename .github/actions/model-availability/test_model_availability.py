@@ -1415,6 +1415,60 @@ elif args[0] == "api":
         assert "bot comment" not in result.stdout
         assert "agent-progress" not in result.stdout
 
+    def test_label_group_is_closed(self):
+        content = self.WORKFLOW.read_text()
+        assert "::group::ensure agent labels" in content
+        assert "::endgroup::" in content
+
+    def test_folded_feedback_is_bounded_to_the_single_argv_limit(self, tmp_path):
+        content = self.WORKFLOW.read_text()
+        start = content.index('search_json="$RUNNER_TEMP/candidates.json"')
+        end = content.index('} > "$prompt"', start) + len('} > "$prompt"')
+        block = content[start:end]
+        candidates = tmp_path / "candidate-numbers.txt"
+        newest_marker = "NEWEST-FEEDBACK-MARKER please fold this note"
+        oldest_marker = "OLDEST-DROPPED-MARKER"
+        fake_gh = tmp_path / "gh"
+        fake_gh.write_text(
+            f"""#!/usr/bin/env python3
+import json, sys
+args = sys.argv[1:]
+if args[0] == "issue":
+    print(json.dumps({{"title": "Title of 11", "body": "Current issue body"}}))
+elif args[0] == "api":
+    if args[1].startswith("search/issues?q="):
+        print(json.dumps([{{"number": 11, "title": "Example", "labels": []}}]))
+    else:
+        comments = [
+            {{"user": {{"type": "User", "login": "human"}}, "body": "{oldest_marker} " + "A" * 700000, "created_at": "2026-02-02T00:00:00Z"}},
+            {{"user": {{"type": "User", "login": "human"}}, "body": "B" * 100000, "created_at": "2026-02-03T00:00:00Z"}},
+            {{"user": {{"type": "User", "login": "human"}}, "body": "{newest_marker}", "created_at": "2026-02-04T00:00:00Z"}},
+        ]
+        print(json.dumps([comments]))
+"""
+        )
+        fake_gh.chmod(0o755)
+        script = (
+            f"ISSUE_REPOSITORY=example/issues\n"
+            f"RUNNER_TEMP={str(tmp_path)!r}\n"
+            f"PATH={str(tmp_path)!r}:$PATH\n"
+            "AVAILABLE_MODELS=test-model\n"
+            f"candidates={str(candidates)!r}\n"
+            f"{block}\n"
+            'done < "$candidates"\n'
+        )
+        result = subprocess.run(
+            ["bash", "-Eeuo", "pipefail", "-c", script],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, result.stderr
+        prompt = tmp_path / "refine-prompt.txt"
+        assert prompt.stat().st_size < 131072
+        text = prompt.read_text()
+        assert newest_marker in text
+        assert oldest_marker not in text
+
 
 class TestWorkflowOpenRouterSelection:
     WORKFLOWS = [
