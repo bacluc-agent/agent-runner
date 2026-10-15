@@ -226,9 +226,7 @@ jobs:
                 break
               fi
               if (( validation_status == 0 )); then
-                final_body="$RUNNER_TEMP/refined-body-${number}.txt"
-                cp "$out" "$final_body"
-                gh issue edit "$number" --body-file "$final_body" -R "$ISSUE_REPOSITORY"
+                gh issue edit "$number" --body-file "$out" -R "$ISSUE_REPOSITORY"
                 gh issue edit "$number" --add-label "agent-refined" -R "$ISSUE_REPOSITORY"
                 printf 'Issue #%s refined and labeled.\n' "$number"
                 (( refined++ )) || true
