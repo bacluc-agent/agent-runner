@@ -67,7 +67,9 @@ test("launcher resolution searches PATH before HOME/bin", async () => {
 
 test("each phase resolves availability independently", async () => {
   const previousModels = process.env.AVAILABLE_MODELS;
+  const previousModel = process.env.MODEL;
   const previousLog = console.log;
+  delete process.env.MODEL;
   process.env.AVAILABLE_MODELS = "opencode/first";
   const logs: string[] = [];
   let searches = 0;
@@ -101,6 +103,8 @@ test("each phase resolves availability independently", async () => {
     console.log = previousLog;
     if (previousModels === undefined) delete process.env.AVAILABLE_MODELS;
     else process.env.AVAILABLE_MODELS = previousModels;
+    if (previousModel === undefined) delete process.env.MODEL;
+    else process.env.MODEL = previousModel;
   }
 });
 
