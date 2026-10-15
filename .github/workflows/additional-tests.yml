@@ -21,7 +21,7 @@ jobs:
         run: npm test
         env:
           MODEL: opencode/big-pickle
+      - name: Install uv
+        run: pip install --quiet uv
       - name: Run python tests
-        run: |
-          python3 -m pip install --quiet pytest==9.1.1
-          python3 -m pytest -q
+        run: uv run --group dev pytest -q
