@@ -7,7 +7,7 @@ from urllib.parse import urlparse
 
 OWNED_ORGS = {"bacluc", "bacluc-agent", "bacluc-agent-org"}
 READ_METHODS = {"GET", "HEAD", "OPTIONS"}
-ALLOWED_HOSTS = {"github.com", "api.github.com"}
+ALLOWED_HOSTS = {"github.com", "api.github.com", "uploads.github.com"}
 FORK_PATH = re.compile(r"^/repos/[^/]+/[^/]+/forks/?$", flags=re.IGNORECASE)
 
 

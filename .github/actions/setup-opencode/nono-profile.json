@@ -113,6 +113,65 @@
           }
         ]
       },
+      {
+        "domain": "uploads.github.com",
+        "endpoints": [
+          { "method": "GET", "path": "/**" },
+          { "method": "HEAD", "path": "/**" },
+          { "method": "OPTIONS", "path": "/**" },
+          { "method": "POST", "path": "/repos/*/*/forks" },
+          {
+            "method": "POST",
+            "path": "/repos/[bB][aA][cC][lL][uU][cC]/*/**"
+          },
+          {
+            "method": "PATCH",
+            "path": "/repos/[bB][aA][cC][lL][uU][cC]/*/**"
+          },
+          {
+            "method": "PUT",
+            "path": "/repos/[bB][aA][cC][lL][uU][cC]/*/**"
+          },
+          {
+            "method": "DELETE",
+            "path": "/repos/[bB][aA][cC][lL][uU][cC]/*/**"
+          },
+          {
+            "method": "POST",
+            "path": "/repos/[bB][aA][cC][lL][uU][cC]-[aA][gG][eE][nN][tT]/*/**"
+          },
+          {
+            "method": "PATCH",
+            "path": "/repos/[bB][aA][cC][lL][uU][cC]-[aA][gG][eE][nN][tT]/*/**"
+          },
+          {
+            "method": "PUT",
+            "path": "/repos/[bB][aA][cC][lL][uU][cC]-[aA][gG][eE][nN][tT]/*/**"
+          },
+          {
+            "method": "DELETE",
+            "path": "/repos/[bB][aA][cC][lL][uU][cC]-[aA][gG][eE][nN][tT]/*/**"
+          },
+          {
+            "method": "POST",
+            "path": "/repos/[bB][aA][cC][lL][uU][cC]-[aA][gG][eE][nN][tT]-[oO][rR][gG]/*/**"
+          },
+          {
+            "method": "PATCH",
+            "path": "/repos/[bB][aA][cC][lL][uU][cC]-[aA][gG][eE][nN][tT]-[oO][rR][gG]/*/**"
+          },
+          {
+            "method": "PUT",
+            "path": "/repos/[bB][aA][cC][lL][uU][cC]-[aA][gG][eE][nN][tT]-[oO][rR][gG]/*/**"
+          },
+          {
+            "method": "DELETE",
+            "path": "/repos/[bB][aA][cC][lL][uU][cC]-[aA][gG][eE][nN][tT]-[oO][rR][gG]/*/**"
+          }
+        ]
+      },
+      "objects.githubusercontent.com",
+      "release-assets.githubusercontent.com",
       "opencode.ai",
       "chatgpt.com",
       "auth.openai.com",

@@ -183,6 +183,10 @@ allowlist plus explicit `api.github.com` and `github.com` endpoint rules:
   stays denied; use the CLI command instead.
 - Git HTTPS upload-pack (fetch/clone) is allowed for any repository; receive-pack
   (push) is allowed only for those owned organizations.
+- GitHub release assets use separate hosts: `uploads.github.com` carries the
+  release-asset upload endpoint (owned-repo mutations only, like api.github.com),
+  and `objects.githubusercontent.com` / `release-assets.githubusercontent.com`
+  serve release-asset downloads as plain CONNECT tunnels.
 - The model providers OpenCode needs are additionally host-allowlisted as plain
   CONNECT tunnels, including `opencode.ai`, `chatgpt.com`, `auth.openai.com`,
   `models.dev`, `models.opencode.ai`, and `api.search.brave.com`; the developer
