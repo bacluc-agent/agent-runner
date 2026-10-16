@@ -174,3 +174,10 @@ test("searches follow GitHub pagination", async () => {
     globalThis.fetch = originalFetch;
   }
 });
+
+test("package entry point resolves by name", async () => {
+  const entry = await import("@bacluc-agent/agent-loops");
+  for (const name of ["refine", "issues", "review", "run"]) {
+    assert.equal(typeof entry[name], "function");
+  }
+});
