@@ -73,7 +73,7 @@ on:
         type: number
         default: 5
       sandbox_evidence:
-        description: Run nono policy probes, gh wrapper checks inside nono, and an OpenCode PONG instead of the agent
+        description: Run nono policy probes, gh wrapper checks inside nono, a sandboxed issue-selector run, and an OpenCode PONG instead of the agent
         required: false
         type: boolean
         default: false
@@ -742,7 +742,7 @@ jobs:
   sandbox-evidence:
     if: inputs.sandbox_evidence == true
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     permissions:
       contents: read
       issues: write
@@ -882,6 +882,36 @@ jobs:
             exit "$pong_status"
           fi
           [[ "$output" == *PONG* ]]
+
+      - name: Verify sandboxed issue-selector run
+        shell: bash
+        env:
+          GITHUB_TOKEN: ""
+          GH_TOKEN: ""
+          GH_ENTERPRISE_TOKEN: ""
+        run: |
+          set -Eeuo pipefail
+
+          probe_number=999999
+          printf '%s\n' "[{\"number\":${probe_number},\"title\":\"Sandbox selector probe\",\"labels\":[],\"created_at\":\"2026-10-17T00:00:00Z\",\"body\":\"Synthetic single-candidate probe for the sandbox evidence job: do not call gh or investigate; reply with the implementation prompt for it only.\",\"pr_state\":\"none\"}]" > "$RUNNER_TEMP/selector-candidates.json"
+          : > "$RUNNER_TEMP/selector-branches.txt"
+          python3 scripts/selection_tiers.py --candidates "$RUNNER_TEMP/selector-candidates.json" \
+            --branches "$RUNNER_TEMP/selector-branches.txt" \
+            --tail-file scripts/issue-selection-tail.txt > "$RUNNER_TEMP/selector-prompt.txt"
+
+          selection="$RUNNER_TEMP/selector.out"
+          set +e
+          timeout 5m scripts/run-agent-sandboxed.sh run --agent issue-selector \
+            --model opencode/big-pickle --title issue-selector "$(< "$RUNNER_TEMP/selector-prompt.txt")" | tee "$selection"
+          statuses=("${PIPESTATUS[@]}")
+          set -e
+          printf 'selector statuses: opencode=%s tee=%s\n' "${statuses[0]}" "${statuses[1]}"
+          [[ ${statuses[1]} -eq 0 ]] || exit "${statuses[1]}"
+          (( statuses[0] == 0 )) || { printf 'sandboxed issue-selector exited %s\n' "${statuses[0]}" >&2; exit "${statuses[0]}"; }
+          grep -q '[^[:space:]]' "$selection" || { printf 'selector produced no output\n' >&2; exit 1; }
+          selected="$(grep -E '^SELECTED_ISSUE:[[:space:]]*[0-9]+[[:space:]]*$' "$selection" | tail -1 | grep -oE '[0-9]+' || true)"
+          [[ "$selected" == "$probe_number" ]] || { printf 'selector chose %q, expected %s\n' "$selected" "$probe_number" >&2; cat "$selection"; exit 1; }
+          printf 'Sandboxed issue-selector selected %s\n' "$selected"
 
       - name: Verify gh wrapper inside nono with credentials
         shell: bash
