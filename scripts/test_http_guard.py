@@ -43,6 +43,7 @@ class HttpGuardTest(unittest.TestCase):
             ("PUT", "https://outsider.example/x", "host not allowlisted"),
             ("PATCH", "https://outsider.example/x", "host not allowlisted"),
             ("DELETE", "https://outsider.example/x", "host not allowlisted"),
+            ("POST", "https://outsider.example:8443/x", "host not allowlisted"),
             (
                 "POST",
                 "https://api.github.com/repos/ecamp/ecamp3/issues",
