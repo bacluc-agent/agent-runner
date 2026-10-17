@@ -125,17 +125,33 @@ apply to subsequent steps and child shells, including work in other checkouts.
 The installer saves the real CLI's absolute path before changing PATH.
 
 - `gh pr create` and `gh pr new` require exactly one explicit `-R`/`--repo`
-  targeting `BacLuc` or `bacluc-agent` (case-insensitive) on github.com.
-  For outsider repositories, create the fork and a branch representing upstream
-  main, then open the PR with `-R bacluc-agent/<repo>` against that branch.
+  targeting `BacLuc`, `bacluc-agent` or `bacluc-agent-org` (case-insensitive) on
+  github.com. For outsider repositories, create the fork and a branch representing
+  upstream main, then open the PR with `-R bacluc-agent/<repo>` against that branch.
+- Under the nono sandbox GraphQL is denied, so the wrapper translates
+  `gh pr create`/`gh pr new` to REST `POST /repos/OWNER/REPO/pulls`. Supported
+  options: `-R/--repo`, `-t/--title`, `-b/--body`, `-F/--body-file`,
+  `-B/--base`, `-H/--head`, `-d/--draft`; `--title`, `--head` and `--base` are
+  required because GraphQL inference is unavailable, and any unmapped option
+  fails closed.
+- `gh project` mutations with `--owner` require one of those owned organizations.
+  A `gh cache delete` key shaped exactly like `owner/repo` is a fail-closed false
+  positive (it is mistaken for a repository selector); a key such as
+  `key/with/slash` is allowed.
 - `gh pr revert` requires exactly one PR number or github.com PR URL and an
-  explicit `-R`/`--repo` (or a URL selector) targeting `BacLuc` or
-  `bacluc-agent`; implicit destinations fail closed. The REST revert endpoint
+  explicit `-R`/`--repo` (or a URL selector) targeting one of those owned owners;
+  implicit destinations fail closed. The REST revert endpoint
   `repos/OWNER/REPO/pulls/N/reverts` is checked the same way.
-- REST PR creation is checked too, including implicit POST via fields or
-  `--input`. Ambiguous options, noncanonical paths and routing overrides fail
-  closed. Ordinary REST reads, issue comments, PATCH, forks and dispatches remain
-  available; accepted calls preserve arguments, stdin, output and exit status.
+- Mutating builtin commands (`issue`, `repo`, `workflow`, `discussion`, `label`,
+  `release`, `secret`, `variable`, `ruleset`, `project`) must resolve to an owned
+  repository. `issue` and `workflow` mutations require exactly one explicit
+  `-R`/`--repo` or URL selector; the other commands allow at most one and fall
+  back to `GITHUB_REPOSITORY`. `gh repo fork <upstream> --org <owned>` is the one
+  sanctioned exception and never validates the upstream positional.
+- REST mutations must be a canonical `repos/OWNER/REPO/...` endpoint for an owned
+  owner; the fork exception is CLI-only, so `gh api repos/<outsider>/forks -XPOST`
+  stays denied. Ambiguous options, noncanonical paths and routing overrides fail
+  closed; accepted calls preserve arguments, stdin, output and exit status.
 - Direct `gh api graphql`, configured alias execution, alias management and
   extension commands are denied. Use builtin CLI commands or canonical REST
   endpoints instead. Unknown builtin commands/options on guarded routes require
@@ -143,11 +159,108 @@ The installer saves the real CLI's absolute path before changing PATH.
 
 This is an accidental-misrouting guardrail, **not a sandbox or universal PR
 prevention**. An absolute executable path, direct HTTP, changing PATH or changing
-the wrapper can bypass it. CLI builtin commands may internally use GraphQL;
-only direct `gh api graphql` is denied.
+the wrapper can bypass it. Under the nono sandbox GraphQL is denied, so the
+wrapper translates `gh pr create`/`gh pr new` to REST
+`POST /repos/OWNER/REPO/pulls`; other GraphQL-based builtins (`gh issue view`,
+`gh pr view`/`gh pr list`, `gh repo view`, `gh run list`, `gh search`) fail with
+HTTP 403 inside the sandbox — use `gh api` REST endpoints instead.
+
+## OpenCode network sandbox
+
+OpenCode runs in `nono` using the pinned profile in
+`.github/actions/setup-opencode/nono-profile.json`. Setup installs the pinned
+release through `https://nono.sh/install.sh` using the Renovate-managed
+`NONO_VERSION`.
+The profile extends nono's `node-dev` profile and uses the `developer` network
+allowlist plus explicit `api.github.com` and `github.com` endpoint rules:
+
+- GitHub reads (`GET`, `HEAD`, `OPTIONS`) are allowed.
+- GitHub API mutations are allowed only below `/repos/<owned-org>/<repo>/...`
+  for `BacLuc`, `bacluc-agent`, and `bacluc-agent-org`.
+- `POST /repos/*/*/forks` is the one sanctioned outsider mutation:
+  `gh repo fork <outsider> --org <owned>` is allowed because forking does not
+  modify the upstream repository. Raw `gh api repos/<outsider>/forks -XPOST`
+  stays denied; use the CLI command instead.
+- Git HTTPS upload-pack (fetch/clone) is allowed for any repository; receive-pack
+  (push) is allowed only for those owned organizations.
+- GitHub release assets use separate hosts: `uploads.github.com` carries the
+  release-asset upload endpoint (owned-repo mutations only, like api.github.com),
+  and `release-assets.githubusercontent.com` serves release-asset downloads as a
+  plain CONNECT tunnel; `objects.githubusercontent.com` is additionally
+  allowlisted for other GitHub content downloads.
+- OpenCode v2 runs a managed local service on `127.0.0.1:49374` for the
+  `latest` release channel; `network.open_port: [49374]` grants that localhost
+  connect+bind. That port is tied to the pinned OpenCode client version
+  (`@opencode/cli@2.0.29` in `.github/actions/setup-opencode/action.yml`), so a client
+  version or channel change to a different managed-service port needs a profile
+  update; the sandbox-evidence PONG probe fails loudly if so. The grant only
+  takes effect from nono 0.80.0, because 0.79.0's Linux proxy fallback ignored
+  loopback open ports
+  ([nolabs-ai/nono#2042](https://github.com/nolabs-ai/nono/pull/2042)).
+- The model providers OpenCode needs are additionally host-allowlisted as plain
+  CONNECT tunnels, including `opencode.ai`, `chatgpt.com`, `auth.openai.com`,
+  `models.dev`, `models.opencode.ai`, and `api.search.brave.com`; the developer
+  profile also provides hosts such as `api.openai.com` and `openrouter.ai`.
+  Plain host entries do not filter HTTP methods or paths, and the provider APIs
+  need methods such as `POST`.
+- Endpoint rules are host-specific and default-deny unmatched methods/paths on
+  that hostname. They require TLS interception to inspect method/path. When
+  interception is active, nono automatically points the standard client CA
+  variables (`SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE`, `NODE_EXTRA_CA_CERTS`,
+  `CURL_CA_BUNDLE`, `GIT_SSL_CAINFO`) at the generated CA bundle, so no
+  `tls_intercept.ca_env_vars` entry is needed in the profile. Other allowed
+  hosts use end-to-end CONNECT tunnels. nono 0.80 has no global method default
+  or wildcard endpoint policy, so it cannot express “GET to arbitrary domains,
+  but no POST” while preserving provider POSTs. No catch-all host is configured;
+  this policy does not claim GET-only access to arbitrary domains.
+- `filesystem.deny` blocks `/dev`; Docker provides the broader filesystem
+  isolation. On Linux, nono covers matching `/dev` paths present when the
+  sandbox starts.
+- A process that sends work to a Docker daemon through its socket makes the
+  daemon's outbound requests outside the sandbox. Do not expose the Docker
+  socket to the agent unless daemon egress is independently restricted.
+
+Agents start OpenCode through `scripts/run-agent-sandboxed.sh`, which requires
+`NONO_PROFILE` and runs `nono run --profile "$NONO_PROFILE" --allow-cwd` with
+the required runtime grants. The wrapper leaves stdout and stderr visible and
+appends nono's stderr (including proxy denial diagnostics) to
+`$RUNNER_TEMP/nono-proxy.log` without changing the command's exit status.
+Review this log for recurring denials before proposing allowlist additions;
+only allow a host or endpoint when the agent workflow needs it. Avoid copying
+unreviewed log contents into prompts or committing them.
+
+nono is pinned to 0.80.0. Its `nono run` help supports counted `-v` verbosity,
+and its `nono audit show <session> --json` command exposes a completed session's
+audit record. Audit files are stored under
+`$XDG_STATE_HOME/nono/audit/<session>/` (normally
+`~/.local/state/nono/audit/<session>/`), including `audit-events.ndjson`.
+Find session IDs with `nono audit list`, then inspect them with
+`nono audit show <session> --json`; these files are distinct from the live
+stderr capture at `$RUNNER_TEMP/nono-proxy.log` and are created when sessions
+finalize. Don't use `nono audit show` as a live-session log reader.
+
+Brave Search MCP access requires `api.search.brave.com`, already present in
+`.github/actions/setup-opencode/nono-profile.json`. When adding an MCP provider,
+review its required hosts and methods before changing the profile; plain host
+allowlist entries are CONNECT access, not method-specific endpoint policy.
+
+This kernel sandbox complements, but does not replace, the `gh` wrapper above.
+The profile adds no filesystem grants beyond denying `/dev`. Since nono's
+`node-dev` base still uses filesystem capabilities, `scripts/run-agent-sandboxed.sh`
+grants OpenCode's state/database paths, read access to its config, the GitHub CLI
+wrapper at `$RUNNER_TEMP/gh-cli-wrapper`, and checkout credential includes matching
+`$RUNNER_TEMP/git-credentials-*.config`, plus writable npm cache access. The
+sandbox wrapper probe uses the same narrow wrapper and credential paths. This keeps the
+wrapper executable inside nono while Docker remains the broader filesystem
+isolation boundary.
+`scripts/http_guard.py` remains an advisory, importable policy helper
+(`check_request`) for callers that want to pre-screen a request and log denials;
+nono is the enforcement boundary, so the helper is intentionally not wired into
+the wrapper installer (defense-in-depth, not the boundary).
 
 Regression tests use a fake backend and never create forbidden PRs. Run
-`python3 -m unittest discover -s scripts -p test_gh_cli_wrapper.py` locally. The
+`python3 -m unittest discover -s scripts -p test_gh_cli_wrapper.py` and
+`python3 -m unittest discover -s scripts -p test_http_guard.py` locally. The
 dispatchable CI workflow also runs the actual setup composite with a fake backend
 and verifies forwarding and historical denial in a later step outside the checkout.
 

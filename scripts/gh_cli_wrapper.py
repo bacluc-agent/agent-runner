@@ -6,8 +6,35 @@ import subprocess
 import sys
 
 
+OWNED_ORGS = {"bacluc", "bacluc-agent", "bacluc-agent-org"}
+
+MUTATIONS = {
+    "issue": {"create", "edit", "close", "reopen", "comment", "delete", "transfer", "lock", "unlock",
+              "pin", "unpin", "develop", "clone"},
+    "repo": {"create", "edit", "delete", "archive", "rename", "fork", "sync", "transfer", "unarchive",
+             "set-default", "gc", "credits"},
+    "workflow": {"run", "enable", "disable", "delete", "cancel"},
+    "run": {"cancel", "rerun", "delete"},
+    "cache": {"delete"},
+    "discussion": {"create", "edit", "delete", "close", "reopen", "comment", "transfer", "pin", "unpin"},
+    "label": {"create", "edit", "delete", "clone"},
+    "release": {"create", "edit", "delete", "upload", "delete-asset"},
+    "secret": {"set", "delete"},
+    "variable": {"set", "delete"},
+    "ruleset": {"create", "edit", "delete", "check"},
+    "project": {"create", "edit", "delete", "close", "copy", "item-add", "item-create", "item-edit",
+                "item-archive", "item-delete", "field-create", "field-delete", "link", "unlink",
+                "mark-template"},
+}
+
+
 def deny(reason):
     raise ValueError(reason)
+
+
+def owned_org(org):
+    if org.lower() not in OWNED_ORGS:
+        deny("use a bacluc-owned organization, not the upstream repository")
 
 
 def owned_repo(repo):
@@ -15,11 +42,14 @@ def owned_repo(repo):
     if not re.fullmatch(r"[A-Za-z0-9-]+/[A-Za-z0-9_.-]+", repo):
         deny("use an explicit github.com OWNER/REPO")
     owner, name = repo.split("/")
-    if owner.lower() not in {"bacluc", "bacluc-agent"} or name in {".", ".."}:
+    if owner.lower() not in OWNED_ORGS or name in {".", ".."}:
         deny("create the PR in the bacluc-agent fork, not the upstream repository")
+    return repo
 
 
 def options(args, values, switches):
+    if isinstance(switches, set):
+        switches = {flag: flag for flag in switches}
     positional, parsed = [], {}
     index = 0
     while index < len(args):
@@ -39,10 +69,54 @@ def options(args, values, switches):
                 index += 1
             parsed.setdefault(values[key], []).append(value)
         elif key in switches and (not separator or value in {"true", "false"}):
-            continue
+            parsed.setdefault(switches[key], []).append(value if separator else True)
         else:
             deny(f"unsupported or ambiguous option {key}")
     return positional, parsed
+
+
+PR_CREATE_VALUES = {
+    "-R": "repo", "--repo": "repo",
+    "-t": "title", "--title": "title",
+    "-b": "body", "--body": "body",
+    "-F": "body_file", "--body-file": "body_file",
+    "-B": "base", "--base": "base",
+    "-H": "head", "--head": "head",
+}
+PR_CREATE_SWITCHES = {"-d": "draft", "--draft": "draft"}
+
+
+def build_pr_create(prefix, args):
+    positional, parsed = options(prefix + args, PR_CREATE_VALUES, PR_CREATE_SWITCHES)
+    if positional:
+        deny("PR creation does not accept positional arguments")
+    repos = parsed.get("repo", [])
+    if len(repos) != 1:
+        deny("PR creation requires exactly one explicit -R/--repo destination")
+    repo = owned_repo(repos[0])
+    for required in ("title", "head", "base"):
+        if required not in parsed:
+            deny(f"gh pr create under the sandbox requires --{required}; GraphQL inference is unavailable, pass it explicitly")
+    if "body" in parsed and "body_file" in parsed:
+        deny("use either --body or --body-file, not both")
+    fields = []
+    for name in ("title", "head", "base"):
+        fields += ["-f", f"{name}={parsed[name][-1]}"]
+    if "body_file" in parsed:
+        source = parsed["body_file"][-1]
+        if source == "-":
+            body = sys.stdin.read()
+        else:
+            try:
+                body = Path(source).read_text()
+            except OSError as error:
+                deny(f"cannot read --body-file: {error}")
+        fields += ["-f", f"body={body}"]
+    elif "body" in parsed:
+        fields += ["-f", f"body={parsed['body'][-1]}"]
+    if "draft" in parsed and parsed["draft"][-1] != "false":
+        fields += ["-F", "draft=true"]
+    return ["api", f"repos/{repo}/pulls", "-X", "POST", "--jq", ".html_url", *fields]
 
 
 def validate_pr(args):
@@ -59,22 +133,12 @@ def validate_pr(args):
         deny("use gh pr SUBCOMMAND followed by options")
     if args[0] == "revert":
         validate_revert(prefix, args)
-        return
+        return None
     if args[0] not in {"create", "new"}:
-        return
-    values = {key: "repo" for key in ("-R", "--repo")}
-    values.update({key: key for key in (
-        "-a", "--assignee", "--attach", "-B", "--base", "-b", "--body", "-F", "--body-file",
-        "-H", "--head", "-l", "--label", "-m", "--milestone", "-p", "--project", "--recover",
-        "-r", "--reviewer", "-T", "--template", "-t", "--title",
-    )})
-    positional, parsed = options(prefix + args[1:], values, {
-        "-d", "--draft", "--dry-run", "-e", "--editor", "-f", "--fill", "--fill-first",
-        "--fill-verbose", "--no-maintainer-edit", "-w", "--web", "--help",
-    })
-    if positional or len(parsed.get("repo", [])) != 1:
-        deny("PR creation requires exactly one explicit -R/--repo destination")
-    owned_repo(parsed["repo"][0])
+        return None
+    if "--help" in prefix + args[1:]:
+        return None
+    return build_pr_create(prefix, args[1:])
 
 
 def validate_revert(prefix, args):
@@ -95,6 +159,121 @@ def validate_revert(prefix, args):
         owned_repo(url_repo)
     if not repos and not url_repo:
         deny("PR revert requires an explicit -R/--repo destination or a github.com PR URL")
+
+
+def repo_of(selector):
+    match = re.match(r"^https?://github\.com/([A-Za-z0-9-]+/[A-Za-z0-9_.-]+)", selector, flags=re.IGNORECASE)
+    return match.group(1) if match else selector
+
+
+def org_option(args):
+    for index, arg in enumerate(args):
+        if arg == "--org":
+            return args[index + 1] if index + 1 < len(args) else None
+        if arg.startswith("--org="):
+            return arg.split("=", 1)[1]
+    return None
+
+
+REPO_CREATE_VALUE_FLAGS = {
+    "-d", "--description", "-g", "--gitignore", "-h", "--homepage", "-l", "--license",
+    "-p", "--template", "-r", "--remote", "-s", "--source", "-t", "--team", "--org",
+}
+
+
+def repo_create_owners(args):
+    """Owners of positional `owner/name` arguments of `gh repo create`, if any."""
+    owners = []
+    index = 1  # skip the subcommand
+    while index < len(args):
+        arg = args[index]
+        index += 1
+        if arg.startswith("-"):
+            key, separator, _ = arg.partition("=")
+            if key in REPO_CREATE_VALUE_FLAGS and not separator:
+                index += 1  # skip the separate value
+            continue
+        token = re.sub(r"^(https?://)?(github\.com/)?", "", arg, flags=re.IGNORECASE)
+        owner, separator, _ = token.partition("/")
+        if separator and owner:
+            owners.append(owner)
+    return owners
+
+
+def selectors_of(args):
+    explicit, positional = [], []
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        index += 1
+        if arg in {"-R", "--repo"}:
+            if index < len(args):
+                explicit.append(args[index])
+                index += 1
+        elif arg.startswith("--repo="):
+            explicit.append(arg.split("=", 1)[1])
+        elif arg.startswith("-R") and len(arg) > 2:
+            explicit.append(arg[2:].removeprefix("="))
+        elif arg.startswith("-"):
+            continue
+        else:
+            positional.append(arg)
+    selectors = list(explicit)
+    for value in positional:
+        if re.fullmatch(r"[A-Za-z0-9-]+/[A-Za-z0-9_.-]+", value) or re.match(
+            r"^https?://github\.com/[^/]+/[^/?#]+", value, flags=re.IGNORECASE
+        ):
+            selectors.append(value)
+    return selectors
+
+
+def validate_mutation(command, args):
+    if not args or args[0] not in MUTATIONS.get(command, ()):
+        return
+    subcommand = args[0]
+    if command == "project":
+        owners = []
+        index = 1
+        while index < len(args):
+            arg = args[index]
+            if arg == "--owner":
+                if index + 1 == len(args):
+                    deny("missing value for --owner")
+                owners.append(args[index + 1])
+                index += 2
+            else:
+                if arg.startswith("--owner="):
+                    owners.append(arg.split("=", 1)[1])
+                index += 1
+        if len(owners) > 1:
+            deny("project mutations allow exactly one --owner")
+        if owners:
+            owned_org(owners[0])
+            return
+    if command == "repo" and subcommand == "fork":
+        org = org_option(args)
+        if org is None:
+            deny("repo fork requires an explicit --org in a bacluc-owned organization")
+        owned_org(org)
+        return
+    if command == "repo" and subcommand == "create":
+        org = org_option(args)
+        if org is not None:
+            owned_org(org)
+        else:
+            owned_repo(os.environ.get("GITHUB_REPOSITORY", ""))
+        for owner in repo_create_owners(args):
+            owned_org(owner)
+        return
+    selectors = selectors_of(args)
+    if command in {"issue", "workflow"}:
+        if len(selectors) != 1:
+            deny(f"{command} mutations require exactly one explicit owned -R/--repo or URL selector")
+        owned_repo(repo_of(selectors[0]))
+        return
+    if len(selectors) > 1:
+        deny(f"{command} mutations allow at most one explicit owned repository selector")
+    owned_repo(repo_of(selectors[0]) if selectors else os.environ.get("GITHUB_REPOSITORY", ""))
 
 
 def validate_api(args):
@@ -138,6 +317,9 @@ def validate_api(args):
         if query:
             deny("put mutation parameters in fields, not the endpoint URL")
         parts = path.split("/")
+        if len(parts) < 3 or parts[0].lower() != "repos":
+            deny("mutating API calls require a canonical repos/OWNER/REPO endpoint")
+        owned_repo("/".join(parts[1:3]))
         if parts[-1].lower() == "pulls":
             if len(parts) != 4 or parts[0] != "repos" or parts[3] != "pulls":
                 deny("PR creation requires the canonical repos/OWNER/REPO/pulls endpoint")
@@ -154,8 +336,8 @@ def main():
         deny("real gh backend is missing or recursive; reinstall the guard")
     args = sys.argv[1:]
     if not args or args[0] not in {
-        "api", "auth", "browse", "cache", "codespace", "completion", "config", "gist", "gpg-key",
-        "help", "issue", "label", "org", "pr", "project", "release", "repo", "ruleset", "run",
+        "api", "auth", "browse", "cache", "codespace", "completion", "config", "discussion", "gist",
+        "gpg-key", "help", "issue", "label", "org", "pr", "project", "release", "repo", "ruleset", "run",
         "search", "secret", "ssh-key", "status", "variable", "workflow", "version", "--version", "--help",
     }:
         deny("only builtin commands are supported; aliases and extensions are disabled")
@@ -167,9 +349,13 @@ def main():
     if os.environ.get("GH_HOST", "github.com").lower() != "github.com":
         deny("only github.com is supported")
     if args[0] == "pr":
-        validate_pr(args[1:])
+        translated = validate_pr(args[1:])
+        if translated is not None:
+            os.execv(backend, [backend, *translated])
     elif args[0] == "api":
         validate_api(args[1:])
+    else:
+        validate_mutation(args[0], args[1:])
     os.execv(backend, [backend, *args])
 
 
