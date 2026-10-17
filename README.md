@@ -190,8 +190,13 @@ allowlist plus explicit `api.github.com` and `github.com` endpoint rules:
   allowlisted for other GitHub content downloads.
 - OpenCode v2 runs a managed local service on `127.0.0.1:49374` for the
   `latest` release channel; `network.open_port: [49374]` grants that localhost
-  connect+bind. Other channels use a different port, so a channel change needs a
-  profile update; the sandbox-evidence PONG probe fails loudly if so.
+  connect+bind. That port is tied to the pinned OpenCode client version
+  (`@opencode/cli@2.0.29` in `actions/setup-opencode/action.yml`), so a client
+  version or channel change to a different managed-service port needs a profile
+  update; the sandbox-evidence PONG probe fails loudly if so. The grant only
+  takes effect from nono 0.80.0, because 0.79.0's Linux proxy fallback ignored
+  loopback open ports
+  ([nolabs-ai/nono#2042](https://github.com/nolabs-ai/nono/pull/2042)).
 - The model providers OpenCode needs are additionally host-allowlisted as plain
   CONNECT tunnels, including `opencode.ai`, `chatgpt.com`, `auth.openai.com`,
   `models.dev`, `models.opencode.ai`, and `api.search.brave.com`; the developer
