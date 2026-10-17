@@ -1,8 +1,10 @@
 import json
 import os
+from datetime import datetime
 from pathlib import Path
 import tempfile
 import unittest
+from urllib.parse import urlparse
 
 from http_guard import check_request
 
@@ -37,21 +39,46 @@ class HttpGuardTest(unittest.TestCase):
 
     def test_denied(self):
         denied = [
-            ("POST", "https://outsider.example/x"),
-            ("PUT", "https://outsider.example/x"),
-            ("PATCH", "https://outsider.example/x"),
-            ("DELETE", "https://outsider.example/x"),
-            ("POST", "https://api.github.com/repos/ecamp/ecamp3/issues"),
-            ("POST", "https://api.github.com/repos/{owner}/{repo}/issues"),
-            ("POST", "https://uploads.github.com/repos/octocat/Hello-World/releases/1/assets"),
+            ("POST", "https://outsider.example/x", "host not allowlisted"),
+            ("PUT", "https://outsider.example/x", "host not allowlisted"),
+            ("PATCH", "https://outsider.example/x", "host not allowlisted"),
+            ("DELETE", "https://outsider.example/x", "host not allowlisted"),
+            (
+                "POST",
+                "https://api.github.com/repos/ecamp/ecamp3/issues",
+                "mutation outside owned repositories",
+            ),
+            (
+                "POST",
+                "https://api.github.com/repos/{owner}/{repo}/issues",
+                "mutation outside owned repositories",
+            ),
+            (
+                "POST",
+                "https://uploads.github.com/repos/octocat/Hello-World/releases/1/assets",
+                "mutation outside owned repositories",
+            ),
         ]
-        for method, url in denied:
+        for method, url, _reason in denied:
             with self.assertRaises(PermissionError):
                 check_request(method, url)
         lines = self.log.read_text().splitlines()
         self.assertEqual(len(lines), len(denied))
-        for line, (method, url) in zip(lines, denied):
-            self.assertEqual(json.loads(line), {"method": method, "url": url, "decision": "deny"})
+        for line, (method, url, reason) in zip(lines, denied):
+            entry = json.loads(line)
+            timestamp = entry.pop("timestamp")
+            self.assertTrue(timestamp.endswith("+00:00"))
+            datetime.fromisoformat(timestamp)
+            parsed = urlparse(url)
+            self.assertEqual(
+                entry,
+                {
+                    "method": method,
+                    "host": (parsed.hostname or "").lower(),
+                    "path": parsed.path,
+                    "reason": reason,
+                },
+            )
 
 
 if __name__ == "__main__":
