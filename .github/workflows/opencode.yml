@@ -871,7 +871,7 @@ jobs:
           printf '%s\n' '/dev write denied by nono after confirming /dev/shm was writable outside the sandbox'
 
           set +e
-          output=$(scripts/run-agent-sandboxed.sh run --model openai/gpt-5.6-luna 'Reply with exactly PONG and do nothing else.')
+          output=$(scripts/run-agent-sandboxed.sh run --model opencode/big-pickle 'Reply with exactly PONG and do nothing else.')
           pong_status=$?
           set -e
           printf '%s\n' "$output"
