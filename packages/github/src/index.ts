@@ -69,6 +69,8 @@ export class GitHubClient {
     return this.searchPages<Issue>(query);
   }
 
+  // ponytail: GitHub's Search API caps results at 1000 regardless of paging;
+  // switch to GraphQL or date-partitioned queries if that ceiling is ever hit.
   private async searchPages<T>(query: string): Promise<T[]> {
     const items: T[] = [];
     let path: string | undefined =
@@ -77,6 +79,17 @@ export class GitHubClient {
       const page = await this.requestPage<{ items: T[] }>(path);
       items.push(...page.data.items);
       path = page.next;
+    }
+    return items;
+  }
+
+  private async listPages<T>(path: string): Promise<T[]> {
+    const items: T[] = [];
+    let next: string | undefined = `${path}?per_page=100&page=1`;
+    while (next) {
+      const page = await this.requestPage<T[]>(next);
+      items.push(...page.data);
+      next = page.next;
     }
     return items;
   }
@@ -181,7 +194,7 @@ export class GitHubClient {
     repository: string,
     number: number,
   ): Promise<ReviewComment[]> {
-    return this.request<ReviewComment[]>(
+    return this.listPages<ReviewComment>(
       `repos/${repository}/pulls/${number}/comments`,
     );
   }
@@ -190,7 +203,7 @@ export class GitHubClient {
     repository: string,
     number: number,
   ): Promise<IssueComment[]> {
-    return this.request<IssueComment[]>(
+    return this.listPages<IssueComment>(
       `repos/${repository}/issues/${number}/comments`,
     );
   }
