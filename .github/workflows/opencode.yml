@@ -901,9 +901,13 @@ jobs:
 
           selection="$RUNNER_TEMP/selector.out"
           set +e
+          stop_token="$(openssl rand -hex 32)"
+          : "${stop_token:?stop-commands fence token generation failed}"
+          printf '::stop-commands::%s\n' "$stop_token"
           timeout 5m scripts/run-agent-sandboxed.sh run --agent issue-selector \
             --model opencode/big-pickle --title issue-selector "$(< "$RUNNER_TEMP/selector-prompt.txt")" | tee "$selection"
           statuses=("${PIPESTATUS[@]}")
+          printf '::%s::\n' "$stop_token"
           set -e
           printf 'selector statuses: opencode=%s tee=%s\n' "${statuses[0]}" "${statuses[1]}"
           [[ ${statuses[1]} -eq 0 ]] || exit "${statuses[1]}"
