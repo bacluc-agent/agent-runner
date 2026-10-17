@@ -12,7 +12,7 @@ The system is split across two public repositories:
 
 - [`bacluc-agent/agent-todo`](https://github.com/bacluc-agent/agent-todo) —
   the "idea box". All issues live here.
-- [`bacluc-agent/agent-runner`](https://github.com/bacluc-agent/agent-runner) —
+- [`bacluc-agent-org/agent-runner`](https://github.com/bacluc-agent-org/agent-runner) —
   the "workshop". This repository contains the GitHub Actions workflows that
   run the agent.
 
@@ -258,11 +258,12 @@ and verifies forwarding and historical denial in a later step outside the checko
 
 Set these in Settings → Secrets and variables → Actions → Variables:
 
-| Variable                         | Description                                                                                                                                | Default             |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------- |
-| `ISSUE_REPOSITORY`               | Repository for issue tracking and cache (format: `owner/repo`)                                                                             | `github.repository` |
-| `MODEL_AVAILABILITY_CACHE_ISSUE` | Issue number used as the model-availability cache                                                                                          | auto-detected       |
-| `FORK_INVITE_USER`               | GitHub user invited with `push` on every new fork (exposed to the `github-fork-invite` skill as `GITHUB_FORK_INVITE_USER`; empty disables) | unset (skill no-op) |
+| Variable                         | Description                                                                                                                                | Default                   |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------- |
+| `ISSUE_REPOSITORY`               | Repository for issue tracking and cache (format: `owner/repo`)                                                                             | `github.repository`       |
+| `MODEL_AVAILABILITY_CACHE_ISSUE` | Issue number used as the model-availability cache                                                                                          | auto-detected             |
+| `FORK_INVITE_USER`               | GitHub user invited with `push` on every new fork (exposed to the `github-fork-invite` skill as `GITHUB_FORK_INVITE_USER`; empty disables) | unset (skill no-op)       |
+| `REVIEW_FIXES_OWNER`             | GitHub account (organization or user) whose authored pull requests the _review-fixes_ workflow searches for review comments                | `github.repository_owner` |
 
 ## Secrets
 

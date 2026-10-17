@@ -16,7 +16,7 @@ permissions:
 
 jobs:
   refresh:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 15
     env:
       BACLUC_AGENT_GITHUB_TOKEN: ${{ secrets.BACLUC_AGENT_GITHUB_TOKEN }}
@@ -26,7 +26,7 @@ jobs:
         with:
           token: ${{ secrets.BACLUC_AGENT_GITHUB_TOKEN }}
 
-      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
 
       - name: Install dependencies
         run: uv sync --all-extras
@@ -62,13 +62,16 @@ jobs:
       - name: Validate refreshed token with opencode
         id: validate
         if: steps.refresh.outputs.refreshed == 'true'
+        env:
+          OPENCODE_DISABLE_DEFAULT_PLUGINS: true
+          OPENCODE_CONFIG_CONTENT: '{"plugin":[]}'
         run: |
           set -Eeuo pipefail
           npm install --global opencode-ai@1.18.32
           mkdir -p ~/.local/share/opencode
           cp "$RUNNER_TEMP/auth.json" ~/.local/share/opencode/auth.json
           set +e
-          opencode --pure run --model openai/gpt-5.6-luna "Respond with exactly OK." > "$RUNNER_TEMP/opencode-validate.log" 2>&1
+          opencode run --model openai/gpt-5.6-luna "Respond with exactly OK." > "$RUNNER_TEMP/opencode-validate.log" 2>&1
           status=$?
           set -e
           if (( status != 0 )); then

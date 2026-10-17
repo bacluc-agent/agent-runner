@@ -33,7 +33,7 @@ jobs:
   # Job 1: Find all open PRs with review comments from @Bacluc or @bacluc-agent
   # ---------------------------------------------------------------------------
   find-prs:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404-arm
     timeout-minutes: 30
     outputs:
       prs: ${{ steps.find.outputs.prs }}
@@ -52,6 +52,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.BACLUC_AGENT_GITHUB_TOKEN }}
           OVERRIDE_PROMPT: ${{ inputs.prompt }}
+          SEARCH_OWNER: ${{ vars.REVIEW_FIXES_OWNER || github.repository_owner }}
         run: |
           set -Eeuo pipefail
           printf '::add-mask::%s\n' "$GITHUB_TOKEN"
@@ -65,7 +66,7 @@ jobs:
             seen[$pr]=1
           done < <(
             gh api --paginate \
-              "search/issues?q=is:pr+is:open+author:${{ github.repository_owner }}+reviewed-by:Bacluc+-label:\"agents-ignore\"&per_page=100" \
+              "search/issues?q=is:pr+is:open+author:${SEARCH_OWNER}+reviewed-by:Bacluc+-label:\"agents-ignore\"&per_page=100" \
               --jq '.items[] | "\(.repository_url | sub("https://api.github.com/repos/"; ""))#\(.number)"' 2>/dev/null || true
           )
 
@@ -74,7 +75,7 @@ jobs:
             seen[$pr]=1
           done < <(
             gh api --paginate \
-              "search/issues?q=is:pr+is:open+author:${{ github.repository_owner }}+reviewed-by:${{ github.repository_owner }}+-label:\"agents-ignore\"&per_page=100" \
+              "search/issues?q=is:pr+is:open+author:${SEARCH_OWNER}+reviewed-by:${SEARCH_OWNER}+-label:\"agents-ignore\"&per_page=100" \
               --jq '.items[] | "\(.repository_url | sub("https://api.github.com/repos/"; ""))#\(.number)"' 2>/dev/null || true
           )
 

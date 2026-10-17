@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 import types
 from datetime import datetime, timezone
@@ -36,6 +37,62 @@ def fake_run(args, *a, **kw):
 
 
 class TestDiscoverModels:
+    def test_retries_transient_cli_initialization_failure(self, monkeypatch):
+        calls = 0
+
+        def fail_once(args, *a, **kw):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                raise subprocess.CalledProcessError(
+                    1, args, stderr="ServiceUnavailableError: Location plugins did not finish activating"
+                )
+            return fake_run(args, *a, **kw)
+
+        monkeypatch.setattr(model_availability.subprocess, "run", fail_once)
+        monkeypatch.setattr(model_availability.time, "sleep", lambda _: None)
+        assert model_availability.discover_models()[0] == ["opencode/a-free"]
+        assert calls == 3
+
+    def test_discovery_uses_plugin_safe_environment_and_keeps_nonzero_error(self, monkeypatch):
+        captured = {}
+
+        def fail(args, *a, **kw):
+            captured["args"] = args
+            captured["env"] = kw["env"]
+            raise subprocess.CalledProcessError(
+                17, args, output="", stderr="Location plugins did not finish activating"
+            )
+
+        monkeypatch.setattr(model_availability.subprocess, "run", fail)
+        with pytest.raises(subprocess.CalledProcessError) as error:
+            model_availability.discover_models()
+
+        assert error.value.returncode == 17
+        assert captured["args"] == ["opencode", "models"]
+        assert captured["env"]["OPENCODE_DISABLE_DEFAULT_PLUGINS"] == "true"
+        assert captured["env"]["OPENCODE_CONFIG_CONTENT"] == '{"plugin":[]}'
+
+    def test_debug_config_uses_plugin_safe_environment(self, monkeypatch):
+        captured = {}
+
+        def fake_config(args, *a, **kw):
+            captured["env"] = kw["env"]
+            kw["stdout"].write(json.dumps(CONFIG))
+            return types.SimpleNamespace(stdout="")
+
+        monkeypatch.setattr(model_availability.subprocess, "run", fake_config)
+        assert model_availability.load_provider_config() == {
+            "opencode-go-openai": {"baseURL": "https://opencode.ai/zen/go/v1", "apiKey": None},
+            "opencode-go-anthropic": {
+                "baseURL": "https://opencode.ai/zen/go/v1/messages",
+                "apiKey": None,
+            },
+            "openrouter": {"baseURL": "https://openrouter.ai/api/v1", "apiKey": None},
+        }
+        assert captured["env"]["OPENCODE_DISABLE_DEFAULT_PLUGINS"] == "true"
+        assert captured["env"]["OPENCODE_CONFIG_CONTENT"] == '{"plugin":[]}'
+
     def test_discovers_models_per_provider(self, monkeypatch):
         captured = {}
 
@@ -961,6 +1018,23 @@ class TestLoadProviderBaseUrls:
 
 
 class TestProbeModelLogging:
+    def test_probe_uses_plugin_safe_environment(self, tmp_path, monkeypatch):
+        captured = {}
+
+        class FakeResult:
+            returncode = 0
+            stdout = "OK\n"
+            stderr = ""
+
+        def fake_run(*args, **kwargs):
+            captured["env"] = kwargs["env"]
+            return FakeResult()
+
+        monkeypatch.setattr(model_availability.subprocess, "run", fake_run)
+        assert model_availability.probe_model("opencode/a-free", str(tmp_path))
+        assert captured["env"]["OPENCODE_DISABLE_DEFAULT_PLUGINS"] == "true"
+        assert captured["env"]["OPENCODE_CONFIG_CONTENT"] == '{"plugin":[]}'
+
     def test_writes_probe_log_with_stdout_and_stderr(self, tmp_path, monkeypatch):
         class FakeResult:
             returncode = 0
@@ -1169,8 +1243,36 @@ class TestModelAvailabilityAction:
         assert "auth.json" not in action
         assert "python3" in action
 
+    def test_standalone_opencode_workflow_exports_plugin_safe_environment(self):
+        workflow = (Path(__file__).parents[3] / ".github/workflows/refresh-chatgpt-auth.yml").read_text()
+        validation = workflow[workflow.index("- name: Validate refreshed token with opencode") :]
+        assert "OPENCODE_DISABLE_DEFAULT_PLUGINS: true" in validation
+        assert "OPENCODE_CONFIG_CONTENT: '{\"plugin\":[]}'" in validation
+
 
 class TestMainProbeSummary:
+    def test_uses_fresh_cache_when_cli_discovery_is_unavailable(self, monkeypatch):
+        checked = datetime.now(timezone.utc).isoformat()
+        cache = {"opencode/a-free": {"ok": True, "checked": checked}}
+        monkeypatch.setattr(model_availability, "resolve_cache_issue", lambda: "49")
+        monkeypatch.setattr(model_availability, "read_cache", lambda _: cache)
+        monkeypatch.setattr(
+            model_availability,
+            "discover_models",
+            lambda: (_ for _ in ()).throw(
+                subprocess.CalledProcessError(
+                    1, ["opencode", "models"], stderr="Location plugins did not finish activating"
+                )
+            ),
+        )
+        monkeypatch.setattr(model_availability, "probe_candidates", lambda *args: pytest.fail())
+        monkeypatch.setattr(model_availability, "write_cache", lambda *args: None)
+        outputs = []
+        monkeypatch.setattr(model_availability, "write_outputs", lambda *args: outputs.append(args))
+
+        assert model_availability.main() == 0
+        assert outputs[0][2] == ["opencode/a-free"]
+
     def test_prints_fresh_cache_summary_without_probing(self, monkeypatch, capsys):
         monkeypatch.setattr(model_availability, "resolve_cache_issue", lambda: None)
         monkeypatch.setattr(
@@ -1322,23 +1424,56 @@ class TestWorkflowOpenRouterSelection:
             content = Path(path).read_text()
             mapfile = content.index("mapfile -t free_models")
             give_up = content.rindex("not dispatching.' >&2")
-            filtered = min(
-                index
-                for index in (
-                    content.find(
-                        'grep -Ev -f scripts/model-deny-list.txt "$available_models_file"',
-                        mapfile,
-                    ),
-                    content.find(
-                        'grep -Ev -f "$RUNNER_TEMP/agent-runner/scripts/model-deny-list.txt" "$available_models_file"',
-                        mapfile,
-                    ),
+            if path.endswith("opencode.yml"):
+                filtered = content.index('filtered_models="$(grep -Ev "$deny_re" "$available_models_file")"')
+                assert 'if ((grep_status > 1)); then' in content[filtered:give_up]
+                assert "exit 1" in content[filtered:give_up]
+                assert "${filtered_models%%$'\\n'*}" in content[filtered:give_up]
+            else:
+                filtered = min(
+                    index
+                    for index in (
+                        content.find(
+                            'grep -Ev -f scripts/model-deny-list.txt "$available_models_file"',
+                            mapfile,
+                        ),
+                        content.find(
+                            'grep -Ev -f "$RUNNER_TEMP/agent-runner/scripts/model-deny-list.txt" "$available_models_file"',
+                            mapfile,
+                        ),
+                    )
+                    if index >= 0
                 )
-                if index >= 0
-            )
             assert mapfile < filtered < give_up
             assert 'head -n1 "$available_models_file"' not in content
             assert "last resort (deny-listed)" not in content
+
+    def test_grep_error_fails_closed(self, tmp_path):
+        available = tmp_path / "available-models.txt"
+        available.write_text("opencode/big-pickle\n")
+        result = subprocess.run(
+            [
+                "bash",
+                "-Eeuo",
+                "pipefail",
+                "-c",
+                """
+                grep_status=0
+                filtered_models="$(grep -Ev "$deny_re" "$available_models_file")" || grep_status=$?
+                if ((grep_status > 1)); then
+                  printf 'Failed to apply model deny-list; refusing automatic selection.\\n' >&2
+                  exit 1
+                fi
+                fallback_model="${filtered_models%%$'\\n'*}"
+                """,
+                "bash",
+            ],
+            env={**os.environ, "deny_re": "[", "available_models_file": str(available)},
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 1
+        assert "Failed to apply model deny-list" in result.stderr
 
     def test_empty_filtered_candidates_exit_before_dispatch(self, tmp_path):
         deny_list = tmp_path / "deny-list.txt"
@@ -1367,11 +1502,6 @@ class TestWorkflowOpenRouterSelection:
         )
         assert result.returncode == 1
         assert "not dispatching" in result.stderr
-
-    def test_opencode_rejects_deny_list_model_override(self):
-        content = Path(".github/workflows/opencode.yml").read_text()
-        assert 'grep -Eq "$deny_re" <<<"$requested"' in content
-        assert "Requested model is deny-listed; not dispatching." in content
 
     def test_deny_list_file_exists(self):
         root = Path(__file__).parents[3]
@@ -1416,3 +1546,53 @@ class TestWorkflowOpenRouterSelection:
             text=True,
         )
         assert kept.returncode == 0, "opencode/big-pickle must be kept"
+
+    def test_opencode_loads_deny_list_for_all_selections(self):
+        """Verify opencode.yml loads the deny-list regardless of explicit request."""
+        content = Path(".github/workflows/opencode.yml").read_text()
+        # Deny-list should be loaded unconditionally (not inside 'if [[ -z "$requested" ]]')
+        deny_load = content.index('deny_file="$RUNNER_TEMP/agent-runner/scripts/model-deny-list.txt"')
+        requested_check = content.index('requested="${MODEL_TEXT:-}"')
+        # The deny-list load should come after requested is determined but not be gated by it
+        assert deny_load > requested_check
+        # Should not have the old gated pattern
+        assert 'if [[ -z "$requested" ]]; then' not in content[deny_load:deny_load+200]
+
+    def test_opencode_falls_back_for_deny_listed_explicit_request(self, tmp_path):
+        """Explicit request for a deny-listed model should fall back, not fail closed."""
+        deny_list = tmp_path / "deny-list.txt"
+        deny_list.write_text("bad-model\n")
+        available = tmp_path / "available-models.txt"
+        available.write_text("bad-model\ngood-model\n")
+        fallback = "good-model"
+        result = subprocess.run(
+            [
+                "bash",
+                "-Eeuo",
+                "pipefail",
+                "-c",
+                """
+                deny_re="$(awk '!/^[[:space:]]*(#|$)/' "$1" | paste -sd'|' -)"
+                [[ -n "$deny_re" ]] || deny_re='^$'
+                requested_model="bad-model"
+                resolved="bad-model"
+                if grep -Eq "$deny_re" <<<"$resolved"; then
+                  if [[ -n "$2" ]]; then
+                    printf 'fallback: %s\n' "$2"
+                    exit 0
+                  else
+                    printf 'no fallback\n' >&2
+                    exit 1
+                  fi
+                fi
+                printf 'no deny match\n'
+                """,
+                "bash",
+                str(deny_list),
+                fallback,
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0
+        assert "fallback: good-model" in result.stdout
