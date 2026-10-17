@@ -119,7 +119,6 @@
           { "method": "GET", "path": "/**" },
           { "method": "HEAD", "path": "/**" },
           { "method": "OPTIONS", "path": "/**" },
-          { "method": "POST", "path": "/repos/*/*/forks" },
           {
             "method": "POST",
             "path": "/repos/[bB][aA][cC][lL][uU][cC]/*/**"

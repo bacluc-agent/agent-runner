@@ -811,6 +811,21 @@ jobs:
           [[ "$status" == 401 ]] || { printf 'Sanctioned fork endpoint was not allowed through the sandbox: HTTP %s\n' "$status" >&2; exit 1; }
           printf '%s\n' 'Sanctioned fork endpoint passed the sandbox and was rejected by GitHub without credentials (HTTP 401)'
 
+          status=$(nono run --profile "$NONO_PROFILE" --allow-cwd -- curl -sS -L -o /dev/null -w '%{http_code}' \
+            https://github.com/nolabs-ai/nono/releases/latest/download/SHA256SUMS.txt)
+          [[ "$status" == 200 ]] || { printf 'Release-asset download was not allowed: HTTP %s\n' "$status" >&2; exit 1; }
+          printf '%s\n' 'Release-asset download from the allowlisted release-asset host (HTTP 200)'
+
+          status=$(nono run --profile "$NONO_PROFILE" --allow-cwd -- curl -sS -o /dev/null -w '%{http_code}' -X POST \
+            'https://uploads.github.com/repos/bacluc-agent/agent-runner/releases/1/assets?name=probe')
+          [[ "$status" == 400 ]] || { printf 'Owned release-asset upload did not reach GitHub unauthenticated: HTTP %s\n' "$status" >&2; exit 1; }
+          printf '%s\n' 'Owned release-asset upload passed the sandbox and was rejected by GitHub without credentials (HTTP 400)'
+
+          status=$(nono run --profile "$NONO_PROFILE" --allow-cwd -- curl -sS -o /dev/null -w '%{http_code}' -X POST \
+            'https://uploads.github.com/repos/octocat/Hello-World/releases/1/assets?name=probe')
+          [[ "$status" == 403 ]] || { printf 'Outsider release-asset upload was not denied: HTTP %s\n' "$status" >&2; exit 1; }
+          printf '%s\n' 'Outsider release-asset upload denied by nono (HTTP 403)'
+
           status=$(nono run --profile "$NONO_PROFILE" --allow-cwd -- curl -sS -o /dev/null -w '%{http_code}' https://opencode.ai/)
           printf 'GET to explicitly allowlisted CONNECT host opencode.ai: HTTP %s\n' "$status"
           [[ "$status" != 403 ]] || { printf 'GET to explicitly allowlisted opencode.ai was denied by nono: HTTP %s\n' "$status" >&2; exit 1; }

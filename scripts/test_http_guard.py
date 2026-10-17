@@ -30,6 +30,7 @@ class HttpGuardTest(unittest.TestCase):
             "https://api.github.com/repos/bacluc-agent-org/r/issues",
             "https://api.github.com/repos/bacluc/r/pulls",
             "https://api.github.com/repos/octocat/Hello-World/forks",
+            "https://uploads.github.com/repos/bacluc-agent/agent-runner/releases/1/assets",
         ):
             check_request("POST", url)
         self.assertFalse(self.log.exists())
@@ -42,6 +43,7 @@ class HttpGuardTest(unittest.TestCase):
             ("DELETE", "https://outsider.example/x"),
             ("POST", "https://api.github.com/repos/ecamp/ecamp3/issues"),
             ("POST", "https://api.github.com/repos/{owner}/{repo}/issues"),
+            ("POST", "https://uploads.github.com/repos/octocat/Hello-World/releases/1/assets"),
         ]
         for method, url in denied:
             with self.assertRaises(PermissionError):
