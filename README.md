@@ -185,8 +185,9 @@ allowlist plus explicit `api.github.com` and `github.com` endpoint rules:
   (push) is allowed only for those owned organizations.
 - GitHub release assets use separate hosts: `uploads.github.com` carries the
   release-asset upload endpoint (owned-repo mutations only, like api.github.com),
-  and `objects.githubusercontent.com` / `release-assets.githubusercontent.com`
-  serve release-asset downloads as plain CONNECT tunnels.
+  and `release-assets.githubusercontent.com` serves release-asset downloads as a
+  plain CONNECT tunnel; `objects.githubusercontent.com` is additionally
+  allowlisted for other GitHub content downloads.
 - OpenCode v2 runs a managed local service on `127.0.0.1:49374` for the
   `latest` release channel; `network.open_port: [49374]` grants that localhost
   connect+bind. Other channels use a different port, so a channel change needs a

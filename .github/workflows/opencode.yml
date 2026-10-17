@@ -781,7 +781,7 @@ jobs:
           printf '%s\n' 'Brave Search API is in the nono allowlist'
           jq -e '.network.allow_domain | any(.domain == "uploads.github.com")' "$NONO_PROFILE" >/dev/null
           printf '%s\n' 'GitHub releases upload host is in the nono allowlist'
-          jq -e '.network.allow_domain | any(. == "objects.githubusercontent.com")' "$NONO_PROFILE" >/dev/null
+          jq -e '.network.allow_domain | any(. == "release-assets.githubusercontent.com")' "$NONO_PROFILE" >/dev/null
           printf '%s\n' 'GitHub release-asset download host is in the nono allowlist'
 
           status=$(nono run --profile "$NONO_PROFILE" --allow-cwd -- curl -sS -o /dev/null -w '%{http_code}' \
