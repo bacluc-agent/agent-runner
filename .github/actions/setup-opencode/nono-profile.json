@@ -177,6 +177,7 @@
       "models.dev",
       "models.opencode.ai",
       "api.search.brave.com"
-    ]
+    ],
+    "open_port": [49374]
   }
 }

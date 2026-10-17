@@ -187,6 +187,10 @@ allowlist plus explicit `api.github.com` and `github.com` endpoint rules:
   release-asset upload endpoint (owned-repo mutations only, like api.github.com),
   and `objects.githubusercontent.com` / `release-assets.githubusercontent.com`
   serve release-asset downloads as plain CONNECT tunnels.
+- OpenCode v2 runs a managed local service on `127.0.0.1:49374` for the
+  `latest` release channel; `network.open_port: [49374]` grants that localhost
+  connect+bind. Other channels use a different port, so a channel change needs a
+  profile update; the sandbox-evidence PONG probe fails loudly if so.
 - The model providers OpenCode needs are additionally host-allowlisted as plain
   CONNECT tunnels, including `opencode.ai`, `chatgpt.com`, `auth.openai.com`,
   `models.dev`, `models.opencode.ai`, and `api.search.brave.com`; the developer
@@ -199,7 +203,7 @@ allowlist plus explicit `api.github.com` and `github.com` endpoint rules:
   variables (`SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE`, `NODE_EXTRA_CA_CERTS`,
   `CURL_CA_BUNDLE`, `GIT_SSL_CAINFO`) at the generated CA bundle, so no
   `tls_intercept.ca_env_vars` entry is needed in the profile. Other allowed
-  hosts use end-to-end CONNECT tunnels. nono 0.79 has no global method default
+  hosts use end-to-end CONNECT tunnels. nono 0.80 has no global method default
   or wildcard endpoint policy, so it cannot express “GET to arbitrary domains,
   but no POST” while preserving provider POSTs. No catch-all host is configured;
   this policy does not claim GET-only access to arbitrary domains.
@@ -219,7 +223,7 @@ Review this log for recurring denials before proposing allowlist additions;
 only allow a host or endpoint when the agent workflow needs it. Avoid copying
 unreviewed log contents into prompts or committing them.
 
-nono is pinned to 0.79.0. Its `nono run` help supports counted `-v` verbosity,
+nono is pinned to 0.80.0. Its `nono run` help supports counted `-v` verbosity,
 and its `nono audit show <session> --json` command exposes a completed session's
 audit record. Audit files are stored under
 `$XDG_STATE_HOME/nono/audit/<session>/` (normally

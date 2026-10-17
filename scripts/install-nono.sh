@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 
 # renovate: datasource=github-releases depName=nolabs-ai/nono
-NONO_VERSION=0.79.0
+NONO_VERSION=0.80.0
 NONO_INSTALL_DIR="$RUNNER_TEMP/nono/bin"
 export NONO_INSTALL_DIR
 
