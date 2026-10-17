@@ -53,3 +53,85 @@ test("comment upsert edits the existing marker comment", async () => {
     globalThis.fetch = originalFetch;
   }
 });
+
+test("list issue comments follow Link pagination", async () => {
+  const urls: string[] = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    urls.push(String(input));
+    return new Response(
+      JSON.stringify(
+        urls.length === 1
+          ? [{ id: 1, body: "first" }]
+          : [{ id: 2, body: "second" }],
+      ),
+      {
+        status: 200,
+        headers:
+          urls.length === 1
+            ? {
+                link: '<https://example.test/repos/o/r/issues/7/comments?per_page=100&page=2>; rel="next"',
+              }
+            : {},
+      },
+    );
+  };
+  try {
+    const client = new GitHubClient("token", "https://example.test");
+    assert.deepEqual(await client.listIssueComments("o/r", 7), [
+      { id: 1, body: "first" },
+      { id: 2, body: "second" },
+    ]);
+    assert.equal(
+      urls[0],
+      "https://example.test/repos/o/r/issues/7/comments?per_page=100&page=1",
+    );
+    assert.equal(
+      urls[1],
+      "https://example.test/repos/o/r/issues/7/comments?per_page=100&page=2",
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("list review comments follow Link pagination", async () => {
+  const urls: string[] = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    urls.push(String(input));
+    return new Response(
+      JSON.stringify(
+        urls.length === 1
+          ? [{ id: 1, body: "first" }]
+          : [{ id: 2, body: "second" }],
+      ),
+      {
+        status: 200,
+        headers:
+          urls.length === 1
+            ? {
+                link: '<https://example.test/repos/o/r/pulls/7/comments?per_page=100&page=2>; rel="next"',
+              }
+            : {},
+      },
+    );
+  };
+  try {
+    const client = new GitHubClient("token", "https://example.test");
+    assert.deepEqual(await client.listReviewComments("o/r", 7), [
+      { id: 1, body: "first" },
+      { id: 2, body: "second" },
+    ]);
+    assert.equal(
+      urls[0],
+      "https://example.test/repos/o/r/pulls/7/comments?per_page=100&page=1",
+    );
+    assert.equal(
+      urls[1],
+      "https://example.test/repos/o/r/pulls/7/comments?per_page=100&page=2",
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
