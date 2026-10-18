@@ -256,7 +256,10 @@ isolation boundary.
 `scripts/http_guard.py` remains an advisory, importable policy helper
 (`check_request`) for callers that want to pre-screen a request and log denials;
 nono is the enforcement boundary, so the helper is intentionally not wired into
-the wrapper installer (defense-in-depth, not the boundary).
+the wrapper installer (defense-in-depth, not the boundary). When callers use
+`check_request`, structured denial records are appended to
+`$RUNNER_TEMP/http-guard-denials.jsonl` (falling back to `/tmp` when
+`RUNNER_TEMP` is unset).
 
 Regression tests use a fake backend and never create forbidden PRs. Run
 `python3 -m unittest discover -s scripts -p test_gh_cli_wrapper.py` and
