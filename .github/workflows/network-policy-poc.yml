@@ -1,0 +1,22 @@
+name: Network policy PoC tests
+
+on:
+  push:
+    paths:
+      - .github/workflows/network-policy-poc.yml
+      - scripts/network_policy_proxy.py
+      - scripts/test_network_policy_proxy.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  policy-poc:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Exercise local policy endpoint
+        run: python3 scripts/test_network_policy_proxy.py
