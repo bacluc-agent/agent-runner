@@ -107,11 +107,16 @@ jobs:
           for pr_key in "${unique_prs[@]}"; do
             repo="${pr_key%#*}"
             pr_number="${pr_key##*#}"
-            pr_info=$(gh pr view "$pr_number" -R "$repo" --json number,title,headRefName,url 2>/dev/null) || {
+            pr_info=$(gh pr view "$pr_number" -R "$repo" --json number,title,headRefName,url,body 2>/dev/null) || {
               printf 'Skipping PR %s: gh pr view failed\n' "$pr_key" >&2
               continue
             }
             viewed_prs+=("$pr_key")
+            # Extract issue number from PR body/title (agent-todo#<n>, Fixes #<n>, closes #<n>, etc.)
+            issue_num=$(jq -r '.body' <<<"$pr_info" | grep -oE '(agent-todo#[0-9]+|[Ff]ixes #[0-9]+|[Cc]loses #[0-9]+|[Rr]esolves #[0-9]+|issues/[0-9]+)' | grep -oE '[0-9]+' | head -n1 || true)
+            if [[ -z "$issue_num" ]]; then
+              issue_num=$(jq -r '.title' <<<"$pr_info" | grep -oE '(agent-todo#[0-9]+|#[0-9]+)' | grep -oE '[0-9]+' | head -n1 || true)
+            fi
             if [[ -n "${OVERRIDE_PROMPT:-}" ]]; then
               prompt="$OVERRIDE_PROMPT"
             else
@@ -122,12 +127,13 @@ jobs:
                 "PR #${pr_number}: ${title}" \
                 "Branch: ${head_ref}" \
                 "URL: ${url}" \
+                "Issue: ${issue_num:-}" \
                 "" \
                 "Apply the review comments for this PR. Check the PR review comments," \
                 "implement the requested changes, push to the PR branch, and verify" \
                 "the changes work. Update the existing comment containing <!-- agent-progress --> on the corresponding issue instead of posting new comments.")
             fi
-            pr_info=$(jq --arg prompt "$prompt" '. + {prompt: $prompt}' <<<"$pr_info")
+            pr_info=$(jq --arg prompt "$prompt" --arg issue_num "$issue_num" '. + {prompt: $prompt, issue_number: $issue_num}' <<<"$pr_info")
             pr_metadata=$(jq --argjson pr "$pr_info" --arg key "$pr_key" --arg repo "$repo" \
               '. + {($key): ($pr + {repository: $repo})}' <<<"$pr_metadata")
           done
@@ -172,4 +178,6 @@ jobs:
     with:
       prompt: ${{ fromJson(needs.find-prs.outputs.pr_metadata)[matrix.pr].prompt }}
       model: ${{ inputs.model }}
+      issue_number: ${{ fromJson(needs.find-prs.outputs.pr_metadata)[matrix.pr].issue_number }}
+      continue_on_error: true
     secrets: inherit
