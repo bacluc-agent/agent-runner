@@ -30,9 +30,6 @@ PROVIDERS = (
     ("opencode-go-anthropic-2", "OPENCODE_GO_2_API_KEY"),
     ("openrouter", "OPENROUTER_API_KEY"),
 )
-ALLOWED_PROVIDER_PREFIXES = frozenset(
-    ("opencode", "openai", *(provider for provider, _ in PROVIDERS))
-)
 MAX_CONCURRENT = 5
 PROBE_TIMEOUT_SECONDS = 30
 PROBE_BUDGET = 30
@@ -113,19 +110,14 @@ def is_whitelisted(model_id: str, patterns: list[str]) -> bool:
     return any(re.search(pattern, model_id, re.IGNORECASE) for pattern in patterns)
 
 
-def parse_whitelisted_models(
-    opencode_models_output: str,
-    allowed_providers: frozenset[str] = ALLOWED_PROVIDER_PREFIXES,
-) -> list[str]:
+def parse_whitelisted_models(opencode_models_output: str) -> list[str]:
     free = []
     rest = []
     for line in opencode_models_output.splitlines():
         line = line.strip()
-        if not line:
+        if not line or "/" not in line:
             continue
         provider, _, model_id = line.partition("/")
-        if provider not in allowed_providers:
-            continue
         provider_patterns = PROVIDER_WHITELISTS.get(provider, [r".*"])
         if not is_whitelisted(model_id or provider, provider_patterns):
             continue
@@ -429,26 +421,37 @@ def merge_results(cache: dict, results: dict[str, bool], checked: str) -> dict:
     return merged
 
 
-def purge_disallowed_entries(cache: dict) -> dict:
+def purge_unprobeable_entries(cache: dict, provider_config: dict, env: dict) -> dict:
     return {
         key: entry
         for key, entry in cache.items()
-        if key.partition("/")[0] in ALLOWED_PROVIDER_PREFIXES
+        if "/" in key and provider_probeable(key, provider_config, env)
     }
 
 
 def available_models(
-    cache: dict, whitelisted_models: list[str], provider_models: dict[str, list[str]]
+    cache: dict,
+    whitelisted_models: list[str],
+    provider_models: dict[str, list[str]],
+    provider_config: dict | None = None,
+    env: dict | None = None,
 ) -> list[str]:
+    provider_config = provider_config if provider_config is not None else load_provider_config()
+    env = env if env is not None else os.environ
+
+    def emit(model: str, entry: object) -> None:
+        if isinstance(entry, dict) and entry.get("ok") and provider_probeable(
+            model, provider_config, env
+        ):
+            available.append(model)
+
     available = []
     for model in whitelisted_models:
-        if cache.get(model, {}).get("ok"):
-            available.append(model)
+        emit(model, cache.get(model))
     for provider, _ in PROVIDERS:
         for model in provider_models.get(provider, []):
             candidate = f"{provider}/{model}"
-            if cache.get(candidate, {}).get("ok"):
-                available.append(candidate)
+            emit(candidate, cache.get(candidate))
     return list(dict.fromkeys(available))
 
 
@@ -478,6 +481,7 @@ def main() -> int:
     if cache_issue is not None:
         cache = read_cache(cache_issue)
     now = datetime.now(timezone.utc)
+    provider_config = load_provider_config()
     try:
         whitelisted_models, provider_models = discover_models()
     except subprocess.CalledProcessError as e:
@@ -485,8 +489,12 @@ def main() -> int:
             raise
         whitelisted_models = [
             model
-            for model, entry in purge_disallowed_entries(cache).items()
-            if isinstance(entry, dict) and entry.get("ok") is True and is_cache_fresh(entry, now)
+            for model, entry in cache.items()
+            if "/" in model
+            and isinstance(entry, dict)
+            and entry.get("ok") is True
+            and is_cache_fresh(entry, now)
+            and provider_probeable(model, provider_config, os.environ)
         ]
         if not whitelisted_models:
             raise
@@ -515,10 +523,12 @@ def main() -> int:
     if cache_issue is not None:
         cache = read_cache(cache_issue) or cache
     cache = merge_results(cache, results, checked)
-    cache = purge_disallowed_entries(cache)
+    cache = purge_unprobeable_entries(cache, provider_config, os.environ)
     if cache_issue is not None:
         write_cache(cache_issue, cache)
-    available = available_models(cache, whitelisted_models, provider_models)
+    available = available_models(
+        cache, whitelisted_models, provider_models, provider_config, os.environ
+    )
     write_outputs(cache_issue, cache, available)
     print("Available models:")
     print("\n".join(available) if available else "(none)")

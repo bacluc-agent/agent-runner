@@ -501,6 +501,8 @@ class TestParseWhitelistedModels:
             "openrouter/google/gemma-4-31b-it:free\n"
         )
         assert model_availability.parse_whitelisted_models(output) == [
+            "custom-provider/big-pickle",
+            "custom-provider/other-free",
             "opencode/big-pickle",
             "opencode/ling-3.0-flash-fin-free",
             "opencode/mimo-v2.5-free",
@@ -510,9 +512,10 @@ class TestParseWhitelistedModels:
             "opencode-go-openai/gpt-5.6-luna",
             "opencode-go-openai/kimi-k3",
             "opencode-go-openai/qwen3.8-flash",
+            "other/paid-model",
         ]
 
-    def test_unknown_providers_excluded_even_when_model_matches_patterns(self):
+    def test_all_providers_parsed_probeability_filtering_happens_in_discover(self):
         output = (
             "vshn-us-ai/subscription.glm-5.3-flash\n"
             "vshn-us-ai/expensive.gemini-3-flash\n"
@@ -520,7 +523,13 @@ class TestParseWhitelistedModels:
             "custom-provider/big-pickle\n"
             "unknown-provider/glm-5.3\n"
         )
-        assert model_availability.parse_whitelisted_models(output) == []
+        assert model_availability.parse_whitelisted_models(output) == [
+            "custom-provider/big-pickle",
+            "requesty2/free-model",
+            "unknown-provider/glm-5.3",
+            "vshn-us-ai/expensive.gemini-3-flash",
+            "vshn-us-ai/subscription.glm-5.3-flash",
+        ]
 
     def test_provider_prefix_uses_first_segment_not_model_id(self, monkeypatch):
         monkeypatch.setitem(
@@ -836,28 +845,59 @@ class TestMergeResults:
         }
 
 
-class TestPurgeDisallowedEntries:
-    def test_keeps_allowed_prefixes_and_drops_disallowed(self):
-        checked = "2026-09-06T10:00:00Z"
+class TestPurgeUnprobeableEntries:
+    checked = "2026-09-06T10:00:00Z"
+
+    def provider_config_missing_vshn_key(self):
+        return {
+            "vshn-us-ai": {
+                "baseURL": "https://api.example.com",
+                "apiKey": "{env:VSHN_US_AI_API_KEY}",
+            },
+            "requesty2": {"baseURL": "https://api.example.com", "apiKey": None},
+            "invalid-url": {"baseURL": "not-a-url", "apiKey": "k"},
+        }
+
+    def test_drops_unprobeable_and_bare_lines_keeps_probeable(self):
         cache = {
-            "opencode/big-pickle": {"ok": True, "checked": checked},
-            "openrouter/z-ai/glm-5.3": {"ok": False, "checked": checked},
-            "openai/gpt-x": {"ok": True, "checked": checked},
-            "opencode-go-openai/qwen3.8-flash": {"ok": True, "checked": checked},
-            "vshn-us-ai/subscription.glm-5.3-flash": {"ok": True, "checked": checked},
-            "requesty2/free-model": {"ok": True, "checked": checked},
-            "cortecs2/glm-5.1": {"ok": False, "checked": checked},
-            "no-slash-model": {"ok": True, "checked": checked},
+            "opencode/big-pickle": {"ok": True, "checked": self.checked},
+            "openai/gpt-x": {"ok": True, "checked": self.checked},
+            "opencode-go-openai/qwen3.8-flash": {"ok": True, "checked": self.checked},
+            "vshn-us-ai/subscription.glm-5.3-flash": {"ok": True, "checked": self.checked},
+            "requesty2/free-model": {"ok": True, "checked": self.checked},
+            "invalid-url/glm-5.1": {"ok": True, "checked": self.checked},
+            "no-slash-model": {"ok": True, "checked": self.checked},
         }
-        assert model_availability.purge_disallowed_entries(cache) == {
-            "opencode/big-pickle": {"ok": True, "checked": checked},
-            "openrouter/z-ai/glm-5.3": {"ok": False, "checked": checked},
-            "openai/gpt-x": {"ok": True, "checked": checked},
-            "opencode-go-openai/qwen3.8-flash": {"ok": True, "checked": checked},
+        del cache["no-slash-model"]
+        assert model_availability.purge_unprobeable_entries(cache, {}, {}) == cache
+
+    def test_drops_keyless_env_keyed_providers_and_bare_lines(self):
+        cache = {
+            "opencode/big-pickle": {"ok": True, "checked": self.checked},
+            "vshn-us-ai/subscription.glm-5.3-flash": {"ok": True, "checked": self.checked},
+            "requesty2/free-model": {"ok": True, "checked": self.checked},
+            "invalid-url/glm-5.1": {"ok": True, "checked": self.checked},
+            "no-slash-model": {"ok": True, "checked": self.checked},
         }
+        assert model_availability.purge_unprobeable_entries(
+            cache, self.provider_config_missing_vshn_key(), {}
+        ) == {
+            "opencode/big-pickle": {"ok": True, "checked": self.checked},
+        }
+
+    def test_keeps_vshn_when_env_key_present(self):
+        cache = {"vshn-us-ai/subscription.glm-5.3-flash": {"ok": True, "checked": self.checked}}
+        assert model_availability.purge_unprobeable_entries(
+            cache, self.provider_config_missing_vshn_key(), {"VSHN_US_AI_API_KEY": "k"}
+        ) == cache
 
 
 class TestAvailableModels:
+    def call(self, cache, whitelisted, provider_models, provider_config=None, env=None):
+        return model_availability.available_models(
+            cache, whitelisted, provider_models, provider_config or {}, env or {}
+        )
+
     def test_free_first_then_paid(self):
         cache = {
             "opencode-go-openai/glm-5.2": {"ok": True, "checked": "x"},
@@ -865,7 +905,7 @@ class TestAvailableModels:
             "opencode/b-free": {"ok": False, "checked": "x"},
             "opencode-go-openai-2/glm-5.2": {"ok": True, "checked": "x"},
         }
-        assert model_availability.available_models(
+        assert self.call(
             cache,
             ["opencode/a-free", "opencode/b-free"],
             {"opencode-go-openai": ["glm-5.2"], "opencode-go-openai-2": ["glm-5.2"]},
@@ -874,6 +914,22 @@ class TestAvailableModels:
             "opencode-go-openai/glm-5.2",
             "opencode-go-openai-2/glm-5.2",
         ]
+
+    def test_gate_drops_unprobeable_provider_even_when_cache_ok(self):
+        cache = {"vshn-us-ai/m": {"ok": True, "checked": "x"}}
+        config = {
+            "vshn-us-ai": {"baseURL": "https://api.example.com", "apiKey": "{env:VSHN_US_AI_API_KEY}"}
+        }
+        assert self.call(cache, ["vshn-us-ai/m"], {"vshn-us-ai": ["m"]}, config, {}) == []
+
+    def test_gate_emits_vshn_when_env_key_present(self):
+        cache = {"vshn-us-ai/m": {"ok": True, "checked": "x"}}
+        config = {
+            "vshn-us-ai": {"baseURL": "https://api.example.com", "apiKey": "{env:VSHN_US_AI_API_KEY}"}
+        }
+        assert self.call(
+            cache, ["vshn-us-ai/m"], {"vshn-us-ai": ["m"]}, config, {"VSHN_US_AI_API_KEY": "k"}
+        ) == ["vshn-us-ai/m"]
 
 
 class TestResolveCacheIssue:
@@ -1304,6 +1360,12 @@ class TestModelAvailabilityAction:
             "opencode/a-free": {"ok": True, "checked": checked},
             "vshn-us-ai/subscription.glm-5.3-flash": {"ok": True, "checked": checked},
         }
+        monkeypatch.setattr(model_availability, "load_provider_config", lambda: {
+            "vshn-us-ai": {
+                "baseURL": "https://api.example.com",
+                "apiKey": "{env:VSHN_US_AI_API_KEY}",
+            }
+        })
         monkeypatch.setattr(model_availability, "resolve_cache_issue", lambda: "49")
         monkeypatch.setattr(model_availability, "read_cache", lambda _: cache)
         monkeypatch.setattr(
@@ -1329,6 +1391,7 @@ class TestModelAvailabilityAction:
         assert "vshn-us-ai/subscription.glm-5.3-flash" not in written[0][1]
 
     def test_prints_fresh_cache_summary_without_probing(self, monkeypatch, capsys):
+        monkeypatch.setattr(model_availability, "load_provider_config", lambda: {})
         monkeypatch.setattr(model_availability, "resolve_cache_issue", lambda: None)
         monkeypatch.setattr(
             model_availability, "discover_models", lambda: (["opencode/a-free"], {})
@@ -1348,6 +1411,7 @@ class TestModelAvailabilityAction:
         assert "probe results: 0 checked, 0 ok, 0 failed (1 candidates fresh)" in capsys.readouterr().out
 
     def test_does_not_invoke_probe_for_empty_pending(self, monkeypatch):
+        monkeypatch.setattr(model_availability, "load_provider_config", lambda: {})
         monkeypatch.setattr(model_availability, "resolve_cache_issue", lambda: None)
         monkeypatch.setattr(model_availability, "discover_models", lambda: ([], {}))
         monkeypatch.setattr(model_availability, "build_candidates", lambda *args: [])
@@ -1359,6 +1423,7 @@ class TestModelAvailabilityAction:
         assert calls == []
 
     def test_prints_checked_probe_summary(self, monkeypatch, capsys):
+        monkeypatch.setattr(model_availability, "load_provider_config", lambda: {})
         monkeypatch.setattr(model_availability, "resolve_cache_issue", lambda: None)
         monkeypatch.setattr(
             model_availability, "discover_models", lambda: (["opencode/a-free", "opencode/b-free"], {})
