@@ -323,6 +323,37 @@ class CliWrapperTest(unittest.TestCase):
         self.call(["pr", "view"], False, TEST_ALIAS_STATUS="1")
         self.call(["pr", "view"], TEST_ALIASES="co: pr checkout\n")
 
+    def test_pr_mutation_guard(self):
+        for argv in (
+            ["pr", "merge", "5", "-R", "ecamp/ecamp3"],
+            ["pr", "close", "5", "-R", "ecamp/ecamp3"],
+            ["pr", "edit", "5", "-R", "ecamp/ecamp3", "--title", "x"],
+            ["pr", "comment", "5", "-R", "ecamp/ecamp3", "--body", "x"],
+            ["pr", "review", "5", "-R", "ecamp/ecamp3", "--approve"],
+            ["pr", "ready", "5", "-R", "ecamp/ecamp3"],
+            ["pr", "lock", "5", "-R", "ecamp/ecamp3"],
+            ["pr", "merge", "5"],
+            ["pr", "merge", "https://github.com/ecamp/ecamp3/pull/5"],
+        ):
+            self.call(argv, False)
+        for argv in (
+            ["pr", "merge", "5", "-R", "BacLuc/r"],
+            ["pr", "close", "5", "-R", "bacluc-agent-org/r"],
+            ["pr", "comment", "5", "-R", "bacluc-agent/r", "--body", "x"],
+            ["pr", "merge", "--help"],
+            ["pr", "view", "10800", "-R", "ecamp/ecamp3"],
+            ["pr", "list", "-R", "ecamp/ecamp3"],
+            ["pr", "diff", "5", "-R", "ecamp/ecamp3"],
+        ):
+            self.call(argv, TEST_STATUS="17")
+
+    def test_default_repo_fallback(self):
+        for argv in (["release", "delete", "v1"], ["label", "delete", "x"], ["repo", "create", "r"]):
+            self.call(argv, False, GH_REPO="ecamp/ecamp3", GITHUB_REPOSITORY="BacLuc/r")
+            self.call(argv, TEST_STATUS="17", GH_REPO="BacLuc/r", GITHUB_REPOSITORY="ecamp/ecamp3")
+        self.call(["release", "delete", "v1", "-R", "BacLuc/r"], TEST_STATUS="17",
+                  GH_REPO="ecamp/ecamp3", GITHUB_REPOSITORY="ecamp/ecamp3")
+
     def test_project_owner_guard(self):
         for argv in (
             ["project", "edit", "1", "--owner", "outsider"],

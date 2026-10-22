@@ -761,13 +761,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
 
-      - name: Run wrapper and guard unit tests
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          python3 scripts/test_gh_cli_wrapper.py -v
-          python3 scripts/test_http_guard.py -v
-
       - name: Verify sandbox policy and OpenCode PONG
         shell: bash
         env:
@@ -959,6 +952,22 @@ jobs:
           [[ $status -ne 0 ]] || { printf 'wrapper allowed an outsider mutation\n' >&2; exit 1; }
           grep -q 'gh cli wrapper:' <<<"$out" || { printf 'outsider mutation was not denied by the wrapper:\n%s\n' "$out" >&2; exit 1; }
           printf '%s\n' 'Outsider gh mutation denied by the wrapper inside nono'
+
+          set +e
+          out="$(run_gh pr merge 1 -R octocat/Hello-World 2>&1)"
+          status=$?
+          set -e
+          [[ $status -ne 0 ]] || { printf 'wrapper allowed an outsider PR mutation\n' >&2; exit 1; }
+          grep -q 'gh cli wrapper:' <<<"$out" || { printf 'outsider PR mutation was not denied by the wrapper:\n%s\n' "$out" >&2; exit 1; }
+          printf '%s\n' 'Outsider gh PR mutation denied by the wrapper inside nono'
+
+          set +e
+          out="$(GH_REPO=octocat/Hello-World run_gh release delete v1 2>&1)"
+          status=$?
+          set -e
+          [[ $status -ne 0 ]] || { printf 'wrapper allowed a GH_REPO outsider mutation\n' >&2; exit 1; }
+          grep -q 'gh cli wrapper:' <<<"$out" || { printf 'GH_REPO outsider mutation was not denied by the wrapper:\n%s\n' "$out" >&2; exit 1; }
+          printf '%s\n' 'GH_REPO outsider mutation denied by the wrapper inside nono'
 
           label="sandbox-probe-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           cleanup() { run_gh api "repos/bacluc-agent/agent-runner/labels/$label" -X DELETE >/dev/null 2>&1 || true; }

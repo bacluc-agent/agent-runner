@@ -124,10 +124,12 @@ dispatching when no allowed model is available.
 apply to subsequent steps and child shells, including work in other checkouts.
 The installer saves the real CLI's absolute path before changing PATH.
 
-- `gh pr create` and `gh pr new` require exactly one explicit `-R`/`--repo`
+- `gh pr create`, `gh pr new` and the other `gh pr` mutations (`merge`, `close`,
+  `edit`, `comment`, `review`, ...) require exactly one explicit `-R`/`--repo`
   targeting `BacLuc`, `bacluc-agent` or `bacluc-agent-org` (case-insensitive) on
   github.com. For outsider repositories, create the fork and a branch representing
   upstream main, then open the PR with `-R bacluc-agent/<repo>` against that branch.
+  `gh pr` reads such as `view`, `list` and `diff` stay unguarded.
 - Under the nono sandbox GraphQL is denied, so the wrapper translates
   `gh pr create`/`gh pr new` to REST `POST /repos/OWNER/REPO/pulls`. Supported
   options: `-R/--repo`, `-t/--title`, `-b/--body`, `-F/--body-file`,
@@ -146,7 +148,7 @@ The installer saves the real CLI's absolute path before changing PATH.
   `release`, `secret`, `variable`, `ruleset`, `project`) must resolve to an owned
   repository. `issue` and `workflow` mutations require exactly one explicit
   `-R`/`--repo` or URL selector; the other commands allow at most one and fall
-  back to `GITHUB_REPOSITORY`. `gh repo fork <upstream> --org <owned>` is the one
+  back to `GH_REPO`, then `GITHUB_REPOSITORY`. `gh repo fork <upstream> --org <owned>` is the one
   sanctioned exception and never validates the upstream positional.
 - REST mutations must be a canonical `repos/OWNER/REPO/...` endpoint for an owned
   owner; the fork exception is CLI-only, so `gh api repos/<outsider>/forks -XPOST`

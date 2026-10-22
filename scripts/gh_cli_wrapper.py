@@ -11,6 +11,8 @@ OWNED_ORGS = {"bacluc", "bacluc-agent", "bacluc-agent-org"}
 MUTATIONS = {
     "issue": {"create", "edit", "close", "reopen", "comment", "delete", "transfer", "lock", "unlock",
               "pin", "unpin", "develop", "clone"},
+    "pr": {"create", "new", "revert", "merge", "close", "reopen", "edit", "comment", "review", "ready",
+           "draft", "lock", "unlock", "update-branch"},
     "repo": {"create", "edit", "delete", "archive", "rename", "fork", "sync", "transfer", "unarchive",
              "set-default", "gc", "credits"},
     "workflow": {"run", "enable", "disable", "delete", "cancel"},
@@ -35,6 +37,10 @@ def deny(reason):
 def owned_org(org):
     if org.lower() not in OWNED_ORGS:
         deny("use a bacluc-owned organization, not the upstream repository")
+
+
+def default_repo():
+    return os.environ.get("GH_REPO") or os.environ.get("GITHUB_REPOSITORY", "")
 
 
 def owned_repo(repo):
@@ -134,9 +140,10 @@ def validate_pr(args):
     if args[0] == "revert":
         validate_revert(prefix, args)
         return None
-    if args[0] not in {"create", "new"}:
-        return None
     if "--help" in prefix + args[1:]:
+        return None
+    if args[0] not in {"create", "new"}:
+        validate_mutation("pr", [args[0], *prefix, *args[1:]])
         return None
     return build_pr_create(prefix, args[1:])
 
@@ -261,19 +268,19 @@ def validate_mutation(command, args):
         if org is not None:
             owned_org(org)
         else:
-            owned_repo(os.environ.get("GITHUB_REPOSITORY", ""))
+            owned_repo(default_repo())
         for owner in repo_create_owners(args):
             owned_org(owner)
         return
     selectors = selectors_of(args)
-    if command in {"issue", "workflow"}:
+    if command in {"issue", "workflow", "pr"}:
         if len(selectors) != 1:
             deny(f"{command} mutations require exactly one explicit owned -R/--repo or URL selector")
         owned_repo(repo_of(selectors[0]))
         return
     if len(selectors) > 1:
         deny(f"{command} mutations allow at most one explicit owned repository selector")
-    owned_repo(repo_of(selectors[0]) if selectors else os.environ.get("GITHUB_REPOSITORY", ""))
+    owned_repo(repo_of(selectors[0]) if selectors else default_repo())
 
 
 def validate_api(args):
