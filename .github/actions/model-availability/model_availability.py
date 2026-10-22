@@ -133,8 +133,86 @@ def parse_go_model_ids(models_json: str) -> list[str]:
         return []
 
 
+def strip_jsonc(text: str) -> str:
+    """Remove // line comments (outside strings) and trailing commas for json.loads."""
+    lines = []
+    for line in text.splitlines():
+        out = []
+        in_string = False
+        i = 0
+        while i < len(line):
+            char = line[i]
+            if in_string:
+                if char == "\\":
+                    out.append(line[i : i + 2])
+                    i += 2
+                    continue
+                if char == '"':
+                    in_string = False
+            else:
+                if char == '"':
+                    in_string = True
+                elif char == "/" and line[i + 1 : i + 2] == "/":
+                    break
+            out.append(char)
+            i += 1
+        lines.append("".join(out))
+    return re.sub(r",(\s*[}\]])", r"\1", "\n".join(lines))
+
+
+def providers_from_raw_config(config: object) -> dict[str, dict[str, str | None]]:
+    """{provider: {"baseURL": ..., "apiKey": ...}}; {env:NAME} templates stay unresolved."""
+    providers = config.get("provider") if isinstance(config, dict) else None
+    if not isinstance(providers, dict):
+        return {}
+    result = {}
+    for name, provider in providers.items():
+        options = provider.get("options", {}) if isinstance(provider, dict) else {}
+        if not isinstance(options, dict):
+            options = {}
+        result[name] = {"baseURL": options.get("baseURL"), "apiKey": options.get("apiKey")}
+    return result
+
+
+def settings_providers_from_documents(documents: list) -> dict[str, dict[str, str | None]]:
+    """Last-resort merge of `info.providers[].settings` across debug documents.
+
+    `settings.apiKey` is masked to "***" by opencode, and a mask never proves key
+    presence, so a masked apiKey is returned as None.
+    """
+    merged: dict[str, dict[str, str | None]] = {}
+    for doc in documents:
+        if not isinstance(doc, dict):
+            continue
+        info = doc.get("info")
+        providers = info.get("providers", {}) if isinstance(info, dict) else {}
+        if not isinstance(providers, dict):
+            continue
+        for name, provider in providers.items():
+            settings = provider.get("settings", {}) if isinstance(provider, dict) else {}
+            if not isinstance(settings, dict):
+                continue
+            api_key = settings.get("apiKey")
+            merged[name] = {
+                "baseURL": settings.get("baseURL"),
+                "apiKey": api_key if isinstance(api_key, str) and api_key != "***" else None,
+            }
+    return merged
+
+
 def load_provider_config() -> dict[str, dict[str, str | None]]:
-    """{provider: {"baseURL": str, "apiKey": str | None}} from `opencode debug config`."""
+    """{provider: {"baseURL": str | None, "apiKey": str | None}}, templates kept raw.
+
+    `opencode debug config` returns a JSON array of document objects whose `info`
+    is that source's own config (sources later in the list override earlier ones);
+    its `settings.apiKey` is masked, so the merged map is reconstructed from the
+    contributing sources in document order: existing config files for their paths
+    (global, OPENCODE_CONFIG, project) and OPENCODE_CONFIG_CONTENT from the
+    same environment the `opencode models`/probe runs receive (its path-less
+    document is listed last and has the highest precedence). Falls back to the
+    documents' unmasked-able settings only when no source yields a providers map.
+    """
+    env = opencode_env()
     tmp_path = None
     try:
         # `opencode debug config` truncates stdout at 65536 bytes when stdout is a
@@ -147,10 +225,10 @@ def load_provider_config() -> dict[str, dict[str, str | None]]:
                 stdout=tmp,
                 text=True,
                 timeout=60,
-                env=opencode_env(),
+                env=env,
             )
         with open(tmp_path, encoding="utf-8") as fh:
-            config = json.load(fh)
+            documents = json.load(fh)
     except Exception as e:
         print(f"warning: failed to read opencode config: {e}", file=sys.stderr)
         return {}
@@ -160,17 +238,38 @@ def load_provider_config() -> dict[str, dict[str, str | None]]:
                 os.unlink(tmp_path)
             except OSError:
                 pass
-    providers = config.get("provider", {}) if isinstance(config, dict) else {}
-    if not isinstance(providers, dict):
+    if not isinstance(documents, list):
         return {}
-    result = {}
-    for name, provider in providers.items():
-        if not isinstance(provider, dict):
+
+    def apply_parsed(configs: list[object]) -> dict[str, dict[str, str | None]]:
+        merged = {}
+        for config in configs:
+            merged.update(providers_from_raw_config(config))
+        return merged
+
+    sources = []
+    for doc in documents:
+        path = doc.get("path") if isinstance(doc, dict) else None
+        if not (isinstance(path, str) and path and os.path.isfile(path)):
             continue
-        options = provider.get("options", {})
-        if not isinstance(options, dict):
-            continue
-        result[name] = {"baseURL": options.get("baseURL"), "apiKey": options.get("apiKey")}
+        try:
+            with open(path, encoding="utf-8") as fh:
+                sources.append(json.loads(strip_jsonc(fh.read())))
+        except Exception as e:
+            print(f"warning: failed to parse config file {path}: {e}", file=sys.stderr)
+    content = env.get("OPENCODE_CONFIG_CONTENT") or ""
+    if content:
+        try:
+            sources.append(json.loads(content))
+        except Exception as e:
+            print(f"warning: failed to parse OPENCODE_CONFIG_CONTENT: {e}", file=sys.stderr)
+    result = apply_parsed(sources)
+    if not result:
+        fallback = settings_providers_from_documents(documents)
+        for doc in documents:
+            if isinstance(doc, dict) and isinstance(doc.get("info") or {}, dict):
+                if (doc.get("info") or {}).get("providers"):
+                    return fallback
     return result
 
 
@@ -195,6 +294,8 @@ def provider_probeable(model_id: str, provider_config: dict, env: dict) -> bool:
     if not isinstance(info, dict):
         return False
     base_url = info.get("baseURL")
+    if isinstance(base_url, str) and base_url.startswith("{env:") and base_url.endswith("}"):
+        base_url = env.get(base_url[5:-1])
     if not valid_base_url(base_url):
         return False
     api_key = info.get("apiKey")
