@@ -18,6 +18,18 @@ CONFIG = {
     }
 }
 
+CONFIG_JSONC = """\
+{
+  // machine-managed config with renovate comments and trailing commas
+  "provider": {
+    // renovate: datasource=npm depName=example
+    "opencode-go-openai": {"options": {"baseURL": "https://opencode.ai/zen/go/v1", }},
+    "opencode-go-anthropic": {"options": {"baseURL": "https://opencode.ai/zen/go/v1/messages"}},
+    "openrouter": {"options": {"baseURL": "https://openrouter.ai/api/v1"}},
+  },
+}
+"""
+
 
 @pytest.fixture(autouse=True)
 def _provider_api_keys(monkeypatch):
@@ -27,18 +39,59 @@ def _provider_api_keys(monkeypatch):
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-or-key")
 
 
-def fake_run(args, *a, **kw):
-    if args == ["opencode", "models"]:
-        return types.SimpleNamespace(stdout="opencode/a-free\n")
-    if args == ["opencode", "debug", "config"]:
-        kw["stdout"].write(json.dumps(CONFIG))
-        return types.SimpleNamespace(stdout="")
-    raise AssertionError(f"unexpected args: {args}")
+def write_config(tmp_path, config: object) -> str:
+    if isinstance(config, str):
+        (tmp_path / "opencode.jsonc").write_text(config)
+    else:
+        (tmp_path / "opencode.jsonc").write_text(json.dumps(config))
+    return str(tmp_path / "opencode.jsonc")
+
+
+def debug_documents(*config_paths: str, content: object = None) -> str:
+    """Fake `opencode debug config` output: document array with paths, content doc last."""
+    documents = [{"type": "document", "path": path} for path in config_paths]
+    documents.append({"type": "directory", "path": "/irrelevant/dir"})
+    if content is not None:
+        documents.append({"type": "document", "info": content})
+    return json.dumps(documents)
+
+
+def stub_run(tmp_path, config_json: str, models_output: str = "opencode/a-free\n"):
+    """Stub subprocess.run against one real config file on disk."""
+    config_path = write_config(tmp_path, config_json)
+    config_payload = debug_documents(config_path)
+
+    def fake(args, *a, **kw):
+        if args == ["opencode", "models"]:
+            return types.SimpleNamespace(stdout=models_output)
+        if args == ["opencode", "debug", "config"]:
+            kw["stdout"].write(config_payload)
+            return types.SimpleNamespace(stdout="")
+        raise AssertionError(f"unexpected args: {args}")
+
+    return fake
+
+
+def stub_run_capture(tmp_path, config_json: str, captured: dict):
+    config_path = write_config(tmp_path, config_json)
+    config_payload = debug_documents(config_path)
+
+    def fake(args, *a, **kw):
+        captured["env"] = kw["env"]
+        if args == ["opencode", "models"]:
+            return types.SimpleNamespace(stdout="opencode/a-free\n")
+        if args == ["opencode", "debug", "config"]:
+            kw["stdout"].write(config_payload)
+            return types.SimpleNamespace(stdout="")
+        raise AssertionError(f"unexpected args: {args}")
+
+    return fake
 
 
 class TestDiscoverModels:
-    def test_retries_transient_cli_initialization_failure(self, monkeypatch):
+    def test_retries_transient_cli_initialization_failure(self, tmp_path, monkeypatch):
         calls = 0
+        stub = stub_run(tmp_path, CONFIG)
 
         def fail_once(args, *a, **kw):
             nonlocal calls
@@ -47,15 +100,16 @@ class TestDiscoverModels:
                 raise subprocess.CalledProcessError(
                     1, args, stderr="ServiceUnavailableError: Location plugins did not finish activating"
                 )
-            return fake_run(args, *a, **kw)
+            return stub(args, *a, **kw)
 
         monkeypatch.setattr(model_availability.subprocess, "run", fail_once)
         monkeypatch.setattr(model_availability.time, "sleep", lambda _: None)
         assert model_availability.discover_models()[0] == ["opencode/a-free"]
         assert calls == 3
 
-    def test_discovery_uses_plugin_safe_environment_and_keeps_nonzero_error(self, monkeypatch):
+    def test_discovery_uses_plugin_safe_environment_and_keeps_nonzero_error(self, tmp_path, monkeypatch):
         captured = {}
+        stub_run_capture(tmp_path, CONFIG, captured)
 
         def fail(args, *a, **kw):
             captured["args"] = args
@@ -69,17 +123,17 @@ class TestDiscoverModels:
             model_availability.discover_models()
 
         assert error.value.returncode == 17
-        assert captured["args"] == ["opencode", "models"]
-        assert captured["env"]["OPENCODE_DISABLE_DEFAULT_PLUGINS"] == "true"
         assert captured["env"]["OPENCODE_CONFIG_CONTENT"] == '{"plugin":[]}'
 
-    def test_debug_config_uses_plugin_safe_environment(self, monkeypatch):
+    def test_debug_config_uses_plugin_safe_environment(self, tmp_path, monkeypatch):
         captured = {}
+        stub = stub_run_capture(tmp_path, CONFIG_JSONC, captured)
 
         def fake_config(args, *a, **kw):
-            captured["env"] = kw["env"]
-            kw["stdout"].write(json.dumps(CONFIG))
-            return types.SimpleNamespace(stdout="")
+            if args == ["opencode", "debug", "config"]:
+                captured["env"] = kw["env"]
+                return stub(args, *a, **kw)
+            raise AssertionError(f"unexpected args: {args}")
 
         monkeypatch.setattr(model_availability.subprocess, "run", fake_config)
         assert model_availability.load_provider_config() == {
@@ -90,10 +144,9 @@ class TestDiscoverModels:
             },
             "openrouter": {"baseURL": "https://openrouter.ai/api/v1", "apiKey": None},
         }
-        assert captured["env"]["OPENCODE_DISABLE_DEFAULT_PLUGINS"] == "true"
         assert captured["env"]["OPENCODE_CONFIG_CONTENT"] == '{"plugin":[]}'
 
-    def test_discovers_models_per_provider(self, monkeypatch):
+    def test_discovers_models_per_provider(self, tmp_path, monkeypatch):
         captured = {}
 
         class FakeResponse:
@@ -111,8 +164,11 @@ class TestDiscoverModels:
             captured["full_url"] = request.full_url
             return FakeResponse()
 
+        def fake_run_env_check(args, *a, **kw):
+            return stub_run_capture(tmp_path, CONFIG, captured)(args, *a, **kw)
+
         monkeypatch.setattr(model_availability.urllib.request, "urlopen", fake_urlopen)
-        monkeypatch.setattr(model_availability.subprocess, "run", fake_run)
+        monkeypatch.setattr(model_availability.subprocess, "run", fake_run_env_check)
         free_models, provider_models = model_availability.discover_models()
         assert free_models == ["opencode/a-free"]
         assert provider_models == {
@@ -124,13 +180,14 @@ class TestDiscoverModels:
         assert not any("Python-urllib" in v for v in captured["headers"].values())
         assert any(k.lower() == "x-opencode-session" for k in captured["headers"])
         assert captured["full_url"].endswith("/models")
+        assert captured["env"]["OPENCODE_CONFIG_CONTENT"] == '{"plugin":[]}'
 
-    def test_endpoint_failure_per_provider(self, monkeypatch):
+    def test_endpoint_failure_per_provider(self, tmp_path, monkeypatch):
         def fail(request, timeout=30):
             raise RuntimeError("403 Forbidden")
 
         monkeypatch.setattr(model_availability.urllib.request, "urlopen", fail)
-        monkeypatch.setattr(model_availability.subprocess, "run", fake_run)
+        monkeypatch.setattr(model_availability.subprocess, "run", stub_run(tmp_path, CONFIG))
         free_models, provider_models = model_availability.discover_models()
         assert free_models == ["opencode/a-free"]
         assert provider_models == {
@@ -139,7 +196,7 @@ class TestDiscoverModels:
             "openrouter": [],
         }
 
-    def test_missing_baseurl_per_provider(self, monkeypatch):
+    def test_missing_baseurl_per_provider(self, tmp_path, monkeypatch):
         config = {
             "provider": {
                 "opencode-go-openai": {"options": {"baseURL": "https://opencode.ai/zen/go/v1"}},
@@ -157,12 +214,7 @@ class TestDiscoverModels:
                 return b'{"data": [{"id": "glm-5.2"}]}'
 
         def fake_run_missing(args, *a, **kw):
-            if args == ["opencode", "models"]:
-                return types.SimpleNamespace(stdout="opencode/a-free\n")
-            if args == ["opencode", "debug", "config"]:
-                kw["stdout"].write(json.dumps(config))
-                return types.SimpleNamespace(stdout="")
-            raise AssertionError(f"unexpected args: {args}")
+            return stub_run(tmp_path, config)(args, *a, **kw)
 
         monkeypatch.setattr(
             model_availability.urllib.request, "urlopen", lambda *a, **kw: FakeResponse()
@@ -183,7 +235,7 @@ class TestDiscoverModels:
         assert free_models == ["opencode/a-free"]
         assert provider_models == {}
 
-    def test_filters_openrouter_models_by_whitelist(self, monkeypatch):
+    def test_filters_openrouter_models_by_whitelist(self, tmp_path, monkeypatch):
         captured = {}
 
         class FakeResponse:
@@ -203,13 +255,13 @@ class TestDiscoverModels:
             return FakeResponse()
 
         monkeypatch.setattr(model_availability.urllib.request, "urlopen", fake_urlopen)
-        monkeypatch.setattr(model_availability.subprocess, "run", fake_run)
+        monkeypatch.setattr(model_availability.subprocess, "run", stub_run(tmp_path, CONFIG))
         free_models, provider_models = model_availability.discover_models()
         assert provider_models["openrouter"] == ["cohere/north-mini-code:free"]
         assert provider_models["opencode-go-openai"] == ["deepseek/deepseek-chat-v3.1"]
         assert ("openrouter", "OPENROUTER_API_KEY") in model_availability.PROVIDERS
 
-    def test_skips_provider_without_env_key(self, monkeypatch):
+    def test_skips_provider_without_env_key(self, tmp_path, monkeypatch):
         class FakeResponse:
             def __enter__(self):
                 return self
@@ -224,12 +276,12 @@ class TestDiscoverModels:
         monkeypatch.setattr(
             model_availability.urllib.request, "urlopen", lambda *a, **kw: FakeResponse()
         )
-        monkeypatch.setattr(model_availability.subprocess, "run", fake_run)
+        monkeypatch.setattr(model_availability.subprocess, "run", stub_run(tmp_path, CONFIG))
         free_models, provider_models = model_availability.discover_models()
         assert "openrouter" not in provider_models
         assert "opencode-go-openai" in provider_models
 
-    def test_skips_provider_with_invalid_baseurl(self, monkeypatch):
+    def test_skips_provider_with_invalid_baseurl(self, tmp_path, monkeypatch):
         class FakeResponse:
             def __enter__(self):
                 return self
@@ -258,12 +310,7 @@ class TestDiscoverModels:
         }
 
         def fake_run_invalid(args, *a, **kw):
-            if args == ["opencode", "models"]:
-                return types.SimpleNamespace(stdout="opencode/a-free\n")
-            if args == ["opencode", "debug", "config"]:
-                kw["stdout"].write(json.dumps(config))
-                return types.SimpleNamespace(stdout="")
-            raise AssertionError(f"unexpected args: {args}")
+            return stub_run(tmp_path, config)(args, *a, **kw)
 
         monkeypatch.setattr(
             model_availability.urllib.request, "urlopen", lambda *a, **kw: FakeResponse()
@@ -273,7 +320,7 @@ class TestDiscoverModels:
         assert "openrouter" not in provider_models
         assert "opencode-go-openai" in provider_models
 
-    def test_skips_provider_with_non_string_baseurl(self, monkeypatch):
+    def test_skips_provider_with_non_string_baseurl(self, tmp_path, monkeypatch):
         config = {
             "provider": {
                 "openrouter": {
@@ -286,19 +333,14 @@ class TestDiscoverModels:
         }
 
         def fake_run_non_string(args, *a, **kw):
-            if args == ["opencode", "models"]:
-                return types.SimpleNamespace(stdout="opencode/a-free\n")
-            if args == ["opencode", "debug", "config"]:
-                kw["stdout"].write(json.dumps(config))
-                return types.SimpleNamespace(stdout="")
-            raise AssertionError(f"unexpected args: {args}")
+            return stub_run(tmp_path, config)(args, *a, **kw)
 
         monkeypatch.setattr(model_availability.subprocess, "run", fake_run_non_string)
         free_models, provider_models = model_availability.discover_models()
         assert free_models == ["opencode/a-free"]
         assert provider_models == {}
 
-    def test_skips_whitelisted_models_from_unprobeable_providers(self, monkeypatch):
+    def test_skips_whitelisted_models_from_unprobeable_providers(self, tmp_path, monkeypatch):
         class FakeResponse:
             def __enter__(self):
                 return self
@@ -334,12 +376,7 @@ class TestDiscoverModels:
         )
 
         def fake_run_filter(args, *a, **kw):
-            if args == ["opencode", "models"]:
-                return types.SimpleNamespace(stdout=models_output)
-            if args == ["opencode", "debug", "config"]:
-                kw["stdout"].write(json.dumps(config))
-                return types.SimpleNamespace(stdout="")
-            raise AssertionError(f"unexpected args: {args}")
+            return stub_run(tmp_path, config, models_output)(args, *a, **kw)
 
         monkeypatch.setattr(
             model_availability.urllib.request, "urlopen", lambda *a, **kw: FakeResponse()
@@ -351,7 +388,7 @@ class TestDiscoverModels:
         assert "opencode-go-openai/glm-5.2" in free_models
         assert "opencode/a-free" in free_models
 
-    def test_provider_with_resolved_api_key_is_probeable(self, monkeypatch):
+    def test_provider_with_resolved_api_key_is_probeable(self, tmp_path, monkeypatch):
         class FakeResponse:
             def __enter__(self):
                 return self
@@ -376,12 +413,7 @@ class TestDiscoverModels:
         models_output = "opencode/a-free\nopencode-go-openai/glm-5.2\ncortecs2/glm-5.1\n"
 
         def fake_run_resolved(args, *a, **kw):
-            if args == ["opencode", "models"]:
-                return types.SimpleNamespace(stdout=models_output)
-            if args == ["opencode", "debug", "config"]:
-                kw["stdout"].write(json.dumps(config))
-                return types.SimpleNamespace(stdout="")
-            raise AssertionError(f"unexpected args: {args}")
+            return stub_run(tmp_path, config, models_output)(args, *a, **kw)
 
         monkeypatch.setattr(
             model_availability.urllib.request, "urlopen", lambda *a, **kw: FakeResponse()
@@ -406,13 +438,11 @@ class TestProviderProbeable:
             {"provider": {"openrouter": {"options": []}}},
         ],
     )
-    def test_malformed_discovered_provider_config_is_ignored(self, monkeypatch, provider_config):
-        def fake_run(*args, **kwargs):
-            kwargs["stdout"].write(json.dumps(provider_config))
-            return types.SimpleNamespace(stdout="")
-
-        monkeypatch.setattr(model_availability.subprocess, "run", fake_run)
-        assert model_availability.load_provider_config() == {}
+    def test_malformed_discovered_provider_config_is_ignored(self, tmp_path, monkeypatch, provider_config):
+        monkeypatch.setattr(model_availability.subprocess, "run", stub_run(tmp_path, provider_config))
+        assert model_availability.load_provider_config() == {
+            "openrouter": {"baseURL": None, "apiKey": None}
+        }
 
     def test_resolved_key(self):
         config = {"openrouter": {"baseURL": "https://openrouter.ai/api/v1", "apiKey": "sk-or-xxx"}}
@@ -421,6 +451,25 @@ class TestProviderProbeable:
     def test_missing_key(self):
         config = {"cortecs2": {"baseURL": "https://api.cortecs.ai/v1", "apiKey": None}}
         assert not model_availability.provider_probeable("cortecs2/glm-5.1", config, {})
+
+    def test_env_template_base_url(self):
+        config = {
+            "vshn-us-ai": {
+                "baseURL": "{env:VSHN_US_BASE_URL}",
+                "apiKey": "{env:VSHN_US_AI_API_KEY}",
+            }
+        }
+        assert not model_availability.provider_probeable(
+            "vshn-us-ai/subscription.glm-5.2", config, {"VSHN_US_BASE_URL": "https://us-ai.example/v1"}
+        )
+        assert model_availability.provider_probeable(
+            "vshn-us-ai/subscription.glm-5.2",
+            config,
+            {
+                "VSHN_US_BASE_URL": "https://us-ai.example/v1",
+                "VSHN_US_AI_API_KEY": "k",
+            },
+        )
 
     def test_env_template(self):
         config = {
@@ -498,7 +547,6 @@ class TestParseWhitelistedModels:
             "openrouter/google/gemma-4-31b-it:free\n"
         )
         assert model_availability.parse_whitelisted_models(output) == [
-            "big-pickle",
             "custom-provider/big-pickle",
             "custom-provider/other-free",
             "opencode/big-pickle",
@@ -506,13 +554,41 @@ class TestParseWhitelistedModels:
             "opencode/mimo-v2.5-free",
             "openrouter/cohere/north-mini-code:free",
             "openrouter/google/gemma-4-31b-it:free",
-            "standalone-free",
             "opencode-go-openai/glm-5.3",
             "opencode-go-openai/gpt-5.6-luna",
             "opencode-go-openai/kimi-k3",
             "opencode-go-openai/qwen3.8-flash",
             "other/paid-model",
         ]
+
+    def test_all_providers_parsed_probeability_filtering_happens_in_discover(self):
+        output = (
+            "vshn-us-ai/subscription.glm-5.3-flash\n"
+            "vshn-us-ai/expensive.gemini-3-flash\n"
+            "requesty2/free-model\n"
+            "custom-provider/big-pickle\n"
+            "unknown-provider/glm-5.3\n"
+        )
+        assert model_availability.parse_whitelisted_models(output) == [
+            "custom-provider/big-pickle",
+            "requesty2/free-model",
+            "unknown-provider/glm-5.3",
+            "vshn-us-ai/expensive.gemini-3-flash",
+            "vshn-us-ai/subscription.glm-5.3-flash",
+        ]
+
+    def test_provider_prefix_uses_first_segment_not_model_id(self, monkeypatch):
+        monkeypatch.setitem(
+            model_availability.PROVIDER_WHITELISTS,
+            "openrouter",
+            model_availability.PROVIDER_WHITELISTS["opencode"],
+        )
+        assert model_availability.parse_whitelisted_models(
+            "openrouter/zai/GLM-4.5"
+        ) == ["openrouter/zai/GLM-4.5"]
+
+    def test_no_slash_lines_excluded(self):
+        assert model_availability.parse_whitelisted_models("standalone-free\nbig-pickle\n") == []
 
     def test_deduplicates(self):
         assert model_availability.parse_whitelisted_models(
@@ -815,7 +891,59 @@ class TestMergeResults:
         }
 
 
+class TestPurgeUnprobeableEntries:
+    checked = "2026-09-06T10:00:00Z"
+
+    def provider_config_missing_vshn_key(self):
+        return {
+            "vshn-us-ai": {
+                "baseURL": "https://api.example.com",
+                "apiKey": "{env:VSHN_US_AI_API_KEY}",
+            },
+            "requesty2": {"baseURL": "https://api.example.com", "apiKey": None},
+            "invalid-url": {"baseURL": "not-a-url", "apiKey": "k"},
+        }
+
+    def test_drops_unprobeable_and_bare_lines_keeps_probeable(self):
+        cache = {
+            "opencode/big-pickle": {"ok": True, "checked": self.checked},
+            "openai/gpt-x": {"ok": True, "checked": self.checked},
+            "opencode-go-openai/qwen3.8-flash": {"ok": True, "checked": self.checked},
+            "vshn-us-ai/subscription.glm-5.3-flash": {"ok": True, "checked": self.checked},
+            "requesty2/free-model": {"ok": True, "checked": self.checked},
+            "invalid-url/glm-5.1": {"ok": True, "checked": self.checked},
+            "no-slash-model": {"ok": True, "checked": self.checked},
+        }
+        del cache["no-slash-model"]
+        assert model_availability.purge_unprobeable_entries(cache, {}, {}) == cache
+
+    def test_drops_keyless_env_keyed_providers_and_bare_lines(self):
+        cache = {
+            "opencode/big-pickle": {"ok": True, "checked": self.checked},
+            "vshn-us-ai/subscription.glm-5.3-flash": {"ok": True, "checked": self.checked},
+            "requesty2/free-model": {"ok": True, "checked": self.checked},
+            "invalid-url/glm-5.1": {"ok": True, "checked": self.checked},
+            "no-slash-model": {"ok": True, "checked": self.checked},
+        }
+        assert model_availability.purge_unprobeable_entries(
+            cache, self.provider_config_missing_vshn_key(), {}
+        ) == {
+            "opencode/big-pickle": {"ok": True, "checked": self.checked},
+        }
+
+    def test_keeps_vshn_when_env_key_present(self):
+        cache = {"vshn-us-ai/subscription.glm-5.3-flash": {"ok": True, "checked": self.checked}}
+        assert model_availability.purge_unprobeable_entries(
+            cache, self.provider_config_missing_vshn_key(), {"VSHN_US_AI_API_KEY": "k"}
+        ) == cache
+
+
 class TestAvailableModels:
+    def call(self, cache, whitelisted, provider_models, provider_config=None, env=None):
+        return model_availability.available_models(
+            cache, whitelisted, provider_models, provider_config or {}, env or {}
+        )
+
     def test_free_first_then_paid(self):
         cache = {
             "opencode-go-openai/glm-5.2": {"ok": True, "checked": "x"},
@@ -823,7 +951,7 @@ class TestAvailableModels:
             "opencode/b-free": {"ok": False, "checked": "x"},
             "opencode-go-openai-2/glm-5.2": {"ok": True, "checked": "x"},
         }
-        assert model_availability.available_models(
+        assert self.call(
             cache,
             ["opencode/a-free", "opencode/b-free"],
             {"opencode-go-openai": ["glm-5.2"], "opencode-go-openai-2": ["glm-5.2"]},
@@ -832,6 +960,22 @@ class TestAvailableModels:
             "opencode-go-openai/glm-5.2",
             "opencode-go-openai-2/glm-5.2",
         ]
+
+    def test_gate_drops_unprobeable_provider_even_when_cache_ok(self):
+        cache = {"vshn-us-ai/m": {"ok": True, "checked": "x"}}
+        config = {
+            "vshn-us-ai": {"baseURL": "https://api.example.com", "apiKey": "{env:VSHN_US_AI_API_KEY}"}
+        }
+        assert self.call(cache, ["vshn-us-ai/m"], {"vshn-us-ai": ["m"]}, config, {}) == []
+
+    def test_gate_emits_vshn_when_env_key_present(self):
+        cache = {"vshn-us-ai/m": {"ok": True, "checked": "x"}}
+        config = {
+            "vshn-us-ai": {"baseURL": "https://api.example.com", "apiKey": "{env:VSHN_US_AI_API_KEY}"}
+        }
+        assert self.call(
+            cache, ["vshn-us-ai/m"], {"vshn-us-ai": ["m"]}, config, {"VSHN_US_AI_API_KEY": "k"}
+        ) == ["vshn-us-ai/m"]
 
 
 class TestResolveCacheIssue:
@@ -991,22 +1135,12 @@ class TestModelsEndpointFor:
 
 
 class TestLoadProviderBaseUrls:
-    def test_returns_base_urls(self, monkeypatch):
-        config = {
-            "provider": {
-                "opencode-go-openai": {"options": {"baseURL": "https://opencode.ai/zen/go/v1"}},
-                "opencode-go-anthropic": {"options": {"baseURL": "https://opencode.ai/zen/go/v1/messages"}},
-                "no-base-url": {"options": {}},
-            }
-        }
-        def fake_run(*args, **kwargs):
-            kwargs["stdout"].write(json.dumps(config))
-            return types.SimpleNamespace(stdout="")
-
-        monkeypatch.setattr(model_availability.subprocess, "run", fake_run)
+    def test_returns_base_urls(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(model_availability.subprocess, "run", stub_run(tmp_path, CONFIG))
         assert model_availability.load_provider_base_urls() == {
             "opencode-go-openai": "https://opencode.ai/zen/go/v1",
             "opencode-go-anthropic": "https://opencode.ai/zen/go/v1/messages",
+            "openrouter": "https://openrouter.ai/api/v1",
         }
 
     def test_returns_empty_on_failure(self, monkeypatch):
@@ -1015,6 +1149,161 @@ class TestLoadProviderBaseUrls:
 
         monkeypatch.setattr(model_availability.subprocess, "run", fail)
         assert model_availability.load_provider_base_urls() == {}
+
+
+class TestLoadProviderConfig:
+    def document(self, tmp_path, config_json: str) -> str:
+        path = tmp_path / "opencode.jsonc"
+        path.write_text(config_json)
+        return str(path)
+
+    def stub_debug(self, tmp_path, documents: list, monkeypatch):
+        """Stub subprocess.run so `debug config` writes the given document array."""
+        payload = json.dumps(documents)
+
+        def fake(args, *a, **kw):
+            if args == ["opencode", "debug", "config"]:
+                kw["stdout"].write(payload)
+                return types.SimpleNamespace(stdout="")
+            raise AssertionError(f"unexpected args: {args}")
+
+        monkeypatch.setattr(model_availability.subprocess, "run", fake)
+
+    def test_jsonc_file_with_comments_and_trailing_commas_parses_like_plain_json(
+        self, tmp_path, monkeypatch
+    ):
+        self.stub_debug(
+            tmp_path,
+            [
+                {"type": "document", "path": self.document(tmp_path, CONFIG_JSONC)},
+                {"type": "directory", "path": "/irrelevant"},
+            ],
+            monkeypatch,
+        )
+        assert model_availability.load_provider_config() == {
+            "opencode-go-openai": {"baseURL": "https://opencode.ai/zen/go/v1", "apiKey": None},
+            "opencode-go-anthropic": {
+                "baseURL": "https://opencode.ai/zen/go/v1/messages",
+                "apiKey": None,
+            },
+            "openrouter": {"baseURL": "https://openrouter.ai/api/v1", "apiKey": None},
+        }
+
+    def test_content_variable_overrides_file(self, tmp_path, monkeypatch):
+        self.stub_debug(
+            tmp_path,
+            [{"type": "document", "path": self.document(tmp_path, CONFIG_JSONC)}],
+            monkeypatch,
+        )
+        monkeypatch.setattr(
+            model_availability,
+            "opencode_env",
+            lambda: {
+                "OPENCODE_CONFIG_CONTENT": json.dumps(
+                    {
+                        "provider": {
+                            "openrouter": {
+                                "options": {
+                                    "baseURL": "https://override.example/v1",
+                                    "apiKey": "{env:KEY}",
+                                }
+                            }
+                        }
+                    }
+                )
+            },
+        )
+        config = model_availability.load_provider_config()
+        assert config["openrouter"] == {
+            "baseURL": "https://override.example/v1",
+            "apiKey": "{env:KEY}",
+        }
+        assert config["opencode-go-openai"]["baseURL"] == "https://opencode.ai/zen/go/v1"
+
+    def test_plugin_safe_content_does_not_shadow_file_providers(self, tmp_path, monkeypatch):
+        self.stub_debug(
+            tmp_path,
+            [
+                {"type": "document", "path": self.document(tmp_path, CONFIG_JSONC)},
+                {"type": "document", "info": {}},
+            ],
+            monkeypatch,
+        )
+        monkeypatch.setenv("OPENCODE_CONFIG_CONTENT", '{"plugin":[]}')
+        config = model_availability.load_provider_config()
+        assert config["openrouter"]["baseURL"] == "https://openrouter.ai/api/v1"
+
+    def test_env_templates_stay_unresolved(self, tmp_path, monkeypatch):
+        config_json = json.dumps(
+            {
+                "provider": {
+                    "vshn-us-ai": {
+                        "options": {
+                            "baseURL": "{env:VSHN_US_BASE_URL}",
+                            "apiKey": "{env:VSHN_US_AI_API_KEY}",
+                        }
+                    }
+                }
+            }
+        )
+        self.stub_debug(
+            tmp_path,
+            [{"type": "document", "path": self.document(tmp_path, config_json)}],
+            monkeypatch,
+        )
+        assert model_availability.load_provider_config() == {
+            "vshn-us-ai": {
+                "baseURL": "{env:VSHN_US_BASE_URL}",
+                "apiKey": "{env:VSHN_US_AI_API_KEY}",
+            }
+        }
+
+    def test_masked_last_resort_treats_api_key_as_absent(self, tmp_path, monkeypatch):
+        settings = {
+            "vshn-us-ai": {
+                "settings": {
+                    "baseURL": "https://us-ai.example/v1",
+                    "apiKey": "***",
+                }
+            }
+        }
+        self.stub_debug(
+            tmp_path,
+            [{"type": "document", "info": {"providers": settings}}],
+            monkeypatch,
+        )
+        assert model_availability.load_provider_config() == {
+            "vshn-us-ai": {"baseURL": "https://us-ai.example/v1", "apiKey": None}
+        }
+        assert not model_availability.provider_probeable(
+            "vshn-us-ai/subscription.glm-5.2", model_availability.load_provider_config(), {}
+        )
+
+    def test_non_array_output_returns_empty(self, tmp_path, monkeypatch):
+        payload = json.dumps({"provider": {}})
+
+        def fake(args, *a, **kw):
+            kw["stdout"].write(payload)
+            return types.SimpleNamespace(stdout="")
+
+        monkeypatch.setattr(model_availability.subprocess, "run", fake)
+        monkeypatch.delenv("OPENCODE_CONFIG_CONTENT", raising=False)
+        assert model_availability.load_provider_config() == {}
+
+    def test_unreadable_file_falls_back_to_document_settings(self, tmp_path, monkeypatch):
+        missing = str(tmp_path / "missing.jsonc")
+        self.stub_debug(
+            tmp_path,
+            [
+                {"type": "document", "path": missing},
+                {"type": "document", "info": {"providers": {"cortecs2": {
+                    "settings": {"baseURL": "https://api.cortecs.ai/v1", "apiKey": "***"}
+                }}}},
+            ],
+            monkeypatch,
+        )
+        config = model_availability.load_provider_config()
+        assert config == {"cortecs2": {"baseURL": "https://api.cortecs.ai/v1", "apiKey": None}}
 
 
 class TestProbeModelLogging:
@@ -1032,7 +1321,6 @@ class TestProbeModelLogging:
 
         monkeypatch.setattr(model_availability.subprocess, "run", fake_run)
         assert model_availability.probe_model("opencode/a-free", str(tmp_path))
-        assert captured["env"]["OPENCODE_DISABLE_DEFAULT_PLUGINS"] == "true"
         assert captured["env"]["OPENCODE_CONFIG_CONTENT"] == '{"plugin":[]}'
 
     def test_writes_probe_log_with_stdout_and_stderr(self, tmp_path, monkeypatch):
@@ -1084,13 +1372,12 @@ class TestDiscoverModelsLogging:
             def read(self):
                 return b'{"data": []}'
 
+        stub = stub_run(tmp_path, CONFIG)
+
         def fake_run_logging(args, *a, **kw):
             if args == ["opencode", "models"]:
                 return types.SimpleNamespace(stdout=FakeResult.stdout, stderr=FakeResult.stderr)
-            if args == ["opencode", "debug", "config"]:
-                kw["stdout"].write(json.dumps(CONFIG))
-                return types.SimpleNamespace(stdout="")
-            raise AssertionError(f"unexpected args: {args}")
+            return stub(args, *a, **kw)
 
         monkeypatch.setattr(model_availability.subprocess, "run", fake_run_logging)
         monkeypatch.setattr(
@@ -1243,17 +1530,32 @@ class TestModelAvailabilityAction:
         assert "auth.json" not in action
         assert "python3" in action
 
-    def test_standalone_opencode_workflow_exports_plugin_safe_environment(self):
+    def test_standalone_opencode_workflow_keeps_the_openai_catalog_available(self):
+        # The validate step talks to the openai (ChatGPT OAuth) provider, whose
+        # model catalog comes from opencode's default plugins. Disabling them
+        # there makes every probe fail with "Provider not found: openai".
         workflow = (Path(__file__).parents[3] / ".github/workflows/refresh-chatgpt-auth.yml").read_text()
-        validation = workflow[workflow.index("- name: Validate refreshed token with opencode") :]
-        assert "OPENCODE_DISABLE_DEFAULT_PLUGINS: true" in validation
+        validation = workflow[
+            workflow.index("- name: Validate refreshed token with opencode") : workflow.index(
+                "- name: Set secret (refreshed token)"
+            )
+        ]
+        assert "OPENCODE_DISABLE_DEFAULT_PLUGINS" not in validation
         assert "OPENCODE_CONFIG_CONTENT: '{\"plugin\":[]}'" in validation
 
 
-class TestMainProbeSummary:
     def test_uses_fresh_cache_when_cli_discovery_is_unavailable(self, monkeypatch):
         checked = datetime.now(timezone.utc).isoformat()
-        cache = {"opencode/a-free": {"ok": True, "checked": checked}}
+        cache = {
+            "opencode/a-free": {"ok": True, "checked": checked},
+            "vshn-us-ai/subscription.glm-5.3-flash": {"ok": True, "checked": checked},
+        }
+        monkeypatch.setattr(model_availability, "load_provider_config", lambda: {
+            "vshn-us-ai": {
+                "baseURL": "https://api.example.com",
+                "apiKey": "{env:VSHN_US_AI_API_KEY}",
+            }
+        })
         monkeypatch.setattr(model_availability, "resolve_cache_issue", lambda: "49")
         monkeypatch.setattr(model_availability, "read_cache", lambda _: cache)
         monkeypatch.setattr(
@@ -1266,14 +1568,20 @@ class TestMainProbeSummary:
             ),
         )
         monkeypatch.setattr(model_availability, "probe_candidates", lambda *args: pytest.fail())
-        monkeypatch.setattr(model_availability, "write_cache", lambda *args: None)
+        written = []
+        monkeypatch.setattr(
+            model_availability, "write_cache", lambda *args: written.append(args)
+        )
         outputs = []
         monkeypatch.setattr(model_availability, "write_outputs", lambda *args: outputs.append(args))
 
         assert model_availability.main() == 0
         assert outputs[0][2] == ["opencode/a-free"]
+        assert "vshn-us-ai/subscription.glm-5.3-flash" not in outputs[0][1]
+        assert "vshn-us-ai/subscription.glm-5.3-flash" not in written[0][1]
 
     def test_prints_fresh_cache_summary_without_probing(self, monkeypatch, capsys):
+        monkeypatch.setattr(model_availability, "load_provider_config", lambda: {})
         monkeypatch.setattr(model_availability, "resolve_cache_issue", lambda: None)
         monkeypatch.setattr(
             model_availability, "discover_models", lambda: (["opencode/a-free"], {})
@@ -1293,6 +1601,7 @@ class TestMainProbeSummary:
         assert "probe results: 0 checked, 0 ok, 0 failed (1 candidates fresh)" in capsys.readouterr().out
 
     def test_does_not_invoke_probe_for_empty_pending(self, monkeypatch):
+        monkeypatch.setattr(model_availability, "load_provider_config", lambda: {})
         monkeypatch.setattr(model_availability, "resolve_cache_issue", lambda: None)
         monkeypatch.setattr(model_availability, "discover_models", lambda: ([], {}))
         monkeypatch.setattr(model_availability, "build_candidates", lambda *args: [])
@@ -1304,6 +1613,7 @@ class TestMainProbeSummary:
         assert calls == []
 
     def test_prints_checked_probe_summary(self, monkeypatch, capsys):
+        monkeypatch.setattr(model_availability, "load_provider_config", lambda: {})
         monkeypatch.setattr(model_availability, "resolve_cache_issue", lambda: None)
         monkeypatch.setattr(
             model_availability, "discover_models", lambda: (["opencode/a-free", "opencode/b-free"], {})
