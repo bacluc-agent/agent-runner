@@ -964,7 +964,11 @@ jobs:
           for probe in \
             "merge bacluc-agent/fix" \
             "merge 1 -R octocat/Hello-World -t --help" \
-            "create -R octocat/Hello-World -t --help -H x -B y"; do
+            "create -R octocat/Hello-World -t --help -H x -B y" \
+            "close 5 -c --help -R octocat/Hello-World" \
+            "edit 5 -m --help -R octocat/Hello-World" \
+            "lock 5 -r --help -R octocat/Hello-World" \
+            "create -R octocat/Hello-World -m --help -H x -B y"; do
             read -ra argv <<<"$probe"
             set +e
             out="$(run_gh pr "${argv[@]}" 2>&1)"

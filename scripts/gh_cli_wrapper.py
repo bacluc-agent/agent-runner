@@ -275,14 +275,7 @@ def has_help(args):
             return True
         if not arg.startswith("-"):
             continue
-        if arg.startswith("--"):
-            key, separator, _ = arg.partition("=")
-            takes_separate_value = not separator
-        elif len(arg) > 2:
-            key, takes_separate_value = arg[:2], False
-        else:
-            key, takes_separate_value = arg, True
-        if takes_separate_value and key in VALUE_OPTIONS:
+        if "=" not in arg:
             index += 1
     return False
 

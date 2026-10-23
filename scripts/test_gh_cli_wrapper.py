@@ -340,6 +340,12 @@ class CliWrapperTest(unittest.TestCase):
             ["pr", "merge", "bacluc-agent/fix"],
             ["pr", "merge", "5", "-R", "ecamp/ecamp3", "-t", "--help"],
             ["pr", "create", "-R", "ecamp/ecamp3", "-t", "--help", "-H", "x", "-B", "y"],
+            ["pr", "close", "5", "-c", "--help"],
+            ["pr", "close", "5", "-c", "--help", "-R", "ecamp/ecamp3"],
+            ["pr", "reopen", "5", "-c", "--help", "-R", "ecamp/ecamp3"],
+            ["pr", "edit", "5", "-m", "--help", "-R", "ecamp/ecamp3"],
+            ["pr", "lock", "5", "-r", "--help", "-R", "ecamp/ecamp3"],
+            ["pr", "create", "-R", "ecamp/ecamp3", "-m", "--help", "-H", "x", "-B", "y"],
         ):
             self.call(argv, False)
         for argv in (
