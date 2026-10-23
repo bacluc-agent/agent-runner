@@ -140,7 +140,7 @@ def validate_pr(args):
     if args[0] == "revert":
         validate_revert(prefix, args)
         return None
-    if "--help" in prefix + args[1:]:
+    if has_help(prefix + args[1:]):
         return None
     if args[0] not in {"create", "new"}:
         validate_mutation("pr", [args[0], *prefix, *args[1:]])
@@ -256,11 +256,35 @@ def selectors_of(args, command, subcommand):
             positional.append(arg)
     selectors = list(explicit)
     for value in positional:
-        if re.fullmatch(r"[A-Za-z0-9-]+/[A-Za-z0-9_.-]+", value) or re.match(
+        if command == "pr":
+            if re.fullmatch(r"https?://github\.com/[A-Za-z0-9-]+/[A-Za-z0-9_.-]+/pull/[0-9]+/?", value, flags=re.IGNORECASE):
+                selectors.append(value)
+        elif re.fullmatch(r"[A-Za-z0-9-]+/[A-Za-z0-9_.-]+", value) or re.match(
             r"^https?://github\.com/[^/]+/[^/?#]+", value, flags=re.IGNORECASE
         ):
             selectors.append(value)
     return selectors
+
+
+def has_help(args):
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        index += 1
+        if arg in {"-h", "--help"}:
+            return True
+        if not arg.startswith("-"):
+            continue
+        if arg.startswith("--"):
+            key, separator, _ = arg.partition("=")
+            takes_separate_value = not separator
+        elif len(arg) > 2:
+            key, takes_separate_value = arg[:2], False
+        else:
+            key, takes_separate_value = arg, True
+        if takes_separate_value and key in VALUE_OPTIONS:
+            index += 1
+    return False
 
 
 def validate_mutation(command, args):
