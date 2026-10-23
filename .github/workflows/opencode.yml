@@ -969,6 +969,24 @@ jobs:
           grep -q 'gh cli wrapper:' <<<"$out" || { printf 'GH_REPO outsider mutation was not denied by the wrapper:\n%s\n' "$out" >&2; exit 1; }
           printf '%s\n' 'GH_REPO outsider mutation denied by the wrapper inside nono'
 
+          for probe in \
+            "comment 999999 -R bacluc-agent/agent-runner --body ecamp/ecamp3" \
+            "edit 999999 -R bacluc-agent/agent-runner --body ecamp/ecamp3" \
+            "merge 999999 -R bacluc-agent/agent-runner --merge --subject ecamp/ecamp3" \
+            "comment 999999 -R bacluc-agent/agent-runner --body=ecamp/ecamp3"; do
+            read -ra argv <<<"$probe"
+            set +e
+            out="$(run_gh pr "${argv[@]}" 2>&1)"
+            status=$?
+            set -e
+            [[ $status -ne 0 ]] || { printf 'owned PR mutation unexpectedly succeeded: %s\n' "$probe" >&2; exit 1; }
+            [[ "$out" != *"gh cli wrapper:"* ]] || {
+              printf 'wrapper denied a legitimate owned PR mutation: %s\n%s\n' "$probe" "$out" >&2
+              exit 1
+            }
+            printf 'Owned PR mutation with repository-like option value was forwarded: %s\n' "$probe"
+          done
+
           label="sandbox-probe-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           cleanup() { run_gh api "repos/bacluc-agent/agent-runner/labels/$label" -X DELETE >/dev/null 2>&1 || true; }
           trap cleanup EXIT

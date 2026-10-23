@@ -207,7 +207,34 @@ def repo_create_owners(args):
     return owners
 
 
-def selectors_of(args):
+VALUE_OPTIONS = {
+    "-A", "-B", "-F", "-H", "-T", "-b", "-j", "-n", "-o", "-q", "-t",
+    "--add-assignee", "--add-blocked-by", "--add-blocking", "--add-label", "--add-project",
+    "--add-reviewer", "--add-sub-issue", "--add-topic", "--app", "--assignee", "--attach",
+    "--author-email", "--base", "--blocked-by", "--blocking", "--body", "--body-file",
+    "--branch", "--branch-repo", "--color", "--comment", "--data-type", "--date",
+    "--default-branch", "--description", "--discussion-category", "--duplicate-of", "--env",
+    "--env-file", "--field", "--field-id", "--fork-name", "--format", "--gitignore", "--homepage",
+    "--id", "--iteration-id", "--job", "--jq", "--label", "--license", "--match-head-commit",
+    "--milestone", "--name", "--notes", "--notes-file", "--notes-start-tag", "--number", "--org",
+    "--owner", "--parent", "--project", "--project-id", "--raw-field", "--readme", "--reason",
+    "--recover", "--ref", "--remote", "--remote-name", "--remove-assignee", "--remove-blocked-by",
+    "--remove-blocking", "--remove-label", "--remove-project", "--remove-reviewer",
+    "--remove-sub-issue", "--remove-topic", "--repos", "--single-select-option-id",
+    "--single-select-options", "--source", "--source-owner", "--squash-merge-commit-message",
+    "--subject", "--tag", "--target", "--target-owner", "--team", "--template", "--text",
+    "--title", "--type", "--url", "--visibility", "--worktree",
+}
+
+SWITCH_OPTIONS = {
+    ("pr", "review"): {"--comment"},
+    ("repo", "fork"): {"--remote"},
+    ("repo", "edit"): {"--template"},
+}
+
+
+def selectors_of(args, command, subcommand):
+    switches = SWITCH_OPTIONS.get((command, subcommand), set())
     explicit, positional = [], []
     index = 0
     while index < len(args):
@@ -222,7 +249,9 @@ def selectors_of(args):
         elif arg.startswith("-R") and len(arg) > 2:
             explicit.append(arg[2:].removeprefix("="))
         elif arg.startswith("-"):
-            continue
+            key, separator, _ = arg.partition("=")
+            if not separator and key in VALUE_OPTIONS and key not in switches:
+                index += 1
         else:
             positional.append(arg)
     selectors = list(explicit)
@@ -272,7 +301,7 @@ def validate_mutation(command, args):
         for owner in repo_create_owners(args):
             owned_org(owner)
         return
-    selectors = selectors_of(args)
+    selectors = selectors_of(args, command, subcommand)
     if command in {"issue", "workflow", "pr"}:
         if len(selectors) != 1:
             deny(f"{command} mutations require exactly one explicit owned -R/--repo or URL selector")

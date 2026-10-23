@@ -334,12 +334,19 @@ class CliWrapperTest(unittest.TestCase):
             ["pr", "lock", "5", "-R", "ecamp/ecamp3"],
             ["pr", "merge", "5"],
             ["pr", "merge", "https://github.com/ecamp/ecamp3/pull/5"],
+            ["pr", "merge", "5", "--repo=ecamp/ecamp3"],
+            ["pr", "merge", "5", "-R", "BacLuc/r", "-R", "ecamp/ecamp3"],
+            ["pr", "merge", "https://github.com/ecamp/ecamp3/pull/5", "-R", "BacLuc/r"],
         ):
             self.call(argv, False)
         for argv in (
             ["pr", "merge", "5", "-R", "BacLuc/r"],
             ["pr", "close", "5", "-R", "bacluc-agent-org/r"],
             ["pr", "comment", "5", "-R", "bacluc-agent/r", "--body", "x"],
+            ["pr", "comment", "5", "-R", "BacLuc/r", "--body", "ecamp/ecamp3"],
+            ["pr", "edit", "5", "-R", "BacLuc/r", "--body", "ecamp/ecamp3"],
+            ["pr", "merge", "5", "-R", "BacLuc/r", "--subject", "ecamp/ecamp3"],
+            ["pr", "comment", "5", "-R", "BacLuc/r", "--body=ecamp/ecamp3"],
             ["pr", "merge", "--help"],
             ["pr", "view", "10800", "-R", "ecamp/ecamp3"],
             ["pr", "list", "-R", "ecamp/ecamp3"],
