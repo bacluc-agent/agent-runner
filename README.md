@@ -33,7 +33,12 @@ anything.
    `agent-todo`. It does not need a special format.
 2. **The issue is refined** (hourly, at minute 7). The _issue-refiner_ agent
    rewrites the issue body into two clear sections — `## Goal` and
-   `## How to implement` — and labels it `ready-for-implementation`.
+   `## How to implement` — and labels it `agent-refined`. Human comments are
+   folded into the body when an issue is selected for refinement, except bot
+   and agent-progress comments. A human adds `ready-for-implementation` once
+   the issue is ready to implement. To refine an already-refined issue again
+   after new feedback, manually remove its `agent-refined` label; the issue will
+   be refined again on the next scheduled run.
 3. **An issue is selected** (hourly, at minute 24). The _issue-selector_
    agent picks one ready issue, claims it with `agent-running` for the run, and
    writes the implementation prompt for the next step. The claim is removed
@@ -55,7 +60,7 @@ anything.
 
 ```text
 idea (issue in agent-todo)
-  → refine (hourly :07)
+  → refine (hourly :07; manually remove `agent-refined` to refine again after feedback)
   → select (hourly :24)
   → implement (coordinator agent)
   → pull request (opened by the agent, when code changed)
@@ -67,15 +72,15 @@ idea (issue in agent-todo)
 
 ### Workflows (the schedule)
 
-| Workflow                       | When it runs                                | What it does                                                                                                                                                                                            |
-| ------------------------------ | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ci.yml`                       | every push to `main` and every pull request | Quality gate: runs the completion check (formatting, workflow lint, tests). Nothing merges if this fails.                                                                                               |
-| `refine-issues.yml`            | hourly at minute 7                          | Rewrites vague issues into `## Goal` + `## How to implement` and labels them `ready-for-implementation`.                                                                                                |
-| `hourly-issue.yml`             | hourly at minute 24                         | Picks one ready issue, claims it with `agent-running` for the run, and starts the implementation.                                                                                                       |
-| `opencode.yml`                 | called by the other workflows               | The core runner: checks model availability, selects a model, runs the coordinator agent, pushes the work, keeps one structured progress comment on the issue, and only short replies to human comments. |
-| `review-fixes.yml`             | every 4 hours at minute 32                  | Finds open pull requests with review comments and re-dispatches the agent to apply them.                                                                                                                |
-| `refresh-chatgpt-auth.yml`     | 1st and 15th of each month                  | Keeps the OpenAI login working by refreshing the OAuth token (browser login as fallback).                                                                                                               |
-| `renew-interaction-limits.yml` | 1st of each month                           | Renews the repository interaction limit so collaborators can keep working.                                                                                                                              |
+| Workflow                       | When it runs                                | What it does                                                                                                                                                                                                                                |
+| ------------------------------ | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ci.yml`                       | every push to `main` and every pull request | Quality gate: runs the completion check (formatting, workflow lint, tests). Nothing merges if this fails.                                                                                                                                   |
+| `refine-issues.yml`            | hourly at minute 7                          | Refines issues, labels `agent-refined`, and folds human comments (not bots or progress); a human adds `ready-for-implementation`. Manually removing `agent-refined` makes an issue eligible for refinement again on the next scheduled run. |
+| `hourly-issue.yml`             | hourly at minute 24                         | Picks one ready issue, claims it with `agent-running` for the run, and starts the implementation.                                                                                                                                           |
+| `opencode.yml`                 | called by the other workflows               | The core runner: checks model availability, selects a model, runs the coordinator agent, pushes the work, keeps one structured progress comment on the issue, and only short replies to human comments.                                     |
+| `review-fixes.yml`             | every 4 hours at minute 32                  | Finds open pull requests with review comments and re-dispatches the agent to apply them.                                                                                                                                                    |
+| `refresh-chatgpt-auth.yml`     | 1st and 15th of each month                  | Keeps the OpenAI login working by refreshing the OAuth token (browser login as fallback).                                                                                                                                                   |
+| `renew-interaction-limits.yml` | 1st of each month                           | Renews the repository interaction limit so collaborators can keep working.                                                                                                                                                                  |
 
 ### Actions (reusable building blocks)
 

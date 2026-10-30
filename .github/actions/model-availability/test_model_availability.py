@@ -1375,6 +1375,18 @@ class TestRefineIssuesNoCandidates:
         end = next(i for i in range(start + 1, len(lines)) if lines[i].strip() == "fi")
         return "\n".join(lines[start : end + 1])
 
+    @classmethod
+    def _comment_fetch_failure_block(cls):
+        lines = cls.WORKFLOW.read_text().splitlines()
+        start = next(
+            i
+            for i, line in enumerate(lines)
+            if line.strip()
+            == 'if [[ ! -s "$candidates" ]] && (( comments_fetch_failed > 0 )); then'
+        )
+        end = next(i for i in range(start + 1, len(lines)) if lines[i].strip() == "fi")
+        return "\n".join(lines[start : end + 1])
+
     def test_no_candidates_exits_zero_before_the_guard(self, tmp_path):
         search_json = tmp_path / "candidates.json"
         search_json.write_text("[]")
@@ -1383,6 +1395,7 @@ class TestRefineIssuesNoCandidates:
         script = (
             f"search_json={str(search_json)!r}\n"
             f"candidates={str(candidates)!r}\n"
+            "comments_fetch_failed=0\n"
             "jq -r '.[].number | tostring' \"$search_json\" > \"$candidates\"\n"
             f"{block}\n"
             # canary: the block's own `exit 0` must stop the script before the guard
@@ -1402,6 +1415,161 @@ class TestRefineIssuesNoCandidates:
         assert content.index("No unrefined open issues; nothing to do.") < content.index(
             "(( refined > 0 )) || exit 1"
         )
+
+    def test_comment_fetch_failure_is_not_reported_as_no_work(self, tmp_path):
+        candidates = tmp_path / "candidate-numbers.txt"
+        candidates.write_text("")
+        block = self._comment_fetch_failure_block()
+        result = subprocess.run(
+            [
+                "bash",
+                "-Eeuo",
+                "pipefail",
+                "-c",
+                f'candidates={str(candidates)!r}\ncomments_fetch_failed=1\n{block}',
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 1
+        assert "comment fetching failed" in result.stderr.lower()
+        assert "No unrefined open issues; nothing to do." not in result.stdout
+
+
+class TestRefineIssuesComments:
+    WORKFLOW = Path(__file__).parents[3] / ".github/workflows/refine-issues.yml"
+
+    def test_refinement_marker_machinery_is_absent(self):
+        content = self.WORKFLOW.read_text()
+        assert "<!-- agent-refined-through:" not in content
+        assert "$refined_at" not in content
+        assert "This is a prior refinement" not in content
+
+    def test_automatic_refined_label_removal_is_absent(self):
+        content = self.WORKFLOW.read_text()
+        assert "--remove-label agent-refined" not in content
+
+    def test_comment_filter_contract(self):
+        content = self.WORKFLOW.read_text()
+        assert 'select(.user.type != "Bot")' in content
+        assert 'contains("<!-- agent-progress -->") | not' in content
+
+    def test_relabel_after_validation_is_preserved(self):
+        content = self.WORKFLOW.read_text()
+        validation = content.index("if (( validation_status == 0 )); then")
+        relabel = content.index('gh issue edit "$number" --add-label "agent-refined"')
+        assert validation < relabel
+
+    def test_removed_agent_refined_candidate_uses_fresh_body_and_filtered_feedback(
+        self, tmp_path
+    ):
+        content = self.WORKFLOW.read_text()
+        start = content.index('search_json="$RUNNER_TEMP/candidates.json"')
+        end = content.index('} > "$prompt"', start) + len('} > "$prompt"')
+        block = content[start:end]
+        candidates = tmp_path / "candidate-numbers.txt"
+        fake_gh = tmp_path / "gh"
+        fake_gh.write_text(
+            """#!/usr/bin/env python3
+import json, sys
+args = sys.argv[1:]
+if args[0] == "issue":
+    number = args[1]
+    field = args[args.index("--json") + 1]
+    if field != "title,body":
+        raise SystemExit(f"expected live title and body query, got {field}")
+    print(json.dumps({"title": f"Title of {number}", "body": "Current issue body"}))
+elif args[0] == "api":
+    if args[1].startswith("search/issues?q="):
+        if "-label:agent-refined" not in args[1]:
+            raise SystemExit("candidate search must include issues with agent-refined removed")
+        print(json.dumps([{"number": 11, "title": "Example", "body": "Stale search body", "labels": [], "updated_at": "2026-02-01T00:00:00Z"}]))
+    else:
+        print(json.dumps([[{"user": {"type": "User", "login": "human"}, "body": "please add tests", "created_at": "2026-02-02T00:00:00Z"}, {"user": {"type": "User", "login": "bacluc-agent"}, "body": "please fold my feedback", "created_at": "2026-02-03T00:00:00Z"}, {"user": {"type": "Bot", "login": "github-actions[bot]"}, "body": "bot comment", "created_at": "2026-02-04T00:00:00Z"}, {"user": {"type": "User", "login": "human"}, "body": "<!-- agent-progress -->\\nprogress", "created_at": "2026-02-05T00:00:00Z"}]]))
+"""
+        )
+        fake_gh.chmod(0o755)
+        script = (
+            f"ISSUE_REPOSITORY=example/issues\n"
+            f"RUNNER_TEMP={str(tmp_path)!r}\n"
+            f"PATH={str(tmp_path)!r}:$PATH\n"
+            "AVAILABLE_MODELS=test-model\n"
+            f"candidates={str(candidates)!r}\n"
+            f"{block}\n"
+            'done < "$candidates"\n'
+            'cat "$prompt"\n'
+        )
+        result = subprocess.run(
+            ["bash", "-Eeuo", "pipefail", "-c", script],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, result.stderr
+        assert candidates.read_text() == "11\n"
+        assert (
+            "Reviewer comments (feedback to fold into the Goal and steps; do not quote them wholesale):"
+            in result.stdout
+        )
+        assert "please add tests" in result.stdout
+        assert "Current issue body" in result.stdout
+        assert "Stale search body" not in result.stdout
+        assert "please fold my feedback" in result.stdout
+        assert "bot comment" not in result.stdout
+        assert "agent-progress" not in result.stdout
+
+    def test_label_group_is_closed(self):
+        content = self.WORKFLOW.read_text()
+        assert "::group::ensure agent labels" in content
+        assert "::endgroup::" in content
+
+    def test_folded_feedback_is_bounded_to_the_single_argv_limit(self, tmp_path):
+        content = self.WORKFLOW.read_text()
+        start = content.index('search_json="$RUNNER_TEMP/candidates.json"')
+        end = content.index('} > "$prompt"', start) + len('} > "$prompt"')
+        block = content[start:end]
+        candidates = tmp_path / "candidate-numbers.txt"
+        newest_marker = "NEWEST-FEEDBACK-MARKER please fold this note"
+        oldest_marker = "OLDEST-DROPPED-MARKER"
+        fake_gh = tmp_path / "gh"
+        fake_gh.write_text(
+            f"""#!/usr/bin/env python3
+import json, sys
+args = sys.argv[1:]
+if args[0] == "issue":
+    print(json.dumps({{"title": "Title of 11", "body": "Current issue body"}}))
+elif args[0] == "api":
+    if args[1].startswith("search/issues?q="):
+        print(json.dumps([{{"number": 11, "title": "Example", "labels": []}}]))
+    else:
+        comments = [
+            {{"user": {{"type": "User", "login": "human"}}, "body": "{oldest_marker} " + "A" * 700000, "created_at": "2026-02-02T00:00:00Z"}},
+            {{"user": {{"type": "User", "login": "human"}}, "body": "B" * 100000, "created_at": "2026-02-03T00:00:00Z"}},
+            {{"user": {{"type": "User", "login": "human"}}, "body": "{newest_marker}", "created_at": "2026-02-04T00:00:00Z"}},
+        ]
+        print(json.dumps([comments]))
+"""
+        )
+        fake_gh.chmod(0o755)
+        script = (
+            f"ISSUE_REPOSITORY=example/issues\n"
+            f"RUNNER_TEMP={str(tmp_path)!r}\n"
+            f"PATH={str(tmp_path)!r}:$PATH\n"
+            "AVAILABLE_MODELS=test-model\n"
+            f"candidates={str(candidates)!r}\n"
+            f"{block}\n"
+            'done < "$candidates"\n'
+        )
+        result = subprocess.run(
+            ["bash", "-Eeuo", "pipefail", "-c", script],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, result.stderr
+        prompt = tmp_path / "refine-prompt.txt"
+        assert prompt.stat().st_size < 131072
+        text = prompt.read_text()
+        assert newest_marker in text
+        assert oldest_marker not in text
 
 
 class TestWorkflowOpenRouterSelection:
