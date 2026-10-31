@@ -176,6 +176,7 @@ test("review rereads the PR and includes its current branch", async () => {
   const previousModels = process.env.AVAILABLE_MODELS;
   process.env.AVAILABLE_MODELS = "opencode/big-pickle";
   const prompts: string[] = [];
+  const queries: string[] = [];
   let searches = 0;
   const ctx = {
     repository: "owner/repo",
@@ -185,8 +186,9 @@ test("review rereads the PR and includes its current branch", async () => {
     agentCommand: "command",
     dryRun: false,
     github: {
-      searchPullRequests: async () =>
-        ++searches === 1
+      searchPullRequests: async (query: string) => {
+        queries.push(query);
+        return ++searches === 1
           ? [
               {
                 number: 3,
@@ -197,7 +199,8 @@ test("review rereads the PR and includes its current branch", async () => {
                 html_url: "url",
               },
             ]
-          : [],
+          : [];
+      },
       getPullRequest: async () => ({
         number: 3,
         title: "PR",
@@ -207,7 +210,7 @@ test("review rereads the PR and includes its current branch", async () => {
         html_url: "url",
         head: { ref: "feature" },
       }),
-      currentUser: async () => ({ login: "BacLuc" }),
+      currentUser: async () => ({ login: "token-user" }),
       listReviewComments: async () => [{ id: 1, body: "fix" }],
     },
     runAgent: async (prompt: string) => {
@@ -218,6 +221,8 @@ test("review rereads the PR and includes its current branch", async () => {
   try {
     await runReview(ctx);
     assert.match(prompts[0], /Branch: feature/);
+    assert.match(queries[0], /author:token-user/);
+    assert.match(queries[1], /author:app\/renovate/);
     assert.equal(searches, 4);
   } finally {
     if (previousModels === undefined) delete process.env.AVAILABLE_MODELS;
