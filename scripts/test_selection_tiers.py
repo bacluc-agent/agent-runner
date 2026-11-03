@@ -2,7 +2,7 @@ from pathlib import Path
 from subprocess import run
 from tempfile import TemporaryDirectory
 
-from selection_tiers import Candidate, is_standing, parse_branches, render_prompt, select_tier, tier
+from selection_tiers import Candidate, parse_branches, render_prompt
 
 WORKFLOW = Path(__file__).parents[1] / ".github/workflows/hourly-issue.yml"
 
@@ -19,7 +19,6 @@ def candidate(number=1, **values):
         last_human_comment_at=None,
         attempts=0,
         recent_attempts=0,
-        is_standing=False,
     )
     defaults.update(values)
     return Candidate(**defaults)
@@ -29,9 +28,8 @@ def test_branch_history_and_recent_repeat():
     branches = ["agent-run/330-37135909176", "issue-2-37135909177", "invalid"]
     assert parse_branches(branches) == [(2, 37135909177), (330, 37135909176)]
     assert not any(__import__("re").search(r"issue-[0-9]+", branch) for branch in branches[:1])
-    assert tier(candidate(330, attempts=1)) == 2
-    assert tier(candidate(9, attempts=3, recent_attempts=1)) == 3
-    assert tier(candidate(76, title="Standing research", attempts=14, recent_attempts=1, is_standing=True)) == 3
+    assert candidate(330, attempts=1).attempts == 1
+    assert candidate(9, attempts=3, recent_attempts=1).recent_attempts == 1
 
 
 def test_durable_attempt_label_counts_as_history_without_branch():
@@ -49,35 +47,37 @@ def test_durable_attempt_label_counts_as_history_without_branch():
         tail.write_text("Choose\n")
         result = run(["python3", "scripts/selection_tiers.py", "--candidates", str(candidates), "--branches", str(branches), "--tail-file", str(tail)], check=True, capture_output=True, text=True)
     assert "attempts for 42: 1" in result.stderr
-    assert "Candidate tiers: 0=0 1=0 2=1 3=0" in result.stderr
-    assert "[attempts: 1] [tier: 2]" in result.stdout
+    assert "[attempts: 1] [recent-attempts: 0]" in result.stdout
 
 
-def test_tiers_cover_feedback_history_and_finished_work():
-    assert tier(candidate(pr_state="open", pr_last_commit_at="2026-01-01T00:00:00Z", last_human_comment_at="2026-01-02T00:00:00Z")) == 0
-    assert tier(candidate(pr_state="open")) == 3
-    assert tier(candidate(pr_state="open", pr_last_commit_at="2026-01-02T00:00:00Z", last_human_comment_at="2026-01-01T00:00:00Z")) == 3
-    assert tier(candidate(pr_state="open", pr_last_commit_at="2026-01-02T00:00:00Z", last_human_comment_at="2026-01-02T00:00:00Z")) == 3
-    assert tier(candidate(pr_state="merged")) == 2
-    assert tier(candidate(pr_state="closed")) == 2
-    assert tier(candidate()) == 1
-    assert is_standing("Standing project")
-    assert is_standing("Some task", ["meta: standing"])
-
-
-def test_select_best_available_and_render_only_that_tier():
+def test_render_prompt_randomizes_all_candidates(monkeypatch):
     better, awaiting = candidate(2), candidate(3, pr_state="open")
-    assert select_tier([awaiting, better]) == 1
-    assert select_tier([awaiting]) == 3
     big = candidate(4)
     big.body = "x" * 3000
     big.labels = ["many", "labels"]
-    assert tier(big) == tier(candidate(5))
-    prompt = render_prompt([better, awaiting], 1, "Reply\nSELECTED_ISSUE: <number>")
-    assert "2: Issue" in prompt and "3: Issue" not in prompt
-    assert "[attempts: 0] [tier: 1]" in prompt
+    import random
+
+    monkeypatch.setattr(random, "shuffle", lambda items: items.reverse())
+    prompt = render_prompt([better, awaiting], "Reply\nSELECTED_ISSUE: <number>")
+    assert prompt.index("3: Issue") < prompt.index("2: Issue")
+    assert "[attempts: 0] [recent-attempts: 0]" in prompt
     assert "avoid" not in prompt.lower()
     assert prompt.rstrip().endswith("SELECTED_ISSUE: <number>")
+
+
+def test_workflow_fetches_all_search_pages_and_passes_all_tiers():
+    workflow = WORKFLOW.read_text()
+    assert 'gh api --paginate --slurp "search/issues?' in workflow
+    assert '> "$search_json.pages"' in workflow
+    assert 'jq \'[.[] | .items[]]\' "$search_json.pages" > "$search_json"' in workflow
+    assert "--jq" not in next(
+        line for line in workflow.splitlines() if "search/issues?" in line
+    )
+    assert "&per_page=100\"" in workflow
+    assert "sort:created-asc" not in workflow
+    tail = (Path(__file__).parents[1] / "scripts/issue-selection-tail.txt").read_text()
+    assert "includes all eligible issues" in tail
+    assert "do not favor new issues solely because they are unattempted" in tail
 
 
 def _enrichment_line():
@@ -128,3 +128,103 @@ def test_workflow_uses_latest_commit_and_created_at_when_pr_has_no_commits():
     assert '([.[][] | .commit.committer.date] | max) // $fallback' in content
     assert 'pr_last_commit_at:(' in content
     assert 'map(select(test("^[0-9]")))|max // null' in content
+
+
+def test_selection_tail_keeps_contract_and_research_budget():
+    tail = (Path(__file__).parents[1] / "scripts/issue-selection-tail.txt").read_text()
+    assert "End with the exact final line: SELECTED_ISSUE: <number>" in tail
+    assert "No text may follow that line." in tail
+    assert "read each candidate at most once" in tail
+    assert "stop investigating, even if undecided" in tail
+    assert "choosing the best-so-far candidate" in tail
+    assert 'must not be cut by this budget' in tail
+    assert 'note the doubt inside the implementation prompt' in tail
+
+
+def _pr_list_jq_filter():
+    for line in WORKFLOW.read_text().splitlines():
+        if "--jq" in line and ".headRefName" in line:
+            import re
+
+            m = re.search(r"--jq '([^']+)'", line)
+            assert m, line
+            return m.group(1)
+    raise AssertionError("pr list jq filter not found")
+
+
+def _pr_lookup_grep_line():
+    for line in WORKFLOW.read_text().splitlines():
+        if 'match="$(grep -m1 -E' in line:
+            return line.strip()
+    raise AssertionError("grep match line not found")
+
+
+def _match_for(prs, num, issue_repo="bacluc-agent/agent-todo"):
+    import json
+    import shlex
+
+    jq_filter = _pr_list_jq_filter()
+    with TemporaryDirectory() as d:
+        d = Path(d)
+        pr_json = d / "prs.json"
+        pr_json.write_text(json.dumps(prs))
+        jq = run(["jq", "-r", jq_filter], stdin=pr_json.open(), capture_output=True, text=True)
+        assert jq.returncode == 0, jq.stderr
+        lookup_dir = d / "pr-lookup"
+        lookup_dir.mkdir()
+        key = issue_repo.replace("/", "_")
+        (lookup_dir / f"{key}.lookup").write_text(jq.stdout)
+        grep_line = _pr_lookup_grep_line()
+        script = (
+            f"num={num}\n"
+            f"ISSUE_REPOSITORY={shlex.quote(issue_repo)}\n"
+            f"pr_lookup_dir={shlex.quote(str(lookup_dir))}\n"
+            f"key={shlex.quote(key)}\n"
+            f"{grep_line}\n"
+            "printf '%s\\n' \"$match\"\n"
+        )
+        result = run(["bash", "-Eeuo", "pipefail", "-c", script], capture_output=True, text=True)
+        assert result.returncode == 0, result.stderr
+        return result.stdout.strip()
+
+
+def _pr(number, body, title="Unrelated", head="feature/no-marker"):
+    return {
+        "number": number,
+        "createdAt": "2026-01-01T00:00:00Z",
+        "updatedAt": "2026-01-02T00:00:00Z",
+        "headRefName": head,
+        "state": "OPEN",
+        "title": title,
+        "body": body,
+    }
+
+
+def test_pr_body_reference_matches_head_ref_and_title_independent():
+    pr_marker = _pr(101, "Related to bacluc-agent/agent-todo#364")
+    assert _match_for([pr_marker], 364).split("|")[1] == "#101"
+
+
+def test_pr_body_url_reference_matches():
+    pr_url = _pr(105, "See https://github.com/bacluc-agent/agent-todo/issues/364")
+    assert _match_for([pr_url], 364).split("|")[1] == "#105"
+
+
+def test_pr_body_with_newlines_and_pipes_stays_single_line():
+    pr_pipe = _pr(102, "Notes:\nfoo|bar\nissue-364\nbaz")
+    match = _match_for([pr_pipe], 364)
+    assert match.split("|")[1] == "#102"
+    import json
+
+    with TemporaryDirectory() as d:
+        p = Path(d) / "prs.json"
+        p.write_text(json.dumps([pr_pipe]))
+        out = run(["jq", "-r", _pr_list_jq_filter()], stdin=p.open(), capture_output=True, text=True)
+        assert out.returncode == 0, out.stderr
+        assert out.stdout.count("\n") == 1
+
+
+def test_pr_body_reference_negative_cases():
+    assert _match_for([_pr(103, "Closes bacluc-agent/agent-todo#999")], 364) == ""
+    assert _match_for([_pr(104, "Fixes #364")], 364) == ""
+    assert _match_for([_pr(106, "See https://github.com/bacluc-agent/agent-todo/issues/3645")], 364) == ""
