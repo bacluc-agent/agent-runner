@@ -1,4 +1,4 @@
-import { tool } from "@opencode-ai/plugin";
+import { tool } from "@opencode/plugin";
 import { writeFileSync, appendFileSync } from "node:fs";
 
 export interface LoopMetrics {
