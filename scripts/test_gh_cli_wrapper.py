@@ -54,6 +54,13 @@ def verify_installed():
             assert result.returncode != 0, denied
             assert "gh cli wrapper:" in result.stderr, denied
             assert not log.exists(), denied
+        argv = ["pr", "create", "-R", "bacluc-agent-org/agent-runner", "--body-file", "-"]
+        result = subprocess.run(["bash", "-c", 'exec gh "$@"', "test", *argv],
+                                cwd=directory, env=env, input="body from stdin",
+                                capture_output=True, text=True)
+        assert result.returncode == 23, result.stderr
+        assert json.loads(result.stdout) == {"argv": argv, "stdin": "body from stdin"}
+        assert log.read_text().splitlines() == [json.dumps(argv)]
     print("Installed composite wrapper: forwarding and historical denial passed")
 
 
@@ -92,7 +99,7 @@ class CliWrapperTest(unittest.TestCase):
         self.call(["pr", "create", "-R", "ecamp/ecamp3", "--base", "devel", "--head",
                    "bacluc-agent:issue-221-move-doctrine-validate-to-required-ci"], False)
         for command in ("create", "new"):
-            for repo in ("BacLuc/r", "BaClUc-AgEnT/r", "github.com/BacLuc/r", "https://github.com/BacLuc/r"):
+            for repo in ("BacLuc/r", "BaClUc-AgEnT/r", "BaClUc-AgEnT-OrG/r", "github.com/BacLuc/r", "https://github.com/BacLuc/r"):
                 for flags in (["-R", repo], ["-R" + repo], ["-R=" + repo], ["--repo", repo], ["--repo=" + repo]):
                     self.call(["pr", command, *flags, "--title", "--repo=outsider/r", "--body", "-Rbad/r"])
             for flags in ([], ["-R", "outsider/r"], ["-R", "BacLuc-evil/r"],
@@ -102,6 +109,7 @@ class CliWrapperTest(unittest.TestCase):
                           ["-R", "BacLuc/r", "--unknown"], ["-R"], ["--", "-R", "BacLuc/r"]):
                 self.call(["pr", command, *flags], False)
         self.call(["pr", "-RBacLuc/r", "create", "--body=-Rbad/r"])
+        self.call(["pr", "create", "-R", "bacluc-agent-org/agent-runner"])
         self.call(["pr", "create", "-RBacLuc/r"], False, GH_HOST="evil.com")
 
     def test_api(self):
