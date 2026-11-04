@@ -24,6 +24,8 @@ def _provider_api_keys(monkeypatch):
     monkeypatch.setenv("OPENCODE_GO_API_KEY", "test-go-key")
     monkeypatch.setenv("OPENCODE_GO_2_API_KEY", "test-go-2-key")
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-or-key")
+    monkeypatch.delenv("AISIX_PROXY_URL", raising=False)
+    monkeypatch.delenv("AISIX_CALLER_KEY", raising=False)
 
 
 def fake_run(args, *a, **kw):
