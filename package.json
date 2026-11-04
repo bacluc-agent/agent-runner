@@ -1,0 +1,14 @@
+{
+  "name": "@bacluc-agent/agent-runner",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "test": "npm install --ignore-scripts --offline && node --experimental-strip-types --test packages/*/test/*.test.ts"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

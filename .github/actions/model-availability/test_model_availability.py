@@ -25,6 +25,8 @@ def _provider_api_keys(monkeypatch):
     monkeypatch.setenv("OPENCODE_GO_API_KEY", "test-go-key")
     monkeypatch.setenv("OPENCODE_GO_2_API_KEY", "test-go-2-key")
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-or-key")
+    monkeypatch.delenv("AISIX_PROXY_URL", raising=False)
+    monkeypatch.delenv("AISIX_CALLER_KEY", raising=False)
 
 
 def fake_run(args, *a, **kw):
@@ -1232,6 +1234,7 @@ class TestModelAvailabilityAction:
     def test_auth_materialized_by_setup_opencode_not_here(self):
         root = Path(__file__).parents[3]
         setup = (root / ".github/actions/setup-opencode/action.yml").read_text()
+        assert "SOURCE_REPOSITORY: https://github.com/bacluc/provision-machines.git" in setup
         assert "umask 077" in setup
         assert (
             "printf '%s' \"$OPENCODE_AUTH_CONTENT\" > ~/.local/share/opencode/auth.json"
