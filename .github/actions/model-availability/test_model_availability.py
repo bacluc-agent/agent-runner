@@ -37,61 +37,24 @@ def fake_run(args, *a, **kw):
 
 
 class TestDiscoverModels:
-    def test_retries_transient_cli_initialization_failure(self, monkeypatch):
-        calls = 0
+    def test_discovers_openai_models_from_opencode_catalog_without_oauth_api(self, monkeypatch):
+        def fake_run_with_openai(args, *a, **kw):
+            if args == ["opencode", "models"]:
+                return types.SimpleNamespace(stdout="openai/gpt-5.6-luna\n")
+            if args == ["opencode", "debug", "config"]:
+                kw["stdout"].write(json.dumps(CONFIG))
+                return types.SimpleNamespace(stdout="")
+            raise AssertionError(f"unexpected args: {args}")
 
-        def fail_once(args, *a, **kw):
-            nonlocal calls
-            calls += 1
-            if calls == 1:
-                raise subprocess.CalledProcessError(
-                    1, args, stderr="ServiceUnavailableError: Location plugins did not finish activating"
-                )
-            return fake_run(args, *a, **kw)
+        def unexpected_oauth_request(*args, **kwargs):
+            raise AssertionError("OpenAI models must come from the OpenCode catalog")
 
-        monkeypatch.setattr(model_availability.subprocess, "run", fail_once)
-        monkeypatch.setattr(model_availability.time, "sleep", lambda _: None)
-        assert model_availability.discover_models()[0] == ["opencode/a-free"]
-        assert calls == 3
+        monkeypatch.setattr(model_availability.urllib.request, "urlopen", unexpected_oauth_request)
+        monkeypatch.setattr(model_availability.subprocess, "run", fake_run_with_openai)
 
-    def test_discovery_uses_plugin_safe_environment_and_keeps_nonzero_error(self, monkeypatch):
-        captured = {}
+        models, _ = model_availability.discover_models()
 
-        def fail(args, *a, **kw):
-            captured["args"] = args
-            captured["env"] = kw["env"]
-            raise subprocess.CalledProcessError(
-                17, args, output="", stderr="Location plugins did not finish activating"
-            )
-
-        monkeypatch.setattr(model_availability.subprocess, "run", fail)
-        with pytest.raises(subprocess.CalledProcessError) as error:
-            model_availability.discover_models()
-
-        assert error.value.returncode == 17
-        assert captured["args"] == ["opencode", "models"]
-        assert captured["env"]["OPENCODE_DISABLE_DEFAULT_PLUGINS"] == "true"
-        assert captured["env"]["OPENCODE_CONFIG_CONTENT"] == '{"plugin":[]}'
-
-    def test_debug_config_uses_plugin_safe_environment(self, monkeypatch):
-        captured = {}
-
-        def fake_config(args, *a, **kw):
-            captured["env"] = kw["env"]
-            kw["stdout"].write(json.dumps(CONFIG))
-            return types.SimpleNamespace(stdout="")
-
-        monkeypatch.setattr(model_availability.subprocess, "run", fake_config)
-        assert model_availability.load_provider_config() == {
-            "opencode-go-openai": {"baseURL": "https://opencode.ai/zen/go/v1", "apiKey": None},
-            "opencode-go-anthropic": {
-                "baseURL": "https://opencode.ai/zen/go/v1/messages",
-                "apiKey": None,
-            },
-            "openrouter": {"baseURL": "https://openrouter.ai/api/v1", "apiKey": None},
-        }
-        assert captured["env"]["OPENCODE_DISABLE_DEFAULT_PLUGINS"] == "true"
-        assert captured["env"]["OPENCODE_CONFIG_CONTENT"] == '{"plugin":[]}'
+        assert models == ["openai/gpt-5.6-luna"]
 
     def test_discovers_models_per_provider(self, monkeypatch):
         captured = {}
@@ -1018,23 +981,6 @@ class TestLoadProviderBaseUrls:
 
 
 class TestProbeModelLogging:
-    def test_probe_uses_plugin_safe_environment(self, tmp_path, monkeypatch):
-        captured = {}
-
-        class FakeResult:
-            returncode = 0
-            stdout = "OK\n"
-            stderr = ""
-
-        def fake_run(*args, **kwargs):
-            captured["env"] = kwargs["env"]
-            return FakeResult()
-
-        monkeypatch.setattr(model_availability.subprocess, "run", fake_run)
-        assert model_availability.probe_model("opencode/a-free", str(tmp_path))
-        assert captured["env"]["OPENCODE_DISABLE_DEFAULT_PLUGINS"] == "true"
-        assert captured["env"]["OPENCODE_CONFIG_CONTENT"] == '{"plugin":[]}'
-
     def test_writes_probe_log_with_stdout_and_stderr(self, tmp_path, monkeypatch):
         class FakeResult:
             returncode = 0
@@ -1243,36 +1189,8 @@ class TestModelAvailabilityAction:
         assert "auth.json" not in action
         assert "python3" in action
 
-    def test_standalone_opencode_workflow_exports_plugin_safe_environment(self):
-        workflow = (Path(__file__).parents[3] / ".github/workflows/refresh-chatgpt-auth.yml").read_text()
-        validation = workflow[workflow.index("- name: Validate refreshed token with opencode") :]
-        assert "OPENCODE_DISABLE_DEFAULT_PLUGINS: true" in validation
-        assert "OPENCODE_CONFIG_CONTENT: '{\"plugin\":[]}'" in validation
-
 
 class TestMainProbeSummary:
-    def test_uses_fresh_cache_when_cli_discovery_is_unavailable(self, monkeypatch):
-        checked = datetime.now(timezone.utc).isoformat()
-        cache = {"opencode/a-free": {"ok": True, "checked": checked}}
-        monkeypatch.setattr(model_availability, "resolve_cache_issue", lambda: "49")
-        monkeypatch.setattr(model_availability, "read_cache", lambda _: cache)
-        monkeypatch.setattr(
-            model_availability,
-            "discover_models",
-            lambda: (_ for _ in ()).throw(
-                subprocess.CalledProcessError(
-                    1, ["opencode", "models"], stderr="Location plugins did not finish activating"
-                )
-            ),
-        )
-        monkeypatch.setattr(model_availability, "probe_candidates", lambda *args: pytest.fail())
-        monkeypatch.setattr(model_availability, "write_cache", lambda *args: None)
-        outputs = []
-        monkeypatch.setattr(model_availability, "write_outputs", lambda *args: outputs.append(args))
-
-        assert model_availability.main() == 0
-        assert outputs[0][2] == ["opencode/a-free"]
-
     def test_prints_fresh_cache_summary_without_probing(self, monkeypatch, capsys):
         monkeypatch.setattr(model_availability, "resolve_cache_issue", lambda: None)
         monkeypatch.setattr(

@@ -14,6 +14,7 @@ Subcommands (agent-usable primitives):
           the OAuth callback. Prints the auth JSON and exits 0 on success.
   status  Report the current login step (email/password/2fa/consent/...).
   step    Perform one automation step (fill email/password/2FA/consent).
+  stop    Close the active browser session and clear its state.
 
 Fallback protocol (when automation is stuck):
   start & -> status -> step -> repeat
@@ -21,7 +22,7 @@ Fallback protocol (when automation is stuck):
            -> snapshot/fill/click -> detach -> step
   or steer manually until the callback fires -> start exchanges and exits 0.
   Sessions are sequential: only one start may run at a time.
-  Abort = kill the start process.
+  Abort = scripts/chatgpt-login.py stop.
 
 Exit codes: 0 success, 1 setup/step failure, 2 blocked (captcha/device check).
 """
@@ -31,7 +32,9 @@ import hashlib
 import http.server
 import json
 import os
+import re
 import secrets
+import signal
 import socket
 import sys
 import threading
@@ -65,6 +68,7 @@ STEP_BY_PATH = {
     "/choose-an-account": "choose-account",
     "/sign-in-with-chatgpt": "consent",
 }
+_STOP_REQUESTED = False
 
 OTP_SELECTORS = [
     'input[name="otp"]',
@@ -98,24 +102,33 @@ def _launch_browser(p, headless: bool, cdp_port: int | None = None):
 
 def _log_step(page, name: str) -> None:
     try:
-        print(f"[chatgpt-login] step={name} url={page.url} title={page.title()}", file=sys.stderr)
+        url = urllib.parse.urlsplit(page.url)
+        print(f"[chatgpt-login] step={name} url={url.scheme}://{url.netloc}{url.path} title={_redact_debug_text(page.title())}", file=sys.stderr)
     except Exception:
         print(f"[chatgpt-login] step={name} url=<unknown> title=<unknown>", file=sys.stderr)
 
 
 def _dump_page_state(page) -> None:
     try:
-        print(f"[chatgpt-login] failure url={page.url} title={page.title()}", file=sys.stderr)
+        url = urllib.parse.urlsplit(page.url)
+        print(f"[chatgpt-login] failure url={url.scheme}://{url.netloc}{url.path} title={_redact_debug_text(page.title())}", file=sys.stderr)
     except Exception:
         print("[chatgpt-login] failure url=<unknown> title=<unknown>", file=sys.stderr)
     try:
         text = " ".join(page.inner_text("body").split())
-        print(f"[chatgpt-login] body_text={text[:600]!r}", file=sys.stderr)
+        print(f"[chatgpt-login] body_text={_redact_debug_text(text)[:600]!r}", file=sys.stderr)
     except Exception:
         print("[chatgpt-login] body_text=<unavailable>", file=sys.stderr)
 
 
 def _has_blocking_screen(page) -> str | None:
+    # The OpenAI SPA error page ("Oops, an error occurred!") is terminal for
+    # automation: report it through the same blocking channel as the bot
+    # challenges, so status/step and the workflow loop handle it the same way.
+    # ponytail: terminal, no reload-recovery; add a page.reload() retry at the
+    # email step if the error page turns out to be transient in practice.
+    if _is_error_page(page):
+        return "openai error page detected"
     checks = [
         ("Verify you are human", 'text="Verify you are human"'),
         ("captcha iframe", 'iframe[src*="captcha"]'),
@@ -126,8 +139,17 @@ def _has_blocking_screen(page) -> str | None:
         ("device verification", 'text="device verification"'),
     ]
     content = page.content().lower()
-    if "captcha" in content or "human verification" in content or "device verification" in content:
-        return "captcha/device verification detected"
+    for marker in ("captcha", "human verification", "device verification"):
+        if marker in content:
+            return "captcha/device verification detected"
+    for marker in (
+        "just a moment",
+        "performing security verification",
+        "verifies you are not a bot",
+        "ray id",
+    ):
+        if marker in content:
+            return f"cloudflare challenge detected: {marker}"
     for label, sel in checks:
         try:
             if page.locator(sel).first.is_visible(timeout=1000):
@@ -137,9 +159,11 @@ def _has_blocking_screen(page) -> str | None:
     return None
 
 
-def _wait_for_blocking_clear(page, timeout_s=60) -> str | None:
+def _wait_for_blocking_clear(page, timeout_s=90) -> str | None:
     deadline = time.monotonic() + timeout_s
     while True:
+        if _STOP_REQUESTED:
+            return "stopped"
         try:
             blocking = _has_blocking_screen(page)
         except Exception:
@@ -163,12 +187,16 @@ def _click_first_visible(page, selectors: list[str]) -> bool:
     return False
 
 
-def _fill_first_visible(page, selectors: list[str], value: str) -> bool:
+def _fill_first_visible(page, selectors: list[str], value: str, delay_ms: int | None = None) -> bool:
     for sel in selectors:
         try:
             loc = page.locator(sel).first
             if loc.is_visible(timeout=2000):
-                loc.fill(value)
+                if delay_ms is None:
+                    loc.fill(value)
+                else:
+                    loc.fill("")
+                    loc.press_sequentially(value, delay=delay_ms)
                 return True
         except Exception:
             continue
@@ -192,6 +220,95 @@ def _page_path(page) -> str:
         return urllib.parse.urlparse(page.url).path
     except Exception:
         return ""
+
+
+def _step_for_path(path: str) -> str:
+    return STEP_BY_PATH.get(path) or next(
+        (step for route, step in STEP_BY_PATH.items() if path.startswith(f"{route}/")),
+        "",
+    )
+
+
+def _redact_debug_text(value: str) -> str:
+    for name in ("OPENAI_USERNAME", "OPENAI_PASSWORD", "OPENAI_2FA_KEY"):
+        secret = os.environ.get(name)
+        if secret:
+            value = value.replace(secret, "[redacted]")
+    value = re.sub(r"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}", "[redacted email]", value, flags=re.I)
+    value = re.sub(r"\b\d{6}\b", "[redacted code]", value)
+    value = re.sub(r"\b(?:rt|sk)[.-][A-Z0-9._-]{8,}\b", "[redacted token]", value, flags=re.I)
+    value = re.sub(r"\beyJ[A-Z0-9_-]{10,}\.[A-Z0-9_-]{10,}(?:\.[A-Z0-9_-]+)?\b", "[redacted token]", value)
+    value = re.sub(r"(https?://[^\s?#]+)\?[^\s#]+", r"\1?[redacted]", value)
+    return value[:500]
+
+
+_SCREENSHOT_REDACTION = r"""() => {
+  for (const element of document.querySelectorAll('input, textarea, [contenteditable="true"]')) {
+    if ('value' in element) element.value = '';
+    element.textContent = '';
+  }
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  while (walker.nextNode()) {
+    walker.currentNode.textContent = walker.currentNode.textContent
+      .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, '[redacted email]')
+      .replace(/\b\d{6}\b/g, '[redacted code]')
+      .replace(/\b(?:rt|sk)[.-][A-Z0-9._-]{8,}\b/gi, '[redacted token]')
+      .replace(/\beyJ[A-Z0-9_-]{10,}\.[A-Z0-9_-]{10,}(?:\.[A-Z0-9_-]+)?\b/g, '[redacted token]');
+  }
+}"""
+
+
+def _watch_page_errors(page) -> list[str]:
+    errors = []
+
+    def add_error(message):
+        if len(errors) < 20:
+            errors.append(_redact_debug_text(str(message)))
+
+    try:
+        page.on("pageerror", add_error)
+        page.on("console", lambda message: add_error(message.text) if message.type == "error" else None)
+    except Exception:
+        pass
+    return errors
+
+
+def _capture_debug(page, stage: str, step: str, reason: str, errors=()) -> None:
+    directory = os.environ.get("CHATGPT_DEBUG_DIR")
+    if not directory:
+        return
+    debug_dir = Path(directory)
+    try:
+        debug_dir.mkdir(parents=True, exist_ok=True)
+        url = urllib.parse.urlsplit(getattr(page, "url", "")) if page else None
+        metadata = {
+            "stage": stage,
+            "step": step,
+            "url": _redact_debug_text(f"{url.scheme}://{url.netloc}{url.path}") if url else "",
+            "title": _redact_debug_text(page.title()) if page else "",
+            "reason": _redact_debug_text(reason),
+            "page_errors": list(errors)[-20:],
+        }
+        label = re.sub(r"[^a-zA-Z0-9_-]", "_", f"{stage}-{step}")[:80]
+        screenshot = debug_dir / f"{label}.png"
+        if screenshot.exists():
+            metadata["screenshot"] = screenshot.name
+        elif page:
+            try:
+                if len(page.inner_text("body")) > 1200:
+                    metadata["screenshot_skipped"] = "page text exceeds safe capture limit"
+                else:
+                    page.evaluate(_SCREENSHOT_REDACTION)
+                    page.screenshot(path=str(screenshot))
+                    screenshot.chmod(0o600)
+                    metadata["screenshot"] = screenshot.name
+            except Exception as error:
+                metadata["screenshot_error"] = type(error).__name__
+        report = debug_dir / f"{label}.json"
+        report.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+        report.chmod(0o600)
+    except Exception:
+        pass
 
 
 def _find_auth_page(browser):
@@ -232,13 +349,42 @@ def _read_state() -> dict | None:
 def _write_state(data: dict) -> None:
     STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
     STATE_FILE.write_text(json.dumps(data), encoding="utf-8")
+    STATE_FILE.chmod(0o600)
+
+
+def _request_stop(signum, frame) -> None:
+    global _STOP_REQUESTED
+    _STOP_REQUESTED = True
+
+
+def cmd_stop() -> int:
+    state = _read_state()
+    pid = state.get("pid") if state else None
+    if not isinstance(pid, int) or pid <= 1 or pid == os.getpid():
+        STATE_FILE.unlink(missing_ok=True)
+        print("No active ChatGPT login session")
+        return 0
+    try:
+        os.kill(pid, 0)
+        expected = state.get("started_at", 0)
+        actual = int(Path(f"/proc/{pid}/stat").read_text().split()[21])
+        if expected != actual:
+            STATE_FILE.unlink(missing_ok=True)
+            print("Removed stale ChatGPT login state")
+            return 0
+        os.kill(pid, signal.SIGTERM)
+        print("Requested graceful stop of ChatGPT login session")
+    except (OSError, ValueError, IndexError):
+        STATE_FILE.unlink(missing_ok=True)
+        print("Removed stale ChatGPT login state")
+    return 0
 
 
 def _authorize_url(verifier: str, state: str) -> str:
     challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
     params = {
         "response_type": "code",
-        "client_id": CLIENT_ID,
+        "client_id": os.environ.get("OPENAI_OAUTH_CLIENT_ID") or CLIENT_ID,
         "redirect_uri": REDIRECT_URI,
         "scope": SCOPE,
         "code_challenge": challenge,
@@ -312,7 +458,7 @@ def _exchange_code(code: str, verifier: str) -> dict:
         "grant_type": "authorization_code",
         "code": code,
         "redirect_uri": REDIRECT_URI,
-        "client_id": CLIENT_ID,
+        "client_id": os.environ.get("OPENAI_OAUTH_CLIENT_ID") or CLIENT_ID,
         "code_verifier": verifier,
     }).encode()
     req = urllib.request.Request(
@@ -325,15 +471,22 @@ def _exchange_code(code: str, verifier: str) -> dict:
 
 
 def _do_email_step(page, email: str) -> bool:
-    if not _fill_first_visible(page, ['input[type="email"]', 'input[name="email"]', 'input[id="email"]'], email):
+    if not _fill_first_visible(page, ['input[type="email"]', 'input[name="email"]', 'input[id="email"]'], email, delay_ms=100):
         return False
+    time.sleep(1)
     return _click_first_visible(page, ['button[type="submit"]', 'button:has-text("Continue")'])
 
 
 def _do_password_step(page, password: str) -> bool:
-    if not _fill_first_visible(page, ['input[type="password"]'], password):
+    if not _fill_first_visible(page, ['input[type="password"]'], password, delay_ms=100):
         return False
-    return _click_first_visible(page, ['button[type="submit"]', 'button:has-text("Continue")'])
+    time.sleep(2)
+    clicked = _click_first_visible(page, ['button[type="submit"]', 'button:has-text("Continue")'])
+    if clicked:
+        # Password submit triggers a SPA navigation; give it time to land
+        # before callers inspect the page again.
+        time.sleep(2)
+    return clicked
 
 
 def _do_2fa_step(page, totp_key: str) -> bool:
@@ -379,6 +532,8 @@ def _do_current_step(page, email: str, password: str, totp_key: str | None) -> b
 
 
 def cmd_start() -> int:
+    global _STOP_REQUESTED
+    _STOP_REQUESTED = False
     cdp_port = int(os.environ.get("OPENAI_CDP_PORT", "9222"))
 
     try:
@@ -399,7 +554,13 @@ def cmd_start() -> int:
         print(f"Failed to start callback server on port {CALLBACK_PORT}: {e}", file=sys.stderr)
         return 1
 
-    _write_state({"verifier": verifier, "state": state, "cdp_port": cdp_port, "code": None})
+    try:
+        started_at = int(Path(f"/proc/{os.getpid()}/stat").read_text().split()[21])
+    except (OSError, IndexError, ValueError):
+        started_at = None
+    _write_state({"verifier": verifier, "state": state, "cdp_port": cdp_port, "code": None,
+                  "pid": os.getpid(), "started_at": started_at})
+    signal.signal(signal.SIGTERM, _request_stop)
 
     try:
         from playwright.sync_api import sync_playwright
@@ -417,15 +578,24 @@ def cmd_start() -> int:
             return 1
         context = browser.new_context(user_agent=_DESKTOP_UA, viewport=_DESKTOP_VIEWPORT)
         page = context.new_page()
+        page_errors = _watch_page_errors(page)
         try:
             page.goto(_authorize_url(verifier, state), wait_until="domcontentloaded")
         except Exception as e:
+            _capture_debug(page, "start", "authorize", str(e), page_errors)
             print(f"Failed to reach auth.openai.com: {e}", file=sys.stderr)
             browser.close()
             callback.close()
             return 1
 
         _log_step(page, "authorize")
+        blocking = _wait_for_blocking_clear(page, timeout_s=120)
+        if blocking:
+            _capture_debug(page, "start", "authorize", blocking, page_errors)
+            print(f"Login blocked: {blocking}", file=sys.stderr)
+            browser.close()
+            callback.close()
+            return 2
         print(
             f"[chatgpt-login] attach: playwright-cli attach --cdp=http://localhost:{cdp_port}; "
             f"drive: scripts/chatgpt-login.py status|step",
@@ -433,7 +603,14 @@ def cmd_start() -> int:
         )
 
         while True:
+            if _STOP_REQUESTED:
+                _capture_debug(page, "start", _step_for_path(_page_path(page)), "stopped", page_errors)
+                browser.close()
+                callback.close()
+                STATE_FILE.unlink(missing_ok=True)
+                return 1
             if callback.error:
+                _capture_debug(page, "start", _step_for_path(_page_path(page)), callback.error, page_errors)
                 print(f"OAuth callback error: {callback.error}", file=sys.stderr)
                 browser.close()
                 callback.close()
@@ -447,6 +624,7 @@ def cmd_start() -> int:
         try:
             tokens = _exchange_code(callback.code, verifier)
         except Exception as e:
+            _capture_debug(page, "start", "callback", str(e), page_errors)
             print(f"Token exchange failed: {e}", file=sys.stderr)
             browser.close()
             callback.close()
@@ -456,6 +634,7 @@ def cmd_start() -> int:
         refresh = tokens.get("refresh_token", "")
         expires_in = tokens.get("expires_in", 3600)
         if not access or not refresh:
+            _capture_debug(page, "start", "callback", "token exchange returned no tokens", page_errors)
             print("Token exchange returned no access/refresh token", file=sys.stderr)
             browser.close()
             callback.close()
@@ -501,10 +680,12 @@ def cmd_status() -> int:
             json.dump({"error": "no pages"}, sys.stdout)
             return 1
         try:
-            step = STEP_BY_PATH.get(_page_path(page), "")
+            step = _step_for_path(_page_path(page))
             blocking = _has_blocking_screen(page)
+            if blocking:
+                _capture_debug(page, "primitives", step or "unknown", blocking)
             code_ready = state.get("code") is not None
-            json.dump({"step": step, "url": page.url, "title": page.title(), "blocking": blocking, "code_ready": code_ready}, sys.stdout)
+            json.dump({"step": step, "url": page.url.split("?", 1)[0].split("#", 1)[0], "title": page.title(), "blocking": blocking, "code_ready": code_ready}, sys.stdout)
         except Exception as e:
             json.dump({"error": str(e)}, sys.stdout)
             return 1
@@ -545,23 +726,35 @@ def cmd_step() -> int:
             print("OPENAI_USERNAME and OPENAI_PASSWORD must be set", file=sys.stderr)
             return 1
 
+        page_errors = _watch_page_errors(page)
+        blocking = _wait_for_blocking_clear(page, timeout_s=15)
+        if blocking:
+            _capture_debug(page, "primitives", _step_for_path(_page_path(page)), blocking, page_errors)
+            print(f"Login blocked: {blocking}", file=sys.stderr)
+            try:
+                step = _step_for_path(_page_path(page))
+                json.dump({"step": step, "url": page.url.split("?", 1)[0].split("#", 1)[0], "title": page.title(), "blocking": blocking, "code_ready": state.get("code") is not None}, sys.stdout)
+            except Exception:
+                json.dump({"error": "status failed while blocked", "blocking": blocking}, sys.stdout)
+            return 2
+
         ok = _do_current_step(page, email, password, totp_key)
         if not ok:
-            step_name = STEP_BY_PATH.get(_page_path(page), "unknown")
+            step_name = _step_for_path(_page_path(page)) or "unknown"
+            _capture_debug(page, "primitives", step_name, "automation step made no progress", page_errors)
             print(
                 f"[chatgpt-login] no progress at step {step_name} — attach with playwright-cli attach --cdp=http://localhost:{state.get('cdp_port', 9222)}",
                 file=sys.stderr,
             )
-            return 1
         try:
-            step = STEP_BY_PATH.get(_page_path(page), "")
+            step = _step_for_path(_page_path(page))
             blocking = _has_blocking_screen(page)
             code_ready = state.get("code") is not None
-            json.dump({"step": step, "url": page.url, "title": page.title(), "blocking": blocking, "code_ready": code_ready}, sys.stdout)
+            json.dump({"step": step, "url": page.url.split("?", 1)[0].split("#", 1)[0], "title": page.title(), "blocking": blocking, "code_ready": code_ready}, sys.stdout)
         except Exception as e:
             json.dump({"error": str(e)}, sys.stdout)
             return 1
-        return 0
+        return 0 if ok else 1
 
 
 def _full_login() -> int:
@@ -599,9 +792,11 @@ def _full_login() -> int:
             return 1
         context = browser.new_context(user_agent=_DESKTOP_UA, viewport=_DESKTOP_VIEWPORT)
         page = context.new_page()
+        page_errors = _watch_page_errors(page)
         try:
             page.goto(_authorize_url(verifier, state), wait_until="domcontentloaded")
         except Exception as e:
+            _capture_debug(page, "browser", "authorize", str(e), page_errors)
             print(f"Failed to reach auth.openai.com: {e}", file=sys.stderr)
             browser.close()
             callback.close()
@@ -609,8 +804,9 @@ def _full_login() -> int:
 
         _log_step(page, "authorize")
 
-        blocking = _has_blocking_screen(page)
+        blocking = _wait_for_blocking_clear(page, timeout_s=120)
         if blocking:
+            _capture_debug(page, "browser", "authorize", blocking, page_errors)
             print(f"Login blocked: {blocking} — cannot automate with credentials alone", file=sys.stderr)
             browser.close()
             callback.close()
@@ -628,14 +824,27 @@ def _full_login() -> int:
             if callback.code or callback.error:
                 break
             path = _page_path(page)
-            step = STEP_BY_PATH.get(path, "")
+            step = _step_for_path(path)
             if step and step != last_step:
                 _log_step(page, step)
                 last_step = step
                 attempts[step] = 0
+            # A bot challenge can appear mid-flow (Cloudflare interstitial after
+            # the password submit). Wait for it to clear before counting another
+            # attempt, otherwise blocked time burns the attempt budget and the
+            # flow exits with a misleading "Stuck at step".
+            blocking = _wait_for_blocking_clear(page, timeout_s=90)
+            if blocking:
+                _capture_debug(page, "browser", step or path, blocking, page_errors)
+                print(f"Login blocked: {blocking} — cannot automate with credentials alone", file=sys.stderr)
+                _dump_page_state(page)
+                browser.close()
+                callback.close()
+                return 2
             if step:
                 attempts[step] = attempts.get(step, 0) + 1
                 if attempts[step] > 5:
+                    _capture_debug(page, "browser", step, "step retry limit exceeded", page_errors)
                     print(f"Stuck at step {step}", file=sys.stderr)
                     _dump_page_state(page)
                     browser.close()
@@ -647,14 +856,9 @@ def _full_login() -> int:
                     _do_email_step(page, email)
                 elif path == "/log-in/password":
                     _do_password_step(page, password)
-                    # The SPA may show an error page; retry a couple of times.
+                    # The SPA may show an error page; retry a couple of times
+                    # before a persistent one counts as blocking (below).
                     for attempt in range(2):
-                        blocking = _wait_for_blocking_clear(page, timeout_s=30)
-                        if blocking:
-                            print(f"Login blocked after password: {blocking}", file=sys.stderr)
-                            browser.close()
-                            callback.close()
-                            return 2
                         if not _is_error_page(page):
                             break
                         print(f"[chatgpt-login] OpenAI error page after password submit, retry {attempt + 1}/2", file=sys.stderr)
@@ -662,6 +866,13 @@ def _full_login() -> int:
                         _click_first_visible(page, ['a:has-text("Try again")', 'button:has-text("Try again")'])
                         time.sleep(1)
                         _do_password_step(page, password)
+                    blocking = _wait_for_blocking_clear(page, timeout_s=90)
+                    if blocking:
+                        _capture_debug(page, "browser", step, blocking, page_errors)
+                        print(f"Login blocked after password: {blocking}", file=sys.stderr)
+                        browser.close()
+                        callback.close()
+                        return 2
                 elif path.startswith("/mfa-challenge"):
                     if not totp_key:
                         print("2FA required but no TOTP key (OPENAI_2FA_KEY) set", file=sys.stderr)
@@ -676,6 +887,7 @@ def _full_login() -> int:
                 elif path == CALLBACK_PATH:
                     break
             except Exception as e:
+                _capture_debug(page, "browser", step or path, str(e), page_errors)
                 print(f"Failed at step {step or path}: {e}", file=sys.stderr)
                 _dump_page_state(page)
                 browser.close()
@@ -691,6 +903,7 @@ def _full_login() -> int:
             callback.close()
             return 1
         if not code:
+            _capture_debug(page, "browser", _step_for_path(_page_path(page)), "timed out waiting for OAuth callback", page_errors)
             print("Timed out waiting for OAuth callback", file=sys.stderr)
             _dump_page_state(page)
             browser.close()
@@ -702,6 +915,7 @@ def _full_login() -> int:
         try:
             tokens = _exchange_code(code, verifier)
         except Exception as e:
+            _capture_debug(page, "browser", "callback", str(e), page_errors)
             print(f"Token exchange failed: {e}", file=sys.stderr)
             browser.close()
             callback.close()
@@ -711,6 +925,7 @@ def _full_login() -> int:
         refresh = tokens.get("refresh_token", "")
         expires_in = tokens.get("expires_in", 3600)
         if not access or not refresh:
+            _capture_debug(page, "browser", "callback", "token exchange returned no tokens", page_errors)
             print("Token exchange returned no access/refresh token", file=sys.stderr)
             browser.close()
             callback.close()
@@ -734,7 +949,7 @@ def _full_login() -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", nargs="?", choices=["start", "status", "step"])
+    parser.add_argument("command", nargs="?", choices=["start", "status", "step", "stop"])
     args = parser.parse_args()
     if args.command == "start":
         return cmd_start()
@@ -742,6 +957,8 @@ def main() -> int:
         return cmd_status()
     if args.command == "step":
         return cmd_step()
+    if args.command == "stop":
+        return cmd_stop()
     return _full_login()
 
 
