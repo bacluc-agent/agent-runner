@@ -1,0 +1,31 @@
+name: Test gh CLI wrapper
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "scripts/gh_cli_wrapper.py"
+      - "scripts/test_gh_cli_wrapper.py"
+      - "scripts/install-gh-cli-wrapper.sh"
+      - "scripts/selection_tiers.py"
+      - "scripts/test_selection_tiers.py"
+      - ".github/workflows/hourly-issue.yml"
+      - ".github/workflows/test-gh-cli-wrapper.yml"
+      - "pyproject.toml"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Run gh CLI wrapper tests
+        run: python3 scripts/test_gh_cli_wrapper.py
+
+      - name: Run selection tier tests
+        run: python3 -m pip install --quiet pytest && python3 -m pytest -q scripts/test_selection_tiers.py

@@ -140,6 +140,13 @@ The installer saves the real CLI's absolute path before changing PATH.
   extension commands are denied. Use builtin CLI commands or canonical REST
   endpoints instead. Unknown builtin commands/options on guarded routes require
   review before adding support; this is not a complete CLI parser.
+- A rate-limited call is retried with the identical argv and stdin; the output of a
+  failed attempt is never shown, and after `GH_CLI_WRAPPER_MAX_ATTEMPTS` (default 4)
+  attempts the wrapper prints `::warning::` and exits with the real CLI's status. A
+  cumulative sleep budget of `GH_CLI_WRAPPER_MAX_WAIT_SECONDS` (default 300) gives up
+  the same way before any sleep would exceed the remaining budget, so a long reset
+  cannot get the step cancelled mid-sleep. Secondary-limit backoff ignores any
+  `Retry-After` header and uses `5·2^(n-1)` seconds capped at 60.
 
 This is an accidental-misrouting guardrail, **not a sandbox or universal PR
 prevention**. An absolute executable path, direct HTTP, changing PATH or changing
