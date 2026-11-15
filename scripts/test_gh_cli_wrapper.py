@@ -153,17 +153,38 @@ class CliWrapperTest(unittest.TestCase):
         ):
             self.call(argv)
 
+    def test_merge(self):
+        for argv in (
+            ["pr", "merge", "123"],
+            ["pr", "merge", "123", "-R", "ecamp/ecamp3"],
+            ["pr", "merge", "https://github.com/ecamp/ecamp3/pull/123"],
+            ["pr", "merge", "123", "-R", "BacLuc/r", "-R", "BacLuc/r"],
+            ["pr", "merge", "123", "-R", "ecamp/ecamp3", "--unknown"],
+        ):
+            self.call(argv, False)
+        for argv in (
+            ["pr", "merge", "123", "-R", "BacLuc/r", "--admin"],
+            ["pr", "merge", "https://github.com/bacluc-agent/r/pull/123", "--auto"],
+        ):
+            self.call(argv)
+
     def test_other_calls_and_aliases(self):
         for argv in (["issue", "comment", "234", "-R", "outsider/r", "--body", "pr create"],
                      ["pr", "view", "10800", "-R", "ecamp/ecamp3"], ["search", "issues", "test"],
                      ["repo", "fork", "ecamp/ecamp3", "--org", "bacluc-agent"],
                      ["workflow", "run", "ci.yml", "--ref", "issue-234"],
-                     ["api", "repos/ecamp/ecamp3/issues/1/comments", "-fbody=test"],
-                     ["api", "repos/{owner}/{repo}/issues/comments/1", "-XPATCH", "-fbody=test"],
-                     ["api", "repos/ecamp/ecamp3/forks", "-XPOST"],
+                      ["api", "repos/BacLuc/r/issues/1/comments", "-fbody=test"],
+                      ["api", "repos/BacLuc/r/issues/comments/1", "-XPATCH", "-fbody=test"],
+                      ["api", "repos/ecamp/ecamp3/forks", "-XPOST"],
                      ["api", "search/issues", "-XGET", "-fq=repo:ecamp/ecamp3"],
                      ["api", "repos/ecamp/ecamp3/actions/workflows/ci.yml/dispatches", "-fref=main"]):
             self.call(argv, TEST_STATUS="17")
+        for argv in (
+            ["api", "repos/ecamp/ecamp3/issues/1/comments", "-XPOST", "-fbody=test"],
+            ["api", "repos/ecamp/ecamp3/git/refs", "-XPOST", "-fref=refs/heads/x"],
+            ["api", "user/repos", "-XPOST", "-fname=test"],
+        ):
+            self.call(argv, False)
         for argv in (["alias", "set", "p", "pr create"], ["extension", "exec", "p"], ["extensions", "exec", "p"],
                      ["custom"], ["--repo=BacLuc/r", "pr", "create"]):
             self.call(argv, False)
