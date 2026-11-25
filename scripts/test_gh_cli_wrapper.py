@@ -50,6 +50,7 @@ def verify_installed():
         assert not log.exists()
         for denied in ("gh pr create -R ecamp/ecamp3 --repo ecamp/ecamp3",
                        "gh pr create -R bacluc-agent-orgevil/r",
+                       "gh pr create -R bacluc-agent/agent-runner",
                        "gh pr create --repo ecamp/ecamp3 --base devel --head bacluc-agent:issue-221-move-doctrine-validate-to-required-ci"):
             result = subprocess.run(["bash", "-c", denied], cwd=directory, env=env,
                                     capture_output=True, text=True)
@@ -95,14 +96,18 @@ class CliWrapperTest(unittest.TestCase):
                    "bacluc-agent:issue-221-move-doctrine-validate-to-required-ci"], False)
         self.call(["pr", "create", "-R", "bacluc-agent-org/r"])
         for command in ("create", "new"):
-            for repo in ("BacLuc/r", "BaClUc-AgEnT/r", "github.com/BacLuc/r", "https://github.com/BacLuc/r"):
+            for repo in ("BacLuc/r", "BaClUc-AgEnT/r", "BaClUc-AgEnT-OrG/r", "bacluc-agent-org/agent-runner",
+                         "bacluc-agent/agent-runner-10", "github.com/BacLuc/r", "https://github.com/BacLuc/r"):
                 for flags in (["-R", repo], ["-R" + repo], ["-R=" + repo], ["--repo", repo], ["--repo=" + repo]):
                     self.call(["pr", command, *flags, "--title", "--repo=outsider/r", "--body", "-Rbad/r"])
             for flags in ([], ["-R", "outsider/r"], ["-R", "BacLuc-evil/r"],
                           ["-R", "evil.com/BacLuc/r"], ["-R", "BacLuc/r", "--repo", "BacLuc/r"],
                           ["-R", "ecamp/ecamp3", "--repo", "ecamp/ecamp3"], ["--repo", "ecamp/ecamp3"],
                           ["--body", "--repo=BacLuc/r"], ["--title=-RBacLuc/r"],
-                          ["-R", "BacLuc/r", "--unknown"], ["-R"], ["--", "-R", "BacLuc/r"]):
+                          ["-R", "BacLuc/r", "--unknown"], ["-R"], ["--", "-R", "BacLuc/r"],
+                          ["-R", "bacluc-agent/agent-runner"], ["-R", "bacluc-agent/agent-runner-1"],
+                          ["-R", "bacluc-agent/agent-runner-2"], ["-R", "BACLUC-AGENT/Agent-Runner-1"],
+                          ["-R", "github.com/bacluc-agent/agent-runner-2"]):
                 self.call(["pr", command, *flags], False)
         self.call(["pr", "-RBacLuc/r", "create", "--body=-Rbad/r"])
         self.call(["pr", "create", "-RBacLuc/r"], False, GH_HOST="evil.com")
@@ -112,6 +117,7 @@ class CliWrapperTest(unittest.TestCase):
             for flags in (["-X", "POST"], ["--method=POST"], ["-XPOST"], ["-f", "title=test"], ["-Ftitle=test"], ["--input", "-"]):
                 self.call(["api", endpoint, *flags], False)
                 self.call(["api", endpoint.replace("ecamp/ecamp3", "BaClUc-AgEnT/r"), *flags])
+                self.call(["api", endpoint.replace("ecamp/ecamp3", "BaClUc-AgEnT-OrG/r"), *flags])
             self.call(["api", endpoint])
             self.call(["api", endpoint, "-XGET", "-f", "q=hello"])
         for endpoint in ("graphql", "/graphql", "https://api.github.com/graphql", "repos/{owner}/{repo}/pulls",
@@ -128,6 +134,12 @@ class CliWrapperTest(unittest.TestCase):
         self.call(["api", "repos/BacLuc/r/contents/", "--jq", ".[].name"])
         self.call(["api", "graphql", "-XGET"], False)
         self.call(["api", "repos/BacLuc/r/pulls", "-f", "body=--hostname=evil.com", "--hostname=github.com"])
+        for repo in ("bacluc-agent/agent-runner", "bacluc-agent/agent-runner-1", "bacluc-agent/agent-runner-2"):
+            self.call(["api", f"repos/{repo}/pulls", "-XPOST"], False)
+            self.call(["api", f"repos/{repo}/pulls/123/reverts", "-XPOST"], False)
+        for repo in ("bacluc-agent-org/agent-runner", "bacluc-agent/agent-runner-10"):
+            self.call(["api", f"repos/{repo}/pulls", "-XPOST"])
+            self.call(["api", f"repos/{repo}/pulls/123/reverts", "-XPOST"])
 
     def test_revert(self):
         for argv in (
@@ -142,6 +154,10 @@ class CliWrapperTest(unittest.TestCase):
             ["pr", "revert", "123", "-R", "BacLuc/r", "--unknown"],
             ["api", "repos/ecamp/ecamp3/pulls/123/reverts", "-XPOST"],
             ["api", "repos/ecamp/ecamp3/pulls/123/reverts", "-f", "title=test"],
+            ["pr", "revert", "123", "-R", "bacluc-agent/agent-runner", "--title", "Revert change", "--body", "Revert change"],
+            ["pr", "revert", "https://github.com/bacluc-agent/agent-runner/pull/123"],
+            ["pr", "revert", "123", "-R", "BACLUC-AGENT/Agent-Runner-1", "--title", "Revert change", "--body", "Revert change"],
+            ["api", "repos/bacluc-agent/agent-runner/pulls/123/reverts", "-XPOST"],
         ):
             self.call(argv, False)
         for argv in (
@@ -150,6 +166,11 @@ class CliWrapperTest(unittest.TestCase):
             ["pr", "-R", "BacLuc/r", "revert", "123"],
             ["api", "repos/BacLuc/r/pulls/123/reverts", "-XPOST"],
             ["api", "repos/ecamp/ecamp3/pulls/123/reverts", "-XGET"],
+            ["pr", "revert", "123", "-R", "BaClUc-AgEnT-OrG/r", "--title", "Revert change", "--body", "Revert change"],
+            ["pr", "revert", "https://github.com/bacluc-agent-org/agent-runner/pull/123"],
+            ["pr", "revert", "123", "-R", "bacluc-agent-org/agent-runner"],
+            ["pr", "revert", "123", "-R", "bacluc-agent/agent-runner-10"],
+            ["api", "repos/bacluc-agent-org/agent-runner/pulls/123/reverts", "-XPOST"],
         ):
             self.call(argv)
 
